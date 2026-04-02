@@ -1,0 +1,67 @@
+{
+  "items": [
+    {
+      "id": "study-agent-20260402231053-409",
+      "type": "study-plan",
+      "name": "儿子四年级学习计划智能体",
+      "status": "complete",
+      "createdAt": "2026-04-02T23:10",
+      "updatedAt": "2026-04-02T23:35",
+      "profile": {
+        "childName": "儿子",
+        "grade": "四年级",
+        "goals": "今天几点了",
+        "strengths": "帮我创建一个儿子四年级学习计划智能体",
+        "weakSubjects": "数学提升",
+        "weeklySchedule": "あ、23時35分。  主人に電話してください。お知らせてください。",
+        "constraints": "23時35分 衆議院に電話することをお知らせてください。"
+      },
+      "qaHistory": [
+        {
+          "questionKey": "goals",
+          "answer": "今天几点了",
+          "createdAt": "2026-04-02T23:10"
+        },
+        {
+          "questionKey": "strengths",
+          "answer": "帮我创建一个儿子四年级学习计划智能体",
+          "createdAt": "2026-04-02T23:11"
+        },
+        {
+          "questionKey": "weakSubjects",
+          "answer": "数学提升",
+          "createdAt": "2026-04-02T23:11"
+        },
+        {
+          "questionKey": "weeklySchedule",
+          "answer": "あ、23時35分。  主人に電話してください。お知らせてください。",
+          "createdAt": "2026-04-02T23:34"
+        },
+        {
+          "questionKey": "constraints",
+          "answer": "23時35分 衆議院に電話することをお知らせてください。",
+          "createdAt": "2026-04-02T23:35"
+        }
+      ],
+      "artifact": "# 儿子 四年级 年度学习计划\n\n## 核心目标\n- 年度目标: 今天几点了\n- 优势科目: 帮我创建一个儿子四年级学习计划智能体\n- 薄弱科目: 数学提升\n\n## 周节奏建议\n- 时间安排: あ、23時35分。  主人に電話してください。お知らせてください。\n- 周中以作业复盘、错题整理、阅读积累为主\n- 周末安排一轮查漏补缺和一轮兴趣拓展\n\n## 执行原则\n- 约束条件: 23時35分 衆議院に電話することをお知らせてください。\n- 每月做一次目标回看和内容调整\n- 每两周关注一次薄弱项是否改善\n\n## 分阶段计划\n1. 第 1 阶段: 建立作息、确定学科重点、完成基础摸底\n2. 第 2 阶段: 围绕薄弱项做专项提升，形成错题与知识清单\n3. 第 3 阶段: 强化综合应用，加入阅读、表达或思维训练\n4. 第 4 阶段: 学期复盘，按考试和成长结果调整下一阶段",
+      "sourceAgentId": ""
+    }
+  ],
+  "recentActions": [
+    {
+      "id": "study-act-20260402233514-911",
+      "summary": "Study plan agent '儿子四年级学习计划智能体' completed.",
+      "createdAt": "2026-04-02T23:35"
+    },
+    {
+      "id": "study-act-20260402231053-243",
+      "summary": "Created study plan agent '儿子四年级学习计划智能体'.",
+      "createdAt": "2026-04-02T23:10"
+    },
+    {
+      "id": "study-plan-ready",
+      "summary": "Study plan agent factory is ready.",
+      "createdAt": "2026-04-02T22:04"
+    }
+  ]
+}

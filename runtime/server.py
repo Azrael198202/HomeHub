@@ -13,6 +13,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+try:
+    from features.base import RuntimeBridge
+    from features.loader import FeatureManager
+except ModuleNotFoundError:
+    from runtime.features.base import RuntimeBridge
+    from runtime.features.loader import FeatureManager
+
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
 SETTINGS_FILE = ROOT / "settings.json"
@@ -23,6 +30,7 @@ USAGE_LOG_FILE = ROOT / "usage-cost-log.jsonl"
 GOOGLE_SERVICE_ACCOUNT_FILE = ROOT / "google-cloud-service-account.json"
 RUNTIME_ENV = os.environ.get("HOMEHUB_ENV", "local").lower()
 RUNTIME_PORT = int(os.environ.get("HOMEHUB_PORT", "8787"))
+FEATURES_DIR = ROOT / "features"
 
 
 def get_secrets_file():
@@ -883,6 +891,20 @@ VOICE_CONVERSATION = [
 ]
 
 CURRENT_CONVERSATION = deepcopy(VOICE_CONVERSATION)
+LAST_VOICE_ROUTE = {
+    "kind": "general",
+    "selected": {
+        "intent": "general-chat",
+        "featureId": "homehub-core",
+        "featureName": "HomeHub Core",
+        "action": "reply_directly",
+        "score": 0.4,
+    },
+    "candidates": [],
+}
+PENDING_VOICE_CLARIFICATION = None
+
+FEATURE_MANAGER = FeatureManager(FEATURES_DIR)
 
 RELAY_MESSAGES = [
     {
@@ -1150,6 +1172,49 @@ def openai_synthesize_speech(text_value, locale, model_name):
     }
 
 
+def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
+    api_key = SECRETS.get("openaiApiKey", "")
+    if not api_key:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return json.loads(content)
+    except Exception:
+        return None
+
+
+def build_runtime_bridge():
+    return RuntimeBridge(
+        root=ROOT,
+        get_setting=lambda key, default=None: PERSISTED_SETTINGS.get(key, default),
+        get_secret=lambda key, default=None: SECRETS.get(key, default),
+        openai_json=openai_chat_json,
+        log=lambda message: print(f"[features] {message}"),
+    )
+
+
 def transcribe_audio(provider_id, audio_base64, mime_type, locale):
     catalog = get_audio_provider_catalog()
     provider = catalog.get(provider_id)
@@ -1178,16 +1243,411 @@ def synthesize_speech(provider_id, text_value, locale):
     raise RuntimeError(f"Provider {provider['label']} is listed in the catalog but its TTS runtime is not wired yet.")
 
 
+def now_local():
+    return datetime.now().replace(second=0, microsecond=0)
+
+
 def now_hhmm():
     return datetime.now().strftime("%H:%M")
 
 
-def generate_assistant_reply(user_text, locale):
+def parse_iso_datetime(value):
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def make_memory_id(prefix):
+    return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}"
+
+
+def format_datetime_local(value, locale):
+    dt = parse_iso_datetime(value)
+    if not dt:
+        return str(value)
     if locale == "zh-CN":
-        return "我已收到你的语音。"
+        return dt.strftime("%m月%d日 %H:%M")
     if locale == "ja-JP":
-        return "音声を受け取りました。"
-    return "I received your voice."
+        return dt.strftime("%m月%d日 %H:%M")
+    return dt.strftime("%b %d %H:%M")
+
+
+def sort_records_by_datetime(items, key_name):
+    return sorted(
+        items,
+        key=lambda item: parse_iso_datetime(item.get(key_name)) or datetime.max,
+    )
+
+
+def get_upcoming_events(limit=5):
+    now_value = now_local()
+    events = []
+    for event in HOME_MEMORY.get("events", []):
+        start_at = parse_iso_datetime(event.get("startAt"))
+        if start_at and start_at >= now_value - timedelta(hours=1):
+            events.append(event)
+    return sort_records_by_datetime(events, "startAt")[:limit]
+
+
+def get_pending_reminders(limit=5):
+    now_value = now_local()
+    reminders = []
+    for reminder in HOME_MEMORY.get("reminders", []):
+        trigger_at = parse_iso_datetime(reminder.get("triggerAt"))
+        if reminder.get("status", "pending") != "done" and trigger_at and trigger_at >= now_value - timedelta(hours=12):
+            reminders.append(reminder)
+    return sort_records_by_datetime(reminders, "triggerAt")[:limit]
+
+
+def get_due_reminders(limit=3):
+    now_value = now_local()
+    due = []
+    for reminder in HOME_MEMORY.get("reminders", []):
+        trigger_at = parse_iso_datetime(reminder.get("triggerAt"))
+        if reminder.get("status", "pending") != "done" and trigger_at and trigger_at <= now_value:
+            due.append(reminder)
+    return sort_records_by_datetime(due, "triggerAt")[:limit]
+
+
+def record_memory_action(kind, summary):
+    HOME_MEMORY.setdefault("recentActions", []).insert(
+        0,
+        {
+            "id": make_memory_id("act"),
+            "kind": kind,
+            "summary": summary,
+            "createdAt": now_local().isoformat(timespec="minutes"),
+        },
+    )
+    del HOME_MEMORY["recentActions"][12:]
+
+
+def create_local_event(title, start_at, end_at, participants=None, location="", reminder_offset_minutes=None, notes=""):
+    event_id = make_memory_id("evt")
+    reminder_ids = []
+    event = {
+        "id": event_id,
+        "title": title,
+        "startAt": start_at.isoformat(timespec="minutes"),
+        "endAt": end_at.isoformat(timespec="minutes"),
+        "participants": participants or [],
+        "location": location,
+        "source": "homehub-local",
+        "createdAt": now_local().isoformat(timespec="minutes"),
+        "notes": notes,
+        "linkedReminderIds": reminder_ids,
+    }
+    HOME_MEMORY.setdefault("events", []).append(event)
+    created_reminder = None
+    if reminder_offset_minutes is not None:
+        reminder_time = start_at - timedelta(minutes=reminder_offset_minutes)
+        reminder_id = make_memory_id("rem")
+        created_reminder = {
+            "id": reminder_id,
+            "title": f"Reminder: {title}",
+            "triggerAt": reminder_time.isoformat(timespec="minutes"),
+            "eventId": event_id,
+            "status": "pending",
+            "channels": ["voice", "tv", "mobile"],
+            "createdAt": now_local().isoformat(timespec="minutes"),
+        }
+        HOME_MEMORY.setdefault("reminders", []).append(created_reminder)
+        reminder_ids.append(reminder_id)
+    record_memory_action("create-event", f"Created schedule '{title}' for {start_at.isoformat(timespec='minutes')}.")
+    save_home_memory(HOME_MEMORY)
+    return event, created_reminder
+
+
+def create_local_reminder(title, trigger_at, notes=""):
+    reminder = {
+        "id": make_memory_id("rem"),
+        "title": title,
+        "triggerAt": trigger_at.isoformat(timespec="minutes"),
+        "eventId": "",
+        "status": "pending",
+        "channels": ["voice", "tv", "mobile"],
+        "createdAt": now_local().isoformat(timespec="minutes"),
+        "notes": notes,
+    }
+    HOME_MEMORY.setdefault("reminders", []).append(reminder)
+    record_memory_action("create-reminder", f"Created reminder '{title}' for {trigger_at.isoformat(timespec='minutes')}.")
+    save_home_memory(HOME_MEMORY)
+    return reminder
+
+
+def detect_day_offset(text_value):
+    lowered = text_value.lower()
+    if "后天" in text_value:
+        return 2
+    if "明天" in text_value or "明早" in text_value or "明晚" in text_value or "tomorrow" in lowered:
+        return 1
+    return 0
+
+
+def parse_zh_number(text_value):
+    digits = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if not text_value:
+        return None
+    if text_value == "十":
+        return 10
+    if "十" in text_value:
+        left, _, right = text_value.partition("十")
+        tens = 1 if left == "" else digits.get(left)
+        ones = 0 if right == "" else digits.get(right)
+        if tens is None or ones is None:
+            return None
+        return tens * 10 + ones
+    if len(text_value) == 1:
+        return digits.get(text_value)
+    return None
+
+
+def detect_time_from_text(text_value):
+    lowered = text_value.lower()
+    hour = None
+    minute = 0
+    match = re.search(r"(\d{1,2})[:：](\d{2})", text_value)
+    if match:
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+    else:
+        match = re.search(r"(\d{1,2})点半", text_value)
+        if match:
+            hour = int(match.group(1))
+            minute = 30
+        else:
+            match = re.search(r"(\d{1,2})点(?:(\d{1,2})分?)?", text_value)
+            if match:
+                hour = int(match.group(1))
+                minute = int(match.group(2) or 0)
+            else:
+                match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", lowered)
+                if match:
+                    hour = int(match.group(1))
+                    minute = int(match.group(2) or 0)
+                    if match.group(3) == "pm" and hour < 12:
+                        hour += 12
+                    if match.group(3) == "am" and hour == 12:
+                        hour = 0
+                else:
+                    match = re.search(r"\b(\d{1,2})\b", text_value)
+                    if match and any(token in text_value for token in ["点", "时", "hour", "pm", "am"]):
+                        hour = int(match.group(1))
+    if hour is None:
+        zh_match = re.search(r"([零一二两三四五六七八九十]{1,3})点(半|([零一二两三四五六七八九十]{1,3})分?)?", text_value)
+        if zh_match:
+            hour = parse_zh_number(zh_match.group(1))
+            if zh_match.group(2) == "半":
+                minute = 30
+            else:
+                minute = parse_zh_number(zh_match.group(3) or "") or 0
+
+    if hour is None:
+        return None
+    if any(token in text_value for token in ["下午", "晚上", "今晚", "傍晚"]) and hour < 12:
+        hour += 12
+    if any(token in text_value for token in ["中午"]) and hour < 11:
+        hour += 12
+    if any(token in lowered for token in ["afternoon", "evening", "tonight"]) and hour < 12:
+        hour += 12
+    return hour, minute
+
+
+def detect_reminder_offset_minutes(text_value):
+    if "提前半小时" in text_value or "提前半個小時" in text_value:
+        return 30
+    match = re.search(r"提前(\d{1,3})\s*分钟", text_value)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"提前(\d{1,2})\s*小时", text_value)
+    if match:
+        return int(match.group(1)) * 60
+    match = re.search(r"(\d{1,3})\s*minutes?\s+before", text_value.lower())
+    if match:
+        return int(match.group(1))
+    match = re.search(r"(\d{1,2})\s*hours?\s+before", text_value.lower())
+    if match:
+        return int(match.group(1)) * 60
+    return 30 if "提前提醒" in text_value or "remind me ahead" in text_value.lower() else None
+
+
+def infer_title_from_text(text_value):
+    quoted = re.search(r"[\"“](.+?)[\"”]", text_value)
+    if quoted:
+        return quoted.group(1).strip()
+    person_meeting = re.search(r"和(.+?)的(会议|会面|聚餐|通话|视频|课程)", text_value)
+    if person_meeting:
+        return f"和{person_meeting.group(1).strip()}的{person_meeting.group(2).strip()}"
+    remind_match = re.search(r"提醒我(.+)", text_value)
+    if remind_match:
+        return remind_match.group(1).strip("，。 ")
+    generic = re.search(r"(创建|添加|安排|设定|新建)(.+?)(日程|会议|提醒|行程)", text_value)
+    if generic:
+        core = generic.group(2).strip("，。 ")
+        suffix = generic.group(3).strip()
+        return f"{core}{suffix}"
+    return "家庭日程"
+
+
+def build_datetime_from_text(text_value):
+    time_parts = detect_time_from_text(text_value)
+    if not time_parts:
+        return None
+    hour, minute = time_parts
+    base = now_local() + timedelta(days=detect_day_offset(text_value))
+    candidate = base.replace(hour=hour, minute=minute)
+    if detect_day_offset(text_value) == 0 and candidate < now_local() - timedelta(minutes=5):
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def summarize_schedule(locale):
+    events = get_upcoming_events(limit=3)
+    reminders = get_pending_reminders(limit=3)
+    if locale == "zh-CN":
+        if not events and not reminders:
+            return "本地日程里暂时没有新的安排或提醒。"
+        lines = []
+        if events:
+            lines.append("接下来日程有：" + "；".join(f"{event['title']}（{format_datetime_local(event['startAt'], locale)}）" for event in events))
+        if reminders:
+            lines.append("提醒有：" + "；".join(f"{item['title']}（{format_datetime_local(item['triggerAt'], locale)}）" for item in reminders))
+        return " ".join(lines)
+    if locale == "ja-JP":
+        return "ローカル予定とリマインダーを表示しました。"
+    return "I pulled the upcoming local schedule and reminders."
+
+
+def try_extract_schedule_with_openai(user_text, locale):
+    api_key = SECRETS.get("openaiApiKey", "")
+    if not api_key:
+        return None
+    schema_prompt = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You extract household scheduling intent. "
+                    "Return JSON only with keys: action, title, startAt, endAt, reminderOffsetMinutes, location, participants, confidence. "
+                    "Valid action values: create_event, create_reminder, show_schedule, none. "
+                    f"Current local time is {now_local().isoformat(timespec='minutes')}."
+                ),
+            },
+            {"role": "user", "content": f"Locale={locale}\nUser message: {user_text}"},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(schema_prompt).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        content = payload["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        data = json.loads(content)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def detect_local_assistant_action(user_text, locale):
+    lowered = user_text.lower()
+    ai_result = try_extract_schedule_with_openai(user_text, locale)
+    if isinstance(ai_result, dict) and ai_result.get("action") in {"create_event", "create_reminder", "show_schedule"}:
+        return ai_result
+    if any(token in user_text for token in ["查看日程", "看看日程", "我的日程", "有什么安排", "提醒列表"]) or "show my schedule" in lowered:
+        return {"action": "show_schedule"}
+    if any(token in user_text for token in ["提醒", "日程", "会议", "安排", "行程", "闹钟"]) or "remind me" in lowered or "schedule" in lowered:
+        start_at = build_datetime_from_text(user_text)
+        offset = detect_reminder_offset_minutes(user_text)
+        title = infer_title_from_text(user_text)
+        if start_at and any(token in user_text for token in ["日程", "会议", "安排", "行程", "schedule", "meeting"]):
+            return {
+                "action": "create_event",
+                "title": title,
+                "startAt": start_at.isoformat(timespec="minutes"),
+                "endAt": (start_at + timedelta(minutes=60)).isoformat(timespec="minutes"),
+                "reminderOffsetMinutes": offset,
+                "location": "",
+                "participants": [],
+            }
+        if start_at and any(token in user_text for token in ["提醒", "闹钟"]) or ("remind me" in lowered and start_at):
+            return {
+                "action": "create_reminder",
+                "title": title if title != "家庭日程" else "HomeHub reminder",
+                "startAt": start_at.isoformat(timespec="minutes"),
+            }
+    return {"action": "none"}
+
+
+def generate_assistant_reply(user_text, locale):
+    action = detect_local_assistant_action(user_text, locale)
+    action_name = action.get("action", "none")
+    if action_name == "show_schedule":
+        return summarize_schedule(locale)
+
+    if action_name == "create_event":
+        start_at = parse_iso_datetime(action.get("startAt"))
+        end_at = parse_iso_datetime(action.get("endAt")) or (start_at + timedelta(minutes=60) if start_at else None)
+        if not start_at or not end_at:
+            return "我还没完全听清时间，你可以再说一次具体几点吗？" if locale == "zh-CN" else "I still need a specific time."
+        title = str(action.get("title", "")).strip() or infer_title_from_text(user_text)
+        reminder_offset = action.get("reminderOffsetMinutes")
+        if reminder_offset is not None:
+            try:
+                reminder_offset = int(reminder_offset)
+            except (TypeError, ValueError):
+                reminder_offset = None
+        event, reminder = create_local_event(
+            title,
+            start_at,
+            end_at,
+            participants=action.get("participants") or [],
+            location=str(action.get("location", "")).strip(),
+            reminder_offset_minutes=reminder_offset,
+            notes=f"Original request: {user_text}",
+        )
+        if locale == "zh-CN":
+            if reminder:
+                return (
+                    f"已经帮你把“{event['title']}”加入 HomeHub 本地日程，时间是 {format_datetime_local(event['startAt'], locale)}。"
+                    f" 我也加了一个提前 {reminder_offset} 分钟的提醒，会在电视、语音和手机端一起显示。"
+                )
+            return f"已经帮你把“{event['title']}”加入 HomeHub 本地日程，时间是 {format_datetime_local(event['startAt'], locale)}。"
+        if locale == "ja-JP":
+            return f"ローカル予定に「{event['title']}」を追加しました。"
+        return f"I added '{event['title']}' to HomeHub local schedule for {format_datetime_local(event['startAt'], locale)}."
+
+    if action_name == "create_reminder":
+        trigger_at = parse_iso_datetime(action.get("startAt"))
+        if not trigger_at:
+            return "我还需要一个更具体的提醒时间。" if locale == "zh-CN" else "I still need a reminder time."
+        title = str(action.get("title", "")).strip() or infer_title_from_text(user_text)
+        reminder = create_local_reminder(title, trigger_at, notes=f"Original request: {user_text}")
+        if locale == "zh-CN":
+            return f"已经创建提醒“{reminder['title']}”，触发时间是 {format_datetime_local(reminder['triggerAt'], locale)}。"
+        if locale == "ja-JP":
+            return f"リマインダー「{reminder['title']}」を追加しました。"
+        return f"I created reminder '{reminder['title']}' for {format_datetime_local(reminder['triggerAt'], locale)}."
+
+    if locale == "zh-CN":
+        return "我已收到你的语音，也可以继续直接说“帮我创建明天下午三点的日程，提前半小时提醒”。"
+    if locale == "ja-JP":
+        return "音声を受け取りました。予定やリマインダーも追加できます。"
+    return "I received your voice. You can also ask me to create a schedule item or reminder."
 
 
 def append_conversation_turn(speaker, text_value):
@@ -1200,6 +1660,64 @@ def append_conversation_turn(speaker, text_value):
     )
     if len(CURRENT_CONVERSATION) > 24:
         del CURRENT_CONVERSATION[0 : len(CURRENT_CONVERSATION) - 24]
+
+
+def build_household_modules(locale):
+    modules = deepcopy(HOUSEHOLD_MODULES)
+    upcoming_events = get_upcoming_events(limit=3)
+    pending_reminders = get_pending_reminders(limit=3)
+    due_reminders = get_due_reminders(limit=2)
+
+    for module in modules:
+        if module["id"] == "schedule":
+            if upcoming_events:
+                next_event = upcoming_events[0]
+                if locale == "zh-CN":
+                    module["summary"] = f"已记录 {len(upcoming_events)} 个本地日程。下一个是 {next_event['title']}，时间 {format_datetime_local(next_event['startAt'], locale)}。"
+                    module["actionLabel"] = "查看日程"
+                elif locale == "ja-JP":
+                    module["summary"] = f"ローカル予定 {len(upcoming_events)} 件。次は {next_event['title']}、{format_datetime_local(next_event['startAt'], locale)}。"
+                    module["actionLabel"] = "予定を見る"
+                else:
+                    module["summary"] = f"{len(upcoming_events)} local events tracked. Next: {next_event['title']} at {format_datetime_local(next_event['startAt'], locale)}."
+                    module["actionLabel"] = "Open Schedule"
+                module["state"] = "attention" if due_reminders else "active"
+            else:
+                if locale == "zh-CN":
+                    module["summary"] = "还没有本地日程。你可以直接对 HomeHub 说出要创建的安排。"
+                    module["actionLabel"] = "语音创建"
+                elif locale == "ja-JP":
+                    module["summary"] = "ローカル予定はまだありません。音声で追加できます。"
+                    module["actionLabel"] = "音声で作成"
+                else:
+                    module["summary"] = "No local schedule items yet. Ask HomeHub by voice to create one."
+                    module["actionLabel"] = "Create by Voice"
+                module["state"] = "ready"
+        if module["id"] == "messages" and pending_reminders:
+            next_reminder = pending_reminders[0]
+            if locale == "zh-CN":
+                module["summary"] = f"已有 {len(pending_reminders)} 条提醒。下一条是 {next_reminder['title']}，将在 {format_datetime_local(next_reminder['triggerAt'], locale)} 触发。"
+                module["actionLabel"] = "查看提醒"
+            elif locale == "ja-JP":
+                module["summary"] = f"リマインダー {len(pending_reminders)} 件。次は {next_reminder['title']}、{format_datetime_local(next_reminder['triggerAt'], locale)}。"
+                module["actionLabel"] = "通知を見る"
+            else:
+                module["summary"] = f"{len(pending_reminders)} reminders queued. Next: {next_reminder['title']} at {format_datetime_local(next_reminder['triggerAt'], locale)}."
+                module["actionLabel"] = "View Reminders"
+            module["state"] = "attention" if due_reminders else "active"
+    return modules
+
+
+def build_assistant_memory_snapshot():
+    upcoming_events = get_upcoming_events(limit=5)
+    pending_reminders = get_pending_reminders(limit=5)
+    due_reminders = get_due_reminders(limit=3)
+    return {
+        "upcomingEvents": upcoming_events,
+        "pendingReminders": pending_reminders,
+        "dueReminders": due_reminders,
+        "recentActions": HOME_MEMORY.get("recentActions", [])[:5],
+    }
 
 
 def build_dashboard():
@@ -1246,7 +1764,493 @@ def build_dashboard():
             "tagline": "Boot like a TV box, collaborate like a multi-agent team.",
         },
         "boxProfile": BOX_PROFILE,
-        "householdModules": HOUSEHOLD_MODULES,
+        "householdModules": build_household_modules(PERSISTED_SETTINGS["language"]),
+        "activeAgents": agents,
+        "timelineEvents": timeline,
+        "modelProviders": MODEL_PROVIDERS,
+        "skillCatalog": SKILLS,
+        "pairingSession": PAIRING,
+        "relayMessages": RELAY_MESSAGES,
+        "assistantMemory": build_assistant_memory_snapshot(),
+        "voiceProfile": {
+            **VOICE_PROFILE,
+            "sttProvider": f"{stt_provider['label']} / {stt_provider['stt']['defaultModel']}",
+            "ttsProvider": f"{tts_provider['label']} / {tts_provider['tts']['defaultModel']}",
+            "locale": PERSISTED_SETTINGS["language"],
+        },
+        "audioStack": {
+            **AUDIO_STACK,
+            "stt": {
+                **AUDIO_STACK["stt"],
+                "provider": stt_provider["label"],
+                "primaryModel": stt_provider["stt"]["defaultModel"],
+                "fallbackModel": stt_provider["stt"]["fallbackModel"],
+            },
+            "tts": {
+                **AUDIO_STACK["tts"],
+                "provider": tts_provider["label"],
+                "primaryModel": tts_provider["tts"]["defaultModel"],
+                "fallbackModel": tts_provider["tts"]["fallbackModel"],
+            },
+        },
+        "audioProviders": {
+            "selected": {
+                "stt": stt_provider_id,
+                "tts": tts_provider_id,
+            },
+            "catalog": provider_catalog,
+            "secrets": {
+                "googleConfigured": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
+                "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
+                "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
+                "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
+            },
+            "counts": {
+                "total": len(provider_catalog),
+                "editable": sum(1 for provider in provider_catalog.values() if provider.get("editable")),
+            },
+        },
+        "modelCatalog": build_ai_capability_catalog(
+            provider_catalog,
+            {"stt": stt_provider_id, "tts": tts_provider_id},
+        ),
+        "languageSettings": {
+            **LANGUAGE_SETTINGS,
+            "current": PERSISTED_SETTINGS["language"],
+        },
+        "weather": WEATHER,
+        "systemStatus": SYSTEM_STATUS,
+        "conversation": CURRENT_CONVERSATION,
+    }
+
+
+def build_feature_household_modules(locale):
+    runtime = build_runtime_bridge()
+    modules = FEATURE_MANAGER.enhance_household_modules(deepcopy(HOUSEHOLD_MODULES), locale, runtime)
+    agent_types = FEATURE_MANAGER.list_agent_types(locale, runtime)
+    if agent_types:
+        if locale == "zh-CN":
+            summary = f"HomeHub 当前可创建 {len(agent_types)} 类智能体。比如：{agent_types[0]['name']}。"
+            action = "语音创建"
+            name = "智能体工厂"
+        elif locale == "ja-JP":
+            summary = f"HomeHub can create {len(agent_types)} agent types."
+            action = "音声で作成"
+            name = "エージェント工房"
+        else:
+            summary = f"HomeHub can create {len(agent_types)} agent types."
+            action = "Create by Voice"
+            name = "Agent Factory"
+        modules.append(
+            {
+                "id": "agent-factory",
+                "name": name,
+                "summary": summary,
+                "state": "active",
+                "actionLabel": action,
+            }
+        )
+    return modules
+
+
+def build_assistant_memory_snapshot(locale=None):
+    runtime = build_runtime_bridge()
+    payload = FEATURE_MANAGER.dashboard_payload(locale or PERSISTED_SETTINGS["language"], runtime)
+    return payload.get(
+        "assistantMemory",
+        {
+            "upcomingEvents": [],
+            "pendingReminders": [],
+            "dueReminders": [],
+            "recentActions": [],
+        },
+    )
+
+
+def build_agent_type_catalog(locale):
+    runtime = build_runtime_bridge()
+    return FEATURE_MANAGER.list_agent_types(locale, runtime)
+
+
+def build_agent_factory_reply(locale):
+    agent_types = build_agent_type_catalog(locale)
+    if not agent_types:
+        return "我还没有可创建的智能体模板。" if locale == "zh-CN" else "I do not have any agent templates yet."
+    if locale == "zh-CN":
+        joined = "；".join(f"{item['name']}：{item['summary']}" for item in agent_types[:3])
+        example = agent_types[0].get("examplePrompt", "")
+        return f"我可以帮你创建这些智能体：{joined}。你可以直接说：“{example}”。"
+    if locale == "ja-JP":
+        return "作成できるエージェントを案内します。"
+    joined = "; ".join(f"{item['name']}: {item['summary']}" for item in agent_types[:3])
+    example = agent_types[0].get("examplePrompt", "")
+    return f"I can create these agent types: {joined}. Try saying: '{example}'."
+
+
+def openai_chat_reply(system_prompt, user_prompt, model_name="gpt-4o-mini"):
+    api_key = SECRETS.get("openaiApiKey", "")
+    if not api_key:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.6,
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        text = str(content or "").strip()
+        return text or None
+    except Exception:
+        return None
+
+
+def build_feature_intent_catalog(locale):
+    runtime = build_runtime_bridge()
+    features = FEATURE_MANAGER.list_features(runtime)
+    return [
+        {
+            "featureId": item.get("id"),
+            "featureName": item.get("name"),
+            "summary": item.get("summary", ""),
+            "intents": item.get("voiceIntents", []),
+        }
+        for item in features
+        if item.get("voiceIntents")
+    ]
+
+
+def openai_route_voice_request(user_text, locale, heuristic_route):
+    catalog = build_feature_intent_catalog(locale)
+    agent_types = build_agent_type_catalog(locale)
+    system_prompt = (
+        "You are the HomeHub intent router and agent orchestrator. "
+        "Classify the user's voice request and decide whether HomeHub should route it to a feature, "
+        "the agent factory, general chat, or ask a clarification question. "
+        "Return JSON only with keys: kind, targetFeatureId, targetIntentId, action, confidence, "
+        "needsClarification, clarificationQuestion, reasoning. "
+        "Valid kind values: feature, agent_factory, general, clarify. "
+        "Only choose targetFeatureId values that exist in the provided feature catalog."
+    )
+    user_prompt = json.dumps(
+        {
+            "locale": locale,
+            "userText": user_text,
+            "featureCatalog": catalog,
+            "agentTypes": agent_types,
+            "heuristicRoute": heuristic_route,
+        },
+        ensure_ascii=False,
+    )
+    payload = openai_chat_json(system_prompt, user_prompt, "gpt-4o-mini")
+    return payload if isinstance(payload, dict) else None
+
+
+def orchestrate_voice_route(user_text, locale, heuristic_route):
+    selected = heuristic_route.get("selected")
+    model_route = openai_route_voice_request(user_text, locale, heuristic_route)
+    if not model_route:
+        return heuristic_route
+
+    kind = str(model_route.get("kind", "")).strip().lower() or heuristic_route.get("kind", "general")
+    target_feature_id = str(model_route.get("targetFeatureId", "")).strip()
+    target_intent_id = str(model_route.get("targetIntentId", "")).strip()
+    action = str(model_route.get("action", "")).strip()
+    try:
+        confidence = float(model_route.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    needs_clarification = bool(model_route.get("needsClarification"))
+    clarification_question = str(model_route.get("clarificationQuestion", "")).strip()
+
+    candidates = heuristic_route.get("candidates", [])
+    matched_candidate = None
+    if target_feature_id:
+        for item in candidates:
+            if item.get("featureId") == target_feature_id:
+                matched_candidate = dict(item)
+                break
+
+    selected_route = matched_candidate or dict(selected or {})
+    if kind == "feature" and target_feature_id:
+        selected_route.setdefault("featureId", target_feature_id)
+        if target_intent_id:
+            selected_route["intent"] = target_intent_id
+        if action:
+            selected_route["action"] = action
+        if confidence:
+            selected_route["score"] = confidence
+        selected_route.setdefault("featureName", selected_route.get("featureName", target_feature_id))
+
+    if kind == "clarify" and clarification_question:
+        return {
+            "kind": "clarify",
+            "selected": {
+                "intent": "clarify",
+                "featureId": selected_route.get("featureId", "homehub-core"),
+                "featureName": selected_route.get("featureName", "HomeHub Core"),
+                "action": action or "clarify",
+                "score": confidence or 0.6,
+            },
+            "candidates": candidates,
+            "clarificationQuestion": clarification_question,
+            "reasoning": model_route.get("reasoning", ""),
+        }
+
+    if kind in {"feature", "agent_factory", "general"}:
+        return {
+            "kind": kind,
+            "selected": selected_route or heuristic_route.get("selected"),
+            "candidates": candidates,
+            "reasoning": model_route.get("reasoning", ""),
+            "modelRoute": model_route,
+        }
+    return heuristic_route
+
+
+def build_general_voice_reply(user_text, locale):
+    recent_turns = CURRENT_CONVERSATION[-6:]
+    conversation_context = "\n".join(f"{item['speaker']}: {item['text']}" for item in recent_turns)
+    if locale == "zh-CN":
+        system_prompt = (
+            "你是 HomeHub，家庭生活助手。"
+            "如果用户不是在创建日程或提醒，就自然地直接回答用户当前的话。"
+            "回答要简短、温和、实用，像家庭里的语音助手。"
+            "不要提自己已经收到语音，不要把回答变成固定模板，不要编造你已经执行过的动作。"
+        )
+    elif locale == "ja-JP":
+        system_prompt = (
+            "You are HomeHub, a household voice assistant. "
+            "Reply naturally and briefly when the user is not creating a schedule or reminder. "
+            "Do not say that you merely received the voice input, and do not claim actions you did not perform."
+        )
+    else:
+        system_prompt = (
+            "You are HomeHub, a household voice assistant. "
+            "Reply naturally and briefly when the user is not creating a schedule or reminder. "
+            "Do not say that you merely received the voice input, and do not claim actions you did not perform."
+        )
+    ai_reply = openai_chat_reply(
+        system_prompt,
+        f"Locale: {locale}\nRecent conversation:\n{conversation_context}\nUser: {user_text}",
+    )
+    if ai_reply:
+        return ai_reply
+
+    lowered = user_text.lower()
+    if locale == "zh-CN":
+        if "天气" in user_text:
+            return "你可以切到天气卡片查看当前天气；如果你愿意，我后面也可以把天气问答接成直接语音回答。"
+        if "学习计划" in user_text or "智能体" in user_text:
+            return "如果你想创建新的助手，可以直接说出目标，例如“帮我创建一个儿子四年级学习计划智能体”。"
+        if any(token in user_text for token in ["几点", "时间"]):
+            return f"现在是 {datetime.now().strftime('%H:%M')}。"
+        return "你可以直接告诉我你想做什么，比如问问题、创建日程、添加提醒，或者让我帮你创建一个智能体。"
+    if locale == "ja-JP":
+        if "weather" in lowered:
+            return "天気カードも確認できます。必要なら音声で直接答える流れも続けて追加できます。"
+        return "予定やリマインダー以外でも、そのまま用件を話してください。できる範囲で続けて案内します。"
+    if "weather" in lowered:
+        return "You can also open the weather card, and I can keep expanding direct voice answers from here."
+    return "You can just tell me what you need, and I will either answer directly or help you create a schedule, reminder, or agent."
+
+
+def route_voice_request(user_text, locale):
+    runtime = build_runtime_bridge()
+    route = FEATURE_MANAGER.route_voice_intent(user_text, locale, runtime)
+    heuristic_route = {
+        "kind": "feature" if route.get("selected") else ("agent_factory" if is_generic_agent_request(user_text) else "general"),
+        "selected": route.get("selected")
+        or (
+            {
+                "intent": "agent-factory",
+                "featureId": "homehub-core",
+                "featureName": "HomeHub Core",
+                "action": "list_agent_types",
+                "score": 0.82,
+            }
+            if is_generic_agent_request(user_text)
+            else {
+                "intent": "general-chat",
+                "featureId": "homehub-core",
+                "featureName": "HomeHub Core",
+                "action": "reply_directly",
+                "score": 0.4,
+            }
+        ),
+        "candidates": route.get("candidates", []),
+    }
+    return orchestrate_voice_route(user_text, locale, heuristic_route)
+
+
+def build_clarification_reply(route, locale):
+    question = str(route.get("clarificationQuestion", "")).strip()
+    if question:
+        return question
+    if locale == "zh-CN":
+        return "我还需要再确认一点信息，你可以再具体说一下你的目标吗？"
+    if locale == "ja-JP":
+        return "もう少しだけ確認したいので、目的をもう少し具体的に教えてください。"
+    return "I need one more detail before I can route that correctly. Could you say a bit more?"
+
+
+def serialize_voice_route(route):
+    return {
+        "kind": route.get("kind"),
+        "selected": route.get("selected"),
+        "candidates": route.get("candidates", []),
+        "clarificationQuestion": route.get("clarificationQuestion", ""),
+        "reasoning": route.get("reasoning", ""),
+    }
+
+
+def build_pending_clarification_snapshot():
+    if not PENDING_VOICE_CLARIFICATION:
+        return None
+    return dict(PENDING_VOICE_CLARIFICATION)
+
+
+def resolve_voice_request(user_text, locale):
+    global PENDING_VOICE_CLARIFICATION
+
+    runtime = build_runtime_bridge()
+    original_text = user_text
+    combined_text = user_text
+    clarification_context = PENDING_VOICE_CLARIFICATION
+
+    if clarification_context:
+        combined_text = (
+            f"Original request: {clarification_context.get('originalRequest', '')}\n"
+            f"Clarification answer: {user_text}"
+        )
+
+    route = route_voice_request(combined_text, locale)
+
+    if route.get("kind") == "clarify":
+        PENDING_VOICE_CLARIFICATION = {
+            "originalRequest": clarification_context.get("originalRequest", original_text) if clarification_context else original_text,
+            "latestUserMessage": original_text,
+            "clarificationQuestion": build_clarification_reply(route, locale),
+            "selected": route.get("selected"),
+            "createdAt": datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes"),
+        }
+        return {
+            "reply": PENDING_VOICE_CLARIFICATION["clarificationQuestion"],
+            "route": serialize_voice_route(route),
+            "pendingClarification": build_pending_clarification_snapshot(),
+        }
+
+    if route.get("kind") == "feature":
+        result = FEATURE_MANAGER.dispatch_voice_intent(route, combined_text, locale, runtime) or {}
+        reply = result.get("reply") or build_general_voice_reply(original_text, locale)
+    elif route.get("kind") == "agent_factory":
+        reply = build_agent_factory_reply(locale)
+    else:
+        reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale)
+
+    PENDING_VOICE_CLARIFICATION = None
+    return {
+        "reply": reply,
+        "route": serialize_voice_route(route),
+        "pendingClarification": None,
+    }
+
+
+def build_voice_router_snapshot(locale):
+    runtime = build_runtime_bridge()
+    features = FEATURE_MANAGER.list_features(runtime)
+    return {
+        "pendingVoiceClarification": build_pending_clarification_snapshot(),
+        "featureIntents": [
+            {
+                "featureId": item.get("id"),
+                "featureName": item.get("name"),
+                "intents": item.get("voiceIntents", []),
+            }
+            for item in features
+            if item.get("voiceIntents")
+        ]
+    }
+
+
+def is_generic_agent_request(user_text):
+    lowered = user_text.lower()
+    zh_request = "智能体" in user_text and any(token in user_text for token in ["创建", "新建", "能创建", "有哪些", "什么"])
+    en_request = "agent" in lowered and any(token in lowered for token in ["create", "make", "what", "available"])
+    return zh_request or en_request
+
+
+def generate_assistant_reply(user_text, locale):
+    return resolve_voice_request(user_text, locale)["reply"]
+
+
+def build_last_voice_route(user_text, locale):
+    return serialize_voice_route(route_voice_request(user_text, locale))
+
+
+def build_dashboard():
+    provider_catalog = get_audio_provider_catalog()
+    agents = deepcopy(BASE_AGENTS)
+    for agent in agents:
+        delta = random.randint(-4, 6)
+        agent["progress"] = max(12, min(100, agent["progress"] + delta))
+        if agent["progress"] > 92:
+            agent["status"] = "complete"
+            agent["lastUpdate"] = "Task finished and result published to the TV shell."
+        elif agent["progress"] < 45 and agent["id"] == "lifestyle":
+            agent["status"] = "planning"
+        else:
+            agent["status"] = "running"
+
+    timeline = deepcopy(BASE_TIMELINE)
+    timeline.append(
+        {
+            "id": f"live-{datetime.now().strftime('%H%M%S')}",
+            "time": datetime.now().strftime("%H:%M"),
+            "title": "Live Box Update",
+            "detail": random.choice(
+                [
+                    "Companion app heartbeat confirmed.",
+                    "Travel checklist refreshed from latest family note.",
+                    "Voice pipeline pushed a partial transcript to the screen.",
+                    "Relay message delivered and removed from transient storage.",
+                ]
+            ),
+            "stream": random.choice(["system", "implementation", "family", "voice"]),
+        }
+    )
+
+    stt_provider_id = PERSISTED_SETTINGS["sttProvider"]
+    tts_provider_id = PERSISTED_SETTINGS["ttsProvider"]
+    stt_provider = provider_catalog[stt_provider_id]
+    tts_provider = provider_catalog[tts_provider_id]
+    runtime = build_runtime_bridge()
+    feature_payload = FEATURE_MANAGER.dashboard_payload(PERSISTED_SETTINGS["language"], runtime)
+    voice_router = build_voice_router_snapshot(PERSISTED_SETTINGS["language"])
+
+    return {
+        "hero": {
+            "title": "HomeHub",
+            "subtitle": "AI Box for the Living Room",
+            "tagline": "Boot like a TV box, collaborate like a multi-agent team.",
+        },
+        "boxProfile": BOX_PROFILE,
+        "householdModules": build_feature_household_modules(PERSISTED_SETTINGS["language"]),
         "activeAgents": agents,
         "timelineEvents": timeline,
         "modelProviders": MODEL_PROVIDERS,
@@ -1302,6 +2306,11 @@ def build_dashboard():
         "weather": WEATHER,
         "systemStatus": SYSTEM_STATUS,
         "conversation": CURRENT_CONVERSATION,
+        "lastVoiceRoute": LAST_VOICE_ROUTE,
+        "features": FEATURE_MANAGER.list_features(runtime),
+        "agentTypes": FEATURE_MANAGER.list_agent_types(PERSISTED_SETTINGS["language"], runtime),
+        **voice_router,
+        **feature_payload,
     }
 
 
@@ -1347,6 +2356,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
+        runtime = build_runtime_bridge()
+        feature_response = FEATURE_MANAGER.handle_api("GET", path, parse_qs(parsed.query), None, runtime)
+        if feature_response:
+            self._send_json(feature_response.get("body", {}), status=feature_response.get("status", 200))
+            return
 
         if path == "/api/health":
             self._send_json({"ok": True, "service": "homehub-runtime"})
@@ -1362,6 +2376,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/skills":
             self._send_json(SKILLS)
+            return
+
+        if path == "/api/features":
+            self._send_json(FEATURE_MANAGER.list_features(runtime))
+            return
+
+        if path == "/api/agent-types":
+            self._send_json(FEATURE_MANAGER.list_agent_types(PERSISTED_SETTINGS["language"], runtime))
             return
 
         if path == "/api/pairing":
@@ -1413,11 +2435,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        global PERSISTED_SETTINGS, SECRETS, SECRET_SOURCES
+        global PERSISTED_SETTINGS, SECRETS, SECRET_SOURCES, LAST_VOICE_ROUTE, PENDING_VOICE_CLARIFICATION
 
         parsed = urlparse(self.path)
+        runtime = build_runtime_bridge()
+        preview_body = self._read_json_body()
+        feature_response = FEATURE_MANAGER.handle_api("POST", parsed.path, parse_qs(parsed.query), preview_body, runtime)
+        if feature_response:
+            self._send_json(feature_response.get("body", {}), status=feature_response.get("status", 200))
+            return
+
         if parsed.path == "/api/settings/language":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body or "language" not in body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -1434,7 +2463,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/settings/audio":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -1466,7 +2495,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/settings/secrets":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -1493,7 +2522,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/audio/transcribe":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body or "audioBase64" not in body:
                 self._send_json({"error": "audioBase64 is required"}, status=400)
                 return
@@ -1513,7 +2542,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/audio/synthesize":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body or "text" not in body:
                 self._send_json({"error": "text is required"}, status=400)
                 return
@@ -1532,7 +2561,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/voice/chat":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body or "message" not in body:
                 self._send_json({"error": "message is required"}, status=400)
                 return
@@ -1544,7 +2573,10 @@ class Handler(BaseHTTPRequestHandler):
 
             locale = body.get("locale", PERSISTED_SETTINGS["language"])
             append_conversation_turn("You", message)
-            reply_text = generate_assistant_reply(message, locale)
+            resolution = resolve_voice_request(message, locale)
+            voice_route = resolution["route"]
+            LAST_VOICE_ROUTE = voice_route
+            reply_text = resolution["reply"]
             append_conversation_turn("HomeHub", reply_text)
 
             audio_payload = None
@@ -1561,13 +2593,16 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "reply": reply_text,
                     "conversation": CURRENT_CONVERSATION,
+                    "voiceRoute": voice_route,
+                    "pendingVoiceClarification": resolution.get("pendingClarification"),
+                    "assistantMemory": build_assistant_memory_snapshot(),
                     "audio": audio_payload,
                 }
             )
             return
 
         if parsed.path == "/api/settings/audio-provider":
-            body = self._read_json_body()
+            body = preview_body or self._read_json_body()
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -1620,6 +2655,21 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/voice/reset":
             CURRENT_CONVERSATION.clear()
             CURRENT_CONVERSATION.extend(deepcopy(VOICE_CONVERSATION))
+            LAST_VOICE_ROUTE = {
+                "kind": "general",
+                "selected": {
+                    "intent": "general-chat",
+                    "featureId": "homehub-core",
+                    "featureName": "HomeHub Core",
+                    "action": "reply_directly",
+                    "score": 0.4,
+                },
+                "candidates": [],
+                "clarificationQuestion": "",
+                "reasoning": "",
+            }
+            PENDING_VOICE_CLARIFICATION = None
+            FEATURE_MANAGER.reset(runtime)
             self._send_json({"ok": True, "conversation": CURRENT_CONVERSATION})
             return
 

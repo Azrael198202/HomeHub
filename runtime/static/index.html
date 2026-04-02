@@ -200,6 +200,15 @@
         <div class="spoken-line" id="spoken-line"></div>
       </section>
     </main>
+    <section class="reminder-overlay" id="reminder-overlay" hidden aria-live="assertive">
+      <div class="reminder-modal panel">
+        <p class="eyebrow" id="reminder-eyebrow">Time Reminder</p>
+        <h2 id="reminder-title">No reminder</h2>
+        <p class="reminder-time" id="reminder-time"></p>
+        <p class="reminder-notes" id="reminder-notes"></p>
+        <button class="reminder-action remote-target" id="reminder-complete" type="button">Mark Complete</button>
+      </div>
+    </section>
     <aside class="floating-buddy-shell" id="floating-buddy" aria-live="polite"></aside>
     <script src="/assets/app.js"></script>
   </body>

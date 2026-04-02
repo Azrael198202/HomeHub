@@ -56,6 +56,84 @@ button:focus-visible,
   overflow: hidden;
 }
 
+.reminder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 36px;
+  background:
+    radial-gradient(circle at center, rgba(255, 189, 92, 0.18), transparent 28%),
+    rgba(4, 10, 16, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.reminder-overlay[hidden] {
+  display: none;
+}
+
+.reminder-overlay.is-processing {
+  pointer-events: none;
+}
+
+.reminder-modal {
+  width: min(720px, calc(100vw - 72px));
+  padding: 34px 36px;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 207, 133, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(255, 189, 92, 0.18), transparent 34%),
+    radial-gradient(circle at bottom left, rgba(101, 182, 255, 0.14), transparent 28%),
+    rgba(9, 18, 29, 0.98);
+  box-shadow:
+    0 34px 80px rgba(0, 0, 0, 0.44),
+    0 0 0 1px rgba(255, 189, 92, 0.08) inset;
+}
+
+.reminder-modal h2 {
+  margin: 8px 0 14px;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.08;
+}
+
+.reminder-time {
+  margin: 0 0 12px;
+  color: #ffd68f;
+  font-size: 20px;
+  letter-spacing: 0.03em;
+}
+
+.reminder-notes {
+  margin: 0 0 28px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.reminder-action {
+  min-width: 180px;
+  padding: 14px 22px;
+  border: 1px solid rgba(255, 207, 133, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 189, 92, 0.92), rgba(255, 132, 89, 0.94));
+  color: #08111a;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 16px 28px rgba(255, 132, 89, 0.24);
+}
+
+.reminder-action:hover {
+  transform: translateY(-1px);
+}
+
+.reminder-action:disabled {
+  cursor: wait;
+  opacity: 0.78;
+  transform: none;
+}
+
 .floating-buddy-shell {
   position: fixed;
   right: 26px;

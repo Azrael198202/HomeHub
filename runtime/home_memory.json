@@ -1,0 +1,194 @@
+{
+  "events": [
+    {
+      "id": "evt-20260402225757-368",
+      "title": "明天下午三点的日程",
+      "startAt": "2026-04-03T15:00",
+      "endAt": "2026-04-03T16:00",
+      "participants": [],
+      "location": "",
+      "source": "homehub-local",
+      "createdAt": "2026-04-02T22:57",
+      "notes": "Original request: 帮我创建明天下午三点的日程，提前半小时提醒",
+      "linkedReminderIds": [
+        "rem-20260402225757-232"
+      ]
+    },
+    {
+      "id": "evt-20260402231053-632",
+      "title": "明天下午三点的日程",
+      "startAt": "2026-04-03T15:00",
+      "endAt": "2026-04-03T16:00",
+      "participants": [],
+      "location": "",
+      "source": "homehub-local",
+      "createdAt": "2026-04-02T23:10",
+      "notes": "Original request: 帮我创建明天下午三点的日程，提前半小时提醒",
+      "linkedReminderIds": [
+        "rem-20260402231053-892"
+      ]
+    }
+  ],
+  "reminders": [
+    {
+      "id": "rem-20260402224712-602",
+      "title": "22点48分给老婆打电话",
+      "triggerAt": "2026-04-02T22:48",
+      "eventId": "",
+      "status": "done",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T22:47",
+      "notes": "Original request: 提醒我22点48分给老婆打电话。",
+      "completedAt": "2026-04-02T22:50"
+    },
+    {
+      "id": "rem-20260402225338-924",
+      "title": "HomeHub reminder",
+      "triggerAt": "2026-04-03T02:54",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T22:53",
+      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。"
+    },
+    {
+      "id": "rem-20260402225358-402",
+      "title": "HomeHub reminder",
+      "triggerAt": "2026-04-03T02:54",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T22:53",
+      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。"
+    },
+    {
+      "id": "rem-20260402225757-232",
+      "title": "Reminder: 明天下午三点的日程",
+      "triggerAt": "2026-04-03T14:30",
+      "eventId": "evt-20260402225757-368",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T22:57"
+    },
+    {
+      "id": "rem-20260402231053-892",
+      "title": "Reminder: 明天下午三点的日程",
+      "triggerAt": "2026-04-03T14:30",
+      "eventId": "evt-20260402231053-632",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T23:10"
+    },
+    {
+      "id": "rem-20260402232821-508",
+      "title": "23点30分打电话给老婆",
+      "triggerAt": "2026-04-02T23:30",
+      "eventId": "",
+      "status": "done",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T23:28",
+      "notes": "Original request: 提醒我23点30分打电话给老婆。",
+      "completedAt": "2026-04-02T23:30"
+    },
+    {
+      "id": "rem-20260402232823-440",
+      "title": "HomeHub reminder",
+      "triggerAt": "2026-04-03T15:00",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-02T23:28",
+      "notes": "Original request: Original request: 帮我提醒一下\nClarification answer: 明天下午三点"
+    }
+  ],
+  "recentActions": [
+    {
+      "id": "act-20260402233013-521",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder '23点30分打电话给老婆'.",
+      "createdAt": "2026-04-02T23:30"
+    },
+    {
+      "id": "act-20260402232823-241",
+      "kind": "create-reminder",
+      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T15:00.",
+      "createdAt": "2026-04-02T23:28"
+    },
+    {
+      "id": "act-20260402232821-326",
+      "kind": "create-reminder",
+      "summary": "Created reminder '23点30分打电话给老婆' for 2026-04-02T23:30.",
+      "createdAt": "2026-04-02T23:28"
+    },
+    {
+      "id": "act-20260402231053-777",
+      "kind": "create-event",
+      "summary": "Created schedule '明天下午三点的日程' for 2026-04-03T15:00.",
+      "createdAt": "2026-04-02T23:10"
+    },
+    {
+      "id": "act-20260402225757-377",
+      "kind": "create-event",
+      "summary": "Created schedule '明天下午三点的日程' for 2026-04-03T15:00.",
+      "createdAt": "2026-04-02T22:57"
+    },
+    {
+      "id": "act-20260402225358-732",
+      "kind": "create-reminder",
+      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T02:54.",
+      "createdAt": "2026-04-02T22:53"
+    },
+    {
+      "id": "act-20260402225338-963",
+      "kind": "create-reminder",
+      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T02:54.",
+      "createdAt": "2026-04-02T22:53"
+    },
+    {
+      "id": "act-20260402225051-137",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder '22点48分给老婆打电话'.",
+      "createdAt": "2026-04-02T22:50"
+    },
+    {
+      "id": "act-20260402224712-594",
+      "kind": "create-reminder",
+      "summary": "Created reminder '22点48分给老婆打电话' for 2026-04-02T22:48.",
+      "createdAt": "2026-04-02T22:47"
+    },
+    {
+      "id": "act-local-memory-ready",
+      "kind": "init",
+      "summary": "HomeHub local memory is ready for schedule and reminder requests.",
+      "createdAt": "2026-04-02T22:41"
+    }
+  ]
+}

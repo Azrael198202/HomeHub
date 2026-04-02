@@ -20,6 +20,9 @@ let isBuddySpeaking = false;
 let isBuddyThinking = false;
 let buddySpeechTimer = null;
 let buddyDragState = { dragging: false, offsetX: 0, offsetY: 0, x: null, y: null };
+let activeReminderId = null;
+let announcedReminderId = null;
+let isCompletingReminder = false;
 
 const UI_TEXT = {
   "en-US": {
@@ -74,6 +77,13 @@ const UI_TEXT = {
       tts: "TTS",
       locale: "Locale",
       weather: "Weather",
+      upcomingEvents: "Upcoming Events",
+      pendingReminders: "Pending Reminders",
+      recentActions: "Recent Actions",
+      studyAgents: "Study Plan Agents",
+      studyRecent: "Agent Updates",
+      agentTypes: "Available Agent Types",
+      noUpcoming: "No local schedule items yet.",
       sample: "Sample",
       noConversation: "No conversation yet.",
       micIdle: "Stopped",
@@ -81,7 +91,26 @@ const UI_TEXT = {
       browserNoMic: "This browser does not support microphone recording.",
       transcribing: "Transcribing your voice...",
       sendFailure: "Failed to send message.",
-      sttFailure: "Voice recognition failed."
+      sttFailure: "Voice recognition failed.",
+      route: "Router",
+      routeKind: "Flow",
+      routeTarget: "Handler",
+      routeAction: "Action",
+      routeReasoning: "Reasoning",
+      routeClarify: "Clarification",
+      routeGeneral: "General chat",
+      routeAgentFactory: "Agent factory",
+      pendingClarification: "Pending clarification",
+      originalRequest: "Original request"
+    },
+    reminder: {
+      eyebrow: "Time Reminder",
+      dueNow: "Due now",
+      noNotes: "HomeHub will move to the next reminder after you confirm this one.",
+      markComplete: "Mark Complete",
+      completing: "Completing...",
+      completed: "HomeHub: Reminder completed.",
+      voicePrefix: "Reminder"
     },
     pairing: {
       description: "Pair with the companion app or IM bridge by scanning this code.",
@@ -185,6 +214,13 @@ const UI_TEXT = {
       tts: "语音合成",
       locale: "语言",
       weather: "天气",
+      upcomingEvents: "即将开始的日程",
+      pendingReminders: "待触发提醒",
+      recentActions: "最近动作",
+      studyAgents: "学习计划智能体",
+      studyRecent: "智能体更新",
+      agentTypes: "可创建智能体类型",
+      noUpcoming: "还没有本地日程。",
       sample: "示例",
       noConversation: "还没有对话内容。",
       micIdle: "已停止",
@@ -192,7 +228,26 @@ const UI_TEXT = {
       browserNoMic: "当前浏览器不支持麦克风录音。",
       transcribing: "正在识别语音...",
       sendFailure: "发送消息失败。",
-      sttFailure: "语音识别失败。"
+      sttFailure: "语音识别失败。",
+      route: "路由器",
+      routeKind: "流向",
+      routeTarget: "处理者",
+      routeAction: "动作",
+      routeReasoning: "判断依据",
+      routeClarify: "待澄清",
+      routeGeneral: "普通对话",
+      routeAgentFactory: "智能体工厂",
+      pendingClarification: "待补充信息",
+      originalRequest: "原始请求"
+    },
+    reminder: {
+      eyebrow: "时间提醒",
+      dueNow: "现在需要处理",
+      noNotes: "确认这条提醒后，HomeHub 会自动切换到下一件事。",
+      markComplete: "完成提醒",
+      completing: "正在完成...",
+      completed: "HomeHub：这条提醒已完成。",
+      voicePrefix: "提醒你"
     },
     pairing: {
       description: "扫描此码即可通过手机伴侣应用或 IM 桥接进行配对。",
@@ -296,6 +351,13 @@ const UI_TEXT = {
       tts: "音声合成",
       locale: "言語",
       weather: "天気",
+      upcomingEvents: "今後の予定",
+      pendingReminders: "保留中のリマインダー",
+      recentActions: "最近の操作",
+      studyAgents: "学習計画エージェント",
+      studyRecent: "エージェント更新",
+      agentTypes: "作成可能なエージェント",
+      noUpcoming: "ローカル予定はまだありません。",
       sample: "サンプル",
       noConversation: "まだ会話がありません。",
       micIdle: "停止",
@@ -303,7 +365,26 @@ const UI_TEXT = {
       browserNoMic: "このブラウザはマイク録音に対応していません。",
       transcribing: "音声を認識しています...",
       sendFailure: "メッセージ送信に失敗しました。",
-      sttFailure: "音声認識に失敗しました。"
+      sttFailure: "音声認識に失敗しました。",
+      route: "ルーター",
+      routeKind: "フロー",
+      routeTarget: "担当",
+      routeAction: "アクション",
+      routeReasoning: "判断理由",
+      routeClarify: "確認待ち",
+      routeGeneral: "通常会話",
+      routeAgentFactory: "エージェント工場",
+      pendingClarification: "確認待ち情報",
+      originalRequest: "元の依頼"
+    },
+    reminder: {
+      eyebrow: "時間リマインダー",
+      dueNow: "今すぐ対応",
+      noNotes: "このリマインダーを完了すると、HomeHub は次の予定に切り替えます。",
+      markComplete: "完了にする",
+      completing: "完了処理中...",
+      completed: "HomeHub: このリマインダーを完了しました。",
+      voicePrefix: "リマインダーです"
     },
     pairing: {
       description: "このコードをスキャンすると、コンパニオンアプリや IM ブリッジとペアリングできます。",
@@ -752,6 +833,8 @@ function applyStaticTranslations() {
   document.getElementById("custom-provider-save").textContent = t("settings.customSave");
   document.getElementById("dock-eyebrow").textContent = t("top.conversationDock");
   document.getElementById("dock-title").textContent = t("top.currentRequest");
+  document.getElementById("reminder-eyebrow").textContent = t("reminder.eyebrow");
+  syncReminderButtonState();
   const micCore = document.querySelector("#mic-orb .mic-core");
   if (micCore && !isRecording) micCore.textContent = t("voice.micIdle");
 }
@@ -765,13 +848,104 @@ function renderClock() {
 function renderStatusStrip(data) {
   const weatherValue = `${data.weather.condition} ${data.weather.temperatureC}°C`;
   const weatherMeta = `${data.weather.location} · ${data.weather.highC}° / ${data.weather.lowC}°`;
+  const nextReminder = data.assistantMemory?.dueReminders?.[0] || data.assistantMemory?.pendingReminders?.[0];
+  const tipValue = nextReminder ? nextReminder.title : t("status.remoteReady");
+  const tipMeta = nextReminder ? nextReminder.triggerAt.replace("T", " ") : "Directional navigation enabled";
   document.getElementById("status-strip").innerHTML = `
     ${statCard(t("status.status"), localizeMode(data.systemStatus.mode), "Voice link active", "status", "status-card status-card-status")}
     ${statCard(t("status.weather"), weatherValue, weatherMeta, "weather", "status-card status-card-weather")}
     ${statCard(t("status.box"), data.systemStatus.boxHealth, "Living room runtime", "box", "status-card status-card-box")}
-    ${statCard(t("status.tip"), t("status.remoteReady"), "Directional navigation enabled", "tip", "status-card status-card-tip")}
+    ${statCard(t("status.tip"), tipValue, tipMeta, "tip", "status-card status-card-tip")}
   `;
   document.getElementById("mic-status").textContent = localizeMode(data.systemStatus.mode);
+}
+
+function formatReminderTimestamp(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value).replace("T", " ");
+  }
+  return parsed.toLocaleString(currentLocale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function buildReminderSpeech(reminder) {
+  const title = reminder?.title || "";
+  const localePrefix = t("reminder.voicePrefix");
+  if (currentLocale === "zh-CN") {
+    return `${localePrefix}，现在该${title}了。`;
+  }
+  if (currentLocale === "ja-JP") {
+    return `${localePrefix}。${title}の時間です。`;
+  }
+  return `${localePrefix}: it is time to ${title}.`;
+}
+
+function syncReminderButtonState() {
+  const completeButton = document.getElementById("reminder-complete");
+  const overlay = document.getElementById("reminder-overlay");
+  if (!completeButton) return;
+  completeButton.disabled = isCompletingReminder;
+  completeButton.setAttribute("aria-busy", isCompletingReminder ? "true" : "false");
+  completeButton.textContent = isCompletingReminder ? t("reminder.completing") : t("reminder.markComplete");
+  if (overlay) {
+    overlay.classList.toggle("is-processing", isCompletingReminder);
+  }
+}
+
+function speakWithHomeHub(text, lang = currentLocale) {
+  if (!("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  isBuddySpeaking = true;
+  if (buddySpeechTimer) clearTimeout(buddySpeechTimer);
+  renderFloatingBuddy();
+  utterance.onend = () => {
+    isBuddySpeaking = false;
+    renderFloatingBuddy();
+  };
+  window.speechSynthesis.speak(utterance);
+  buddySpeechTimer = setTimeout(() => {
+    isBuddySpeaking = false;
+    renderFloatingBuddy();
+  }, 4200);
+}
+
+function renderReminderOverlay(data) {
+  const overlay = document.getElementById("reminder-overlay");
+  const dueReminder = data.assistantMemory?.dueReminders?.[0] || null;
+  if (!overlay) return;
+  if (!dueReminder) {
+    overlay.hidden = true;
+    activeReminderId = null;
+    return;
+  }
+
+  activeReminderId = dueReminder.id;
+  overlay.hidden = false;
+  document.getElementById("reminder-title").textContent = dueReminder.title || t("reminder.dueNow");
+  document.getElementById("reminder-time").textContent = `${t("reminder.dueNow")} · ${formatReminderTimestamp(dueReminder.triggerAt)}`;
+  document.getElementById("reminder-notes").textContent = dueReminder.notes || t("reminder.noNotes");
+  const completeButton = document.getElementById("reminder-complete");
+  syncReminderButtonState();
+  requestAnimationFrame(() => {
+    if (!overlay.hidden && !isCompletingReminder) completeButton.focus();
+  });
+
+  if (announcedReminderId !== dueReminder.id) {
+    announcedReminderId = dueReminder.id;
+    const spoken = buildReminderSpeech(dueReminder);
+    updateSpokenLine(`${localizeSpeaker("HomeHub")}: ${spoken}`);
+    speakWithHomeHub(spoken);
+  }
 }
 
 function getCurrentLanguage(data) {
@@ -820,11 +994,18 @@ function renderTimeline(events) {
 }
 
 function renderModules(modules) {
-  document.getElementById("modules").innerHTML = modules.map((item) => translateItem(item, moduleTranslations)).map((module) => `
-    <div class="module-card remote-target focusable-card" tabindex="0" data-action-text="${escapeHtml(module.actionLabel)}" data-title="${escapeHtml(module.name)}">
-      <div class="dot ${stateColor[module.state] || "is-muted"}"></div>
-      <div>
-        <strong>${module.name}</strong>
+  document.getElementById("modules").innerHTML = modules.map((item) => {
+    const localized = moduleTranslations[item.id]?.[currentLocale] || {};
+    return {
+      ...item,
+      name: localized.name || item.name,
+      actionLabel: localized.actionLabel || item.actionLabel
+    };
+  }).map((module) => `
+      <div class="module-card remote-target focusable-card" tabindex="0" data-action-text="${escapeHtml(module.actionLabel)}" data-title="${escapeHtml(module.name)}">
+        <div class="dot ${stateColor[module.state] || "is-muted"}"></div>
+        <div>
+          <strong>${module.name}</strong>
         <p>${module.summary}</p>
       </div>
       <button type="button">${module.actionLabel}</button>
@@ -877,12 +1058,44 @@ function renderPairing(pairing, relayMessages) {
 
 function renderVoice(data) {
   const language = getCurrentLanguage(data);
+  const upcomingEvents = data.assistantMemory?.upcomingEvents || [];
+  const reminders = data.assistantMemory?.pendingReminders || [];
+  const recentActions = data.assistantMemory?.recentActions || [];
+  const studyAgents = data.studyPlanAgents || [];
+  const studyRecent = data.studyPlanRecentActions || [];
+  const agentTypes = data.agentTypes || [];
+  const voiceRoute = data.lastVoiceRoute || data.voiceRoute || null;
+  const pendingClarification = data.pendingVoiceClarification || null;
+  const routeKindLabel = voiceRoute?.kind === "feature"
+    ? (voiceRoute.selected?.intent || "-")
+    : voiceRoute?.kind === "agent_factory"
+      ? t("voice.routeAgentFactory")
+      : voiceRoute?.kind === "clarify"
+        ? t("voice.routeClarify")
+        : t("voice.routeGeneral");
+  const routeTargetLabel = voiceRoute?.selected
+    ? `${voiceRoute.selected.featureName || "-"} / ${voiceRoute.selected.intent || "-"}`
+    : "-";
+  const routeActionLabel = voiceRoute?.selected?.action || "-";
+  const routeReasoning = voiceRoute?.clarificationQuestion || voiceRoute?.reasoning || "-";
+  const clarificationLine = pendingClarification
+    ? `<p><strong>${t("voice.pendingClarification")}:</strong> ${pendingClarification.clarificationQuestion || "-"} · ${t("voice.originalRequest")} ${pendingClarification.originalRequest || "-"}</p>`
+    : "";
   document.getElementById("voice").innerHTML = `
     <p>${t("voice.wakeWord")}: ${data.voiceProfile.wakeWord}</p>
     <p>${t("voice.stt")}: ${data.voiceProfile.sttProvider}</p>
     <p>${t("voice.tts")}: ${data.voiceProfile.ttsProvider}</p>
     <p>${t("voice.locale")}: ${language?.code || data.voiceProfile.locale}</p>
     <p>${t("voice.weather")}: ${data.weather.condition}, ${data.weather.highC}C / ${data.weather.lowC}C</p>
+    <p><strong>${t("voice.route")}:</strong> ${t("voice.routeKind")} ${routeKindLabel} · ${t("voice.routeTarget")} ${routeTargetLabel} · ${t("voice.routeAction")} ${routeActionLabel}</p>
+    <p><strong>${t("voice.routeReasoning")}:</strong> ${routeReasoning}</p>
+    ${clarificationLine}
+    <p><strong>${t("voice.upcomingEvents")}:</strong> ${upcomingEvents.length ? upcomingEvents.map((event) => `${event.title} (${event.startAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
+    <p><strong>${t("voice.pendingReminders")}:</strong> ${reminders.length ? reminders.map((item) => `${item.title} (${item.triggerAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
+    <p><strong>${t("voice.recentActions")}:</strong> ${recentActions.length ? recentActions.map((item) => item.summary).join(" · ") : "-"}</p>
+    <p><strong>${t("voice.studyAgents")}:</strong> ${studyAgents.length ? studyAgents.map((item) => `${item.name} (${item.status})${item.artifact ? ` ${item.artifact.split("\n")[1] || ""}` : ""}`).join(" · ") : "-"}</p>
+    <p><strong>${t("voice.studyRecent")}:</strong> ${studyRecent.length ? studyRecent.map((item) => item.summary).join(" · ") : "-"}</p>
+    <p><strong>${t("voice.agentTypes")}:</strong> ${agentTypes.length ? agentTypes.map((item) => `${item.name}: ${item.summary}`).join(" · ") : "-"}</p>
   `;
 
   document.getElementById("conversation").innerHTML = data.conversation.map((item, index, list) => `
@@ -905,6 +1118,45 @@ function renderVoice(data) {
     conversation.scrollTop = conversation.scrollHeight;
   });
   renderFloatingBuddy();
+}
+
+async function completeActiveReminder() {
+  if (!activeReminderId || isCompletingReminder) return;
+  const reminderId = activeReminderId;
+  const overlay = document.getElementById("reminder-overlay");
+  isCompletingReminder = true;
+  syncReminderButtonState();
+  try {
+    if (overlay) {
+      overlay.hidden = true;
+    }
+    activeReminderId = null;
+    const response = await fetch("/api/memory/reminders/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: reminderId })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      activeReminderId = reminderId;
+      if (overlay) {
+        overlay.hidden = false;
+      }
+      updateSpokenLine(`HomeHub: ${payload.error || "Failed to complete reminder."}`);
+      return;
+    }
+    if (latestDashboard) {
+      latestDashboard.assistantMemory = payload.assistantMemory || latestDashboard.assistantMemory;
+      renderStatusStrip(latestDashboard);
+      renderVoice(latestDashboard);
+      renderReminderOverlay(latestDashboard);
+    }
+    updateSpokenLine(t("reminder.completed"));
+    await loadDashboard();
+  } finally {
+    isCompletingReminder = false;
+    syncReminderButtonState();
+  }
 }
 
 function renderSettings(data) {
@@ -1046,6 +1298,10 @@ async function triggerRemoteAction(target) {
     updateSpokenLine(t("prompts.switchedTab", { tab: target.textContent }));
     return;
   }
+  if (target.id === "reminder-complete") {
+    await completeActiveReminder();
+    return;
+  }
   if (target.id === "mic-orb") {
     await toggleMicrophoneRecording();
     return;
@@ -1116,7 +1372,7 @@ function setupRemoteNavigation() {
   document.addEventListener("click", async (event) => {
     const target = event.target.closest(".remote-target");
     if (!target) return;
-    if (target.dataset.languageCode || target.dataset.providerType || target.classList.contains("fake-qr") || target.id === "mic-orb") {
+    if (target.dataset.languageCode || target.dataset.providerType || target.classList.contains("fake-qr") || target.id === "mic-orb" || target.id === "reminder-complete") {
       await triggerRemoteAction(target);
     }
   });
@@ -1163,6 +1419,7 @@ async function loadDashboard() {
   renderSkills(data.skillCatalog);
   renderPairing(data.pairingSession, data.relayMessages);
   renderVoice(data);
+  renderReminderOverlay(data);
   renderSettings(data);
   renderFloatingBuddy();
 }
@@ -1261,26 +1518,20 @@ async function sendVoiceMessage(message) {
     return;
   }
   updateConversation(payload.conversation || []);
-  updateSpokenLine(`${localizeSpeaker("HomeHub")}: ${payload.reply}`);
-  if ("speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(payload.reply);
-    utterance.lang = currentLocale;
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    isBuddySpeaking = true;
-    if (buddySpeechTimer) clearTimeout(buddySpeechTimer);
-    renderFloatingBuddy();
-    utterance.onend = () => {
-      isBuddySpeaking = false;
-      renderFloatingBuddy();
-    };
-    window.speechSynthesis.speak(utterance);
-    buddySpeechTimer = setTimeout(() => {
-      isBuddySpeaking = false;
-      renderFloatingBuddy();
-    }, 4200);
+  if (payload.voiceRoute && latestDashboard) {
+    latestDashboard.lastVoiceRoute = payload.voiceRoute;
+    latestDashboard.pendingVoiceClarification = payload.pendingVoiceClarification || null;
+    renderVoice(latestDashboard);
   }
+  if (payload.assistantMemory && latestDashboard) {
+    latestDashboard.assistantMemory = payload.assistantMemory;
+    renderStatusStrip(latestDashboard);
+    renderVoice(latestDashboard);
+    renderReminderOverlay(latestDashboard);
+  }
+  await loadDashboard();
+  updateSpokenLine(`${localizeSpeaker("HomeHub")}: ${payload.reply}`);
+  speakWithHomeHub(payload.reply);
 }
 
 async function transcribeBlob(blob) {
@@ -1442,10 +1693,30 @@ function setupCustomProviderControls() {
   });
 }
 
+function setupReminderOverlayControls() {
+  const completeButton = document.getElementById("reminder-complete");
+  if (!completeButton) return;
+  const runComplete = async (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    await completeActiveReminder();
+  };
+  completeButton.onclick = runComplete;
+  completeButton.addEventListener("pointerup", runComplete);
+  completeButton.addEventListener("keydown", async (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      await runComplete(event);
+    }
+  });
+}
+
 setupTabs();
 setupRemoteNavigation();
 setupVoiceControls();
 setupCustomProviderControls();
+setupReminderOverlayControls();
 loadBuddyPosition();
 setupFloatingBuddyControls();
 applyStaticTranslations();
