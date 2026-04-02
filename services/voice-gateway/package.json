@@ -1,0 +1,11 @@
+{
+  "name": "@homehub/voice-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.mjs",
+    "build": "echo voice-gateway build placeholder",
+    "lint": "echo voice-gateway lint placeholder"
+  }
+}

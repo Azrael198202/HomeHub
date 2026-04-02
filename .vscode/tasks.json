@@ -1,0 +1,28 @@
+﻿{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run HomeHub Runtime",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "runtime/server.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Open HomeHub In Browser",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "Start-Process http://127.0.0.1:8787"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

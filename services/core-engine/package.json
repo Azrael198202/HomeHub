@@ -1,0 +1,11 @@
+{
+  "name": "@homehub/core-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "build": "echo core-engine build placeholder",
+    "lint": "echo core-engine lint placeholder"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "homehub",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:tv": "npm --workspace @homehub/tv-shell run dev",
+    "dev:core": "npm --workspace @homehub/core-engine run dev",
+    "dev:api": "npm --workspace @homehub/companion-api run dev",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces"
+  }
+}

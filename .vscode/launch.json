@@ -1,0 +1,17 @@
+﻿{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug HomeHub Runtime",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/runtime/server.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true,
+      "env": {
+        "PYTHONUTF8": "1"
+      }
+    }
+  ]
+}

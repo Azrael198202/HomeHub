@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+.turbo
+.dart_tool
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+runtime/settings.json
+runtime/secrets.local.json
+runtime/secrets.prod.json
+runtime/usage-cost-log.jsonl
+runtime/google-cloud-service-account.json

@@ -1,0 +1,11 @@
+{
+  "name": "@homehub/tv-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "echo tv-shell dev placeholder",
+    "build": "echo tv-shell build placeholder",
+    "lint": "echo tv-shell lint placeholder"
+  }
+}
