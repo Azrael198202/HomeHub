@@ -6,10 +6,12 @@
   planning: "is-planning",
   complete: "is-ready",
   blocked: "is-attention",
-  idle: "is-muted"
+  idle: "is-muted",
+  collecting: "is-attention",
+  cancelled: "is-muted"
 };
 
-const tabs = ["home", "agents", "voice", "pairing", "settings"];
+const tabs = ["home", "agents", "voice", "test", "pairing", "settings"];
 let activeTab = "home";
 let latestDashboard = null;
 let currentLocale = "en-US";
@@ -23,12 +25,15 @@ let buddyDragState = { dragging: false, offsetX: 0, offsetY: 0, x: null, y: null
 let activeReminderId = null;
 let announcedReminderId = null;
 let isCompletingReminder = false;
+let testConversation = [];
+let customAgentStudio = { items: [], recentActions: [], selectedAgentId: "", isLoading: false, isGenerating: false };
+let testUploadAttachment = null;
 
 const UI_TEXT = {
   "en-US": {
     metaTitle: "HomeHub TV Box",
     brandEyebrow: "AI Box for the Living Room",
-    tabs: { home: "Home", agents: "Agents", voice: "Voice", pairing: "Pairing", settings: "Settings" },
+    tabs: { home: "Home", agents: "Agents", voice: "Voice", test: "Test", pairing: "Pairing", settings: "Settings" },
     top: {
       homeAssistant: "Household Assistant",
       starterLayer: "Starter Layer",
@@ -47,6 +52,8 @@ const UI_TEXT = {
       transient: "Transient",
       languageMode: "Language Mode",
       audioStack: "AI Capability Catalog",
+      testLab: "Text Test Lab",
+      blueprintStudio: "Blueprint Studio",
       sttProvider: "STT Provider",
       ttsProvider: "TTS Provider",
       conversationDock: "Conversation Dock",
@@ -100,6 +107,7 @@ const UI_TEXT = {
       routeClarify: "Clarification",
       routeGeneral: "General chat",
       routeAgentFactory: "Agent factory",
+      routeUiAction: "UI action",
       pendingClarification: "Pending clarification",
       originalRequest: "Original request"
     },
@@ -144,6 +152,22 @@ const UI_TEXT = {
       configured: "Configured",
       missing: "Missing"
     },
+    test: {
+      guidance: "Use text instead of voice to test HomeHub routing, follow-up questions, and replies.",
+      send: "Send Test Message",
+      inputPlaceholder: "Type a request such as: create an agent that reviews our family bills every Sunday.",
+      blueprintsGuidance: "Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.",
+      emptyConversation: "No text test conversation yet.",
+      emptyBlueprints: "No custom blueprints yet.",
+      generate: "Generate Feature from Blueprint",
+      generating: "Generating feature scaffold...",
+      generated: "HomeHub: Feature scaffold generated for {name}.",
+      generateFailed: "HomeHub: Failed to generate feature scaffold. {error}",
+      noBlueprintSelected: "HomeHub: Select a completed blueprint first.",
+      generatedTag: "Feature ready",
+      storageTag: "Storage scaffold",
+      recentActionsTitle: "Recent Actions"
+    },
     prompts: {
       switchedTab: "HomeHub: Switched to {tab}.",
       returnedTab: "HomeHub: Returned to {tab}.",
@@ -165,7 +189,7 @@ const UI_TEXT = {
   "zh-CN": {
     metaTitle: "HomeHub 电视盒子",
     brandEyebrow: "客厅 AI 盒子",
-    tabs: { home: "首页", agents: "智能体", voice: "语音", pairing: "配对", settings: "设置" },
+    tabs: { home: "首页", agents: "智能体", voice: "语音", test: "测试", pairing: "配对", settings: "设置" },
     top: {
       homeAssistant: "家庭助理",
       starterLayer: "基础能力层",
@@ -184,6 +208,8 @@ const UI_TEXT = {
       transient: "临时消息",
       languageMode: "语言模式",
       audioStack: "AI 能力模型目录",
+      testLab: "文字测试台",
+      blueprintStudio: "蓝图工作室",
       sttProvider: "语音识别提供方",
       ttsProvider: "语音合成提供方",
       conversationDock: "对话底座",
@@ -237,6 +263,7 @@ const UI_TEXT = {
       routeClarify: "待澄清",
       routeGeneral: "普通对话",
       routeAgentFactory: "智能体工厂",
+      routeUiAction: "界面动作",
       pendingClarification: "待补充信息",
       originalRequest: "原始请求"
     },
@@ -281,6 +308,22 @@ const UI_TEXT = {
       configured: "已配置",
       missing: "未配置"
     },
+    test: {
+      guidance: "这里用文字来测试 HomeHub 的路由、追问补全和回复，不必打开语音。",
+      send: "发送测试消息",
+      inputPlaceholder: "例如：帮我创建一个每周日检查家庭账单的智能体。",
+      blueprintsGuidance: "选中一个已完成蓝图后，可以直接生成带持久化存储和 API 占位的 feature 脚手架。",
+      emptyConversation: "还没有文字测试对话。",
+      emptyBlueprints: "还没有通用智能体蓝图。",
+      generate: "从蓝图生成 feature",
+      generating: "正在生成 feature 脚手架...",
+      generated: "HomeHub：已为 {name} 生成 feature 脚手架。",
+      generateFailed: "HomeHub：生成 feature 脚手架失败。{error}",
+      noBlueprintSelected: "HomeHub：请先选中一个已完成的蓝图。",
+      generatedTag: "已生成 feature",
+      storageTag: "带存储脚手架",
+      recentActionsTitle: "最近动作"
+    },
     prompts: {
       switchedTab: "HomeHub：已切换到 {tab}。",
       returnedTab: "HomeHub：已返回 {tab}。",
@@ -302,7 +345,7 @@ const UI_TEXT = {
   "ja-JP": {
     metaTitle: "HomeHub テレビボックス",
     brandEyebrow: "リビング向け AI ボックス",
-    tabs: { home: "ホーム", agents: "エージェント", voice: "音声", pairing: "ペアリング", settings: "設定" },
+    tabs: { home: "ホーム", agents: "エージェント", voice: "音声", test: "テスト", pairing: "ペアリング", settings: "設定" },
     top: {
       homeAssistant: "家庭アシスタント",
       starterLayer: "基本レイヤー",
@@ -321,6 +364,8 @@ const UI_TEXT = {
       transient: "一時保存",
       languageMode: "言語モード",
       audioStack: "AI 機能モデル一覧",
+      testLab: "テキストテスト",
+      blueprintStudio: "ブループリントスタジオ",
       sttProvider: "音声認識プロバイダー",
       ttsProvider: "音声合成プロバイダー",
       conversationDock: "会話ドック",
@@ -374,6 +419,7 @@ const UI_TEXT = {
       routeClarify: "確認待ち",
       routeGeneral: "通常会話",
       routeAgentFactory: "エージェント工場",
+      routeUiAction: "UI 操作",
       pendingClarification: "確認待ち情報",
       originalRequest: "元の依頼"
     },
@@ -417,6 +463,22 @@ const UI_TEXT = {
       openaiKey: "OpenAI キー",
       configured: "設定済み",
       missing: "未設定"
+    },
+    test: {
+      guidance: "音声の代わりにテキストで、HomeHub のルーティング、追質問、返答をテストします。",
+      send: "テストメッセージを送信",
+      inputPlaceholder: "例: 毎週日曜に家計の請求を確認するエージェントを作って。",
+      blueprintsGuidance: "完成済みブループリントを選ぶと、永続ストレージと API の雛形付き feature を生成できます。",
+      emptyConversation: "まだテキストテスト会話はありません。",
+      emptyBlueprints: "まだカスタムブループリントはありません。",
+      generate: "ブループリントから feature を生成",
+      generating: "feature 雛形を生成しています...",
+      generated: "HomeHub: {name} の feature 雛形を生成しました。",
+      generateFailed: "HomeHub: feature 雛形の生成に失敗しました。{error}",
+      noBlueprintSelected: "HomeHub: 先に完成済みブループリントを選択してください。",
+      generatedTag: "生成済み",
+      storageTag: "保存雛形あり",
+      recentActionsTitle: "最近の操作"
     },
     prompts: {
       switchedTab: "HomeHub: {tab} タブに切り替えました。",
@@ -470,6 +532,8 @@ function localizeStatusWord(status) {
     running: { "zh-CN": "运行中", "ja-JP": "実行中" },
     planning: { "zh-CN": "规划中", "ja-JP": "計画中" },
     complete: { "zh-CN": "已完成", "ja-JP": "完了" },
+    review: { "zh-CN": "待确认", "ja-JP": "確認待ち" },
+    collecting: { "zh-CN": "收集中", "ja-JP": "収集中" },
     ready: { "zh-CN": "就绪", "ja-JP": "準備完了" },
     attention: { "zh-CN": "注意", "ja-JP": "注意" }
   };
@@ -650,6 +714,7 @@ function buddyPoseForTab() {
     home: "home",
     agents: "agents",
     voice: "voice",
+    test: "test",
     pairing: "pairing",
     settings: "settings",
   };
@@ -662,6 +727,7 @@ function buddyPromptForTab() {
       home: "我在这里陪你整理家庭与工作。",
       agents: "我在协调多智能体任务。",
       voice: isRecording ? "我正在认真听你说话。" : "按下麦克风，我们开始对话。",
+      test: "这里最适合用文字调试新的智能体蓝图。",
       pairing: "我可以帮你把设备和消息连起来。",
       settings: "这里可以继续扩展我的能力边界。"
     },
@@ -669,6 +735,7 @@ function buddyPromptForTab() {
       home: "I am here for both family life and focused work.",
       agents: "I am coordinating the multi-agent workflow.",
       voice: isRecording ? "I am listening carefully." : "Press the mic and let's talk.",
+      test: "This is the best place to test new blueprints through text.",
       pairing: "I can help bridge your devices and messages.",
       settings: "This is where we expand my capabilities."
     },
@@ -676,6 +743,7 @@ function buddyPromptForTab() {
       home: "暮らしにも仕事にも寄り添います。",
       agents: "マルチエージェントの流れを整えています。",
       voice: isRecording ? "今、しっかり聞いています。" : "マイクを押して話しかけてください。",
+      test: "ここでは新しいブループリントを文字で試せます。",
       pairing: "端末とメッセージの接続を手伝います。",
       settings: "ここで私の機能を広げていきます。"
     }
@@ -689,6 +757,7 @@ function buddySubtitleForTab() {
       home: "陪伴生活，也陪伴工作",
       agents: "多智能体协作中",
       voice: isRecording ? "正在倾听" : "随时可以开口",
+      test: "文字测试与蓝图生成",
       pairing: "连接更多设备与消息",
       settings: "继续扩展无限想象"
     },
@@ -696,6 +765,7 @@ function buddySubtitleForTab() {
       home: "For home life and focused work",
       agents: "Coordinating multi-agent flows",
       voice: isRecording ? "Listening now" : "Ready whenever you are",
+      test: "Text testing and blueprint generation",
       pairing: "Bridging devices and messages",
       settings: "Expanding into more possibilities"
     },
@@ -703,6 +773,7 @@ function buddySubtitleForTab() {
       home: "暮らしにも仕事にも寄り添う",
       agents: "マルチエージェントを調整中",
       voice: isRecording ? "聞いています" : "いつでも話せます",
+      test: "テキスト検証と feature 生成",
       pairing: "端末とメッセージをつなぐ",
       settings: "可能性を広げていく"
     }
@@ -802,6 +873,7 @@ function applyStaticTranslations() {
   document.getElementById("tab-home").textContent = t("tabs.home");
   document.getElementById("tab-agents").textContent = t("tabs.agents");
   document.getElementById("tab-voice").textContent = t("tabs.voice");
+  document.getElementById("tab-test").textContent = t("tabs.test");
   document.getElementById("tab-pairing").textContent = t("tabs.pairing");
   document.getElementById("tab-settings").textContent = t("tabs.settings");
   document.getElementById("home-assistant-title").textContent = t("top.homeAssistant");
@@ -819,6 +891,15 @@ function applyStaticTranslations() {
   document.getElementById("voice-guidance").textContent = t("voice.guidance");
   document.getElementById("conversation-title").textContent = t("voice.onScreenConversation");
   document.getElementById("conversation-pill").textContent = t("top.transcript");
+  document.getElementById("test-title").textContent = t("top.testLab");
+  document.getElementById("test-pill").textContent = "Agent Factory";
+  document.getElementById("test-guidance").textContent = t("test.guidance");
+  document.getElementById("test-blueprints-title").textContent = t("top.blueprintStudio");
+  document.getElementById("test-blueprints-pill").textContent = t("test.storageTag");
+  document.getElementById("test-blueprints-guidance").textContent = t("test.blueprintsGuidance");
+  document.getElementById("test-input").placeholder = t("test.inputPlaceholder");
+  document.getElementById("test-send").textContent = t("test.send");
+  document.getElementById("test-generate-feature").textContent = customAgentStudio.isGenerating ? t("test.generating") : t("test.generate");
   document.getElementById("pairing-title").textContent = t("top.pairingRelay");
   document.getElementById("pairing-pill").textContent = "QR + Relay";
   document.getElementById("pairing-description").textContent = t("pairing.description");
@@ -1056,6 +1137,30 @@ function renderPairing(pairing, relayMessages) {
   `).join("");
 }
 
+function renderConversationItems(containerId, items, emptyText = t("voice.noConversation")) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!Array.isArray(items) || !items.length) {
+    container.innerHTML = `<div class="settings-card"><p>${emptyText}</p></div>`;
+    return;
+  }
+  container.innerHTML = items.map((item, index, list) => `
+    <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === list.length - 1 ? "is-latest" : ""}">
+      <div class="conversation-avatar">${item.speaker === "You" ? "ME" : "HH"}</div>
+      <div class="conversation-bubble">
+        <div class="conversation-head">
+          <strong>${localizeSpeaker(item.speaker)}</strong>
+          <span>${item.time || ""}</span>
+        </div>
+        <p>${escapeHtml(item.text || "")}</p>
+      </div>
+    </div>
+  `).join("");
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
+}
+
 function renderVoice(data) {
   const language = getCurrentLanguage(data);
   const upcomingEvents = data.assistantMemory?.upcomingEvents || [];
@@ -1070,6 +1175,8 @@ function renderVoice(data) {
     ? (voiceRoute.selected?.intent || "-")
     : voiceRoute?.kind === "agent_factory"
       ? t("voice.routeAgentFactory")
+      : voiceRoute?.kind === "ui_action"
+        ? t("voice.routeUiAction")
       : voiceRoute?.kind === "clarify"
         ? t("voice.routeClarify")
         : t("voice.routeGeneral");
@@ -1078,6 +1185,9 @@ function renderVoice(data) {
     : "-";
   const routeActionLabel = voiceRoute?.selected?.action || "-";
   const routeReasoning = voiceRoute?.clarificationQuestion || voiceRoute?.reasoning || "-";
+  const taskSpec = voiceRoute?.taskSpec || null;
+  const modelRoute = voiceRoute?.modelRoute || null;
+  const toolPlan = Array.isArray(voiceRoute?.toolPlan) ? voiceRoute.toolPlan : [];
   const clarificationLine = pendingClarification
     ? `<p><strong>${t("voice.pendingClarification")}:</strong> ${pendingClarification.clarificationQuestion || "-"} · ${t("voice.originalRequest")} ${pendingClarification.originalRequest || "-"}</p>`
     : "";
@@ -1089,6 +1199,9 @@ function renderVoice(data) {
     <p>${t("voice.weather")}: ${data.weather.condition}, ${data.weather.highC}C / ${data.weather.lowC}C</p>
     <p><strong>${t("voice.route")}:</strong> ${t("voice.routeKind")} ${routeKindLabel} · ${t("voice.routeTarget")} ${routeTargetLabel} · ${t("voice.routeAction")} ${routeActionLabel}</p>
     <p><strong>${t("voice.routeReasoning")}:</strong> ${routeReasoning}</p>
+    ${taskSpec ? `<p><strong>Task Spec:</strong> ${escapeHtml(taskSpec.taskType || "-")} · ${escapeHtml(taskSpec.summary || "-")} · inputs: ${escapeHtml((taskSpec.inputModes || []).join("/") || "-")} · missing: ${escapeHtml((taskSpec.missingInfo || []).join("/") || "-")}</p>` : ""}
+    ${modelRoute ? `<p><strong>Model Route:</strong> ${escapeHtml(modelRoute.execution || "-")} · ${escapeHtml(modelRoute.primaryModel || "-")} · fallback ${escapeHtml(modelRoute.fallbackModel || "-")} · ${escapeHtml(modelRoute.reason || "-")}</p>` : ""}
+    ${toolPlan.length ? `<p><strong>Tool Plan:</strong> ${escapeHtml(toolPlan.map((item) => `${item.label}${item.selected ? " [selected]" : ""}`).join(" · "))}</p>` : ""}
     ${clarificationLine}
     <p><strong>${t("voice.upcomingEvents")}:</strong> ${upcomingEvents.length ? upcomingEvents.map((event) => `${event.title} (${event.startAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
     <p><strong>${t("voice.pendingReminders")}:</strong> ${reminders.length ? reminders.map((item) => `${item.title} (${item.triggerAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
@@ -1097,27 +1210,92 @@ function renderVoice(data) {
     <p><strong>${t("voice.studyRecent")}:</strong> ${studyRecent.length ? studyRecent.map((item) => item.summary).join(" · ") : "-"}</p>
     <p><strong>${t("voice.agentTypes")}:</strong> ${agentTypes.length ? agentTypes.map((item) => `${item.name}: ${item.summary}`).join(" · ") : "-"}</p>
   `;
-
-  document.getElementById("conversation").innerHTML = data.conversation.map((item, index, list) => `
-    <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === list.length - 1 ? "is-latest" : ""}">
-      <div class="conversation-avatar">${item.speaker === "You" ? "ME" : "HH"}</div>
-      <div class="conversation-bubble">
-        <div class="conversation-head">
-          <strong>${localizeSpeaker(item.speaker)}</strong>
-          <span>${item.time}</span>
-        </div>
-        <p>${item.text}</p>
-      </div>
-    </div>
-  `).join("");
+  renderConversationItems("conversation", data.conversation, t("voice.noConversation"));
 
   const lastSpoken = data.conversation[data.conversation.length - 1];
   document.getElementById("spoken-line").textContent = lastSpoken ? `${localizeSpeaker(lastSpoken.speaker)}: ${lastSpoken.text}` : t("voice.noConversation");
-  const conversation = document.getElementById("conversation");
-  requestAnimationFrame(() => {
-    conversation.scrollTop = conversation.scrollHeight;
-  });
   renderFloatingBuddy();
+}
+
+function selectStudioAgent(agentId) {
+  customAgentStudio.selectedAgentId = agentId || "";
+  renderTestLab();
+}
+
+function getSelectedStudioAgent() {
+  const items = customAgentStudio.items || [];
+  return items.find((item) => item.id === customAgentStudio.selectedAgentId)
+    || items.find((item) => item.status === "complete")
+    || items[0]
+    || null;
+}
+
+function renderTestLab() {
+  const selected = getSelectedStudioAgent();
+  if (!customAgentStudio.selectedAgentId && selected) {
+    customAgentStudio.selectedAgentId = selected.id;
+  }
+
+  renderConversationItems("test-conversation", testConversation, t("test.emptyConversation"));
+
+  const studioContainer = document.getElementById("studio-blueprints");
+  if (studioContainer) {
+    if (!customAgentStudio.items.length) {
+      studioContainer.innerHTML = `<div class="settings-card"><p>${t("test.emptyBlueprints")}</p></div>`;
+    } else {
+      studioContainer.innerHTML = customAgentStudio.items.map((item) => {
+        const isSelected = item.id === customAgentStudio.selectedAgentId;
+        const tag = item.generatedFeaturePath ? t("test.generatedTag") : t("test.storageTag");
+        const statusClass = stateColor[item.status] || "is-muted";
+        const output = item.profile?.output || "-";
+        const trigger = item.profile?.trigger || "-";
+        const recordCount = Array.isArray(item.records) ? item.records.length : 0;
+        const latestRecord = recordCount ? item.records[0]?.message || "" : "";
+        return `
+          <div
+            class="studio-card remote-target focusable-card ${isSelected ? "is-selected" : ""}"
+            tabindex="0"
+            data-agent-id="${item.id}"
+            data-title="${escapeHtml(item.name || "Blueprint")}"
+          >
+            <div class="studio-head">
+              <strong>${escapeHtml(item.name || "Blueprint")}</strong>
+              <span class="pill ${statusClass}">${escapeHtml(localizeStatusWord(item.status || "draft"))}</span>
+            </div>
+            <p>${escapeHtml(item.profile?.goal || "-")}</p>
+            <div class="studio-meta">
+              <span class="mini-pill">${escapeHtml(trigger)}</span>
+              <span class="mini-pill capability">${escapeHtml(tag)}</span>
+              <span class="mini-pill">${recordCount} records</span>
+            </div>
+            <small>${escapeHtml(output)}</small>
+            ${latestRecord ? `<small>${escapeHtml(latestRecord)}</small>` : ""}
+            ${item.generatedFeaturePath ? `<small>${escapeHtml(item.generatedFeaturePath)}</small>` : ""}
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  const actionsLog = document.getElementById("studio-actions-log");
+  if (actionsLog) {
+    actionsLog.innerHTML = `
+      <strong>${t("test.recentActionsTitle")}</strong>
+      ${(customAgentStudio.recentActions || []).map((item) => `<div class="relay-item"><strong>${escapeHtml(item.createdAt || "")}</strong><p>${escapeHtml(item.summary || "")}</p></div>`).join("")}
+    `;
+  }
+
+  const generateButton = document.getElementById("test-generate-feature");
+  if (generateButton) {
+    generateButton.disabled = customAgentStudio.isGenerating;
+    generateButton.textContent = customAgentStudio.isGenerating ? t("test.generating") : t("test.generate");
+  }
+  const uploadMeta = document.getElementById("test-upload-meta");
+  if (uploadMeta) {
+    uploadMeta.textContent = testUploadAttachment
+      ? `Attached image: ${testUploadAttachment.name} (${Math.round((testUploadAttachment.sizeBytes || 0) / 1024)} KB)`
+      : "";
+  }
 }
 
 async function completeActiveReminder() {
@@ -1166,6 +1344,7 @@ function renderSettings(data) {
   const secrets = data.audioProviders?.secrets || {};
   const modelCatalog = data.modelCatalog || [];
   const counts = data.audioProviders?.counts || { total: modelCatalog.length, editable: 0 };
+  const runtimeProfile = data.runtimeProfile || null;
 
   document.getElementById("languages").innerHTML = (data.languageSettings?.supported || []).map((item) => `
     <div class="language-card remote-target focusable-card ${item.code === language?.code ? "is-selected-language" : ""}" tabindex="0" data-language-code="${item.code}" data-title="${escapeHtml(item.label)}">
@@ -1180,6 +1359,9 @@ function renderSettings(data) {
       <strong>${item.label}</strong>
       <div class="meta-row">
         <span class="mini-pill source">${item.source}</span>
+        ${item.deployment ? `<span class="mini-pill deployment">${escapeHtml(item.deployment)}</span>` : ""}
+        ${item.access ? `<span class="mini-pill access">${escapeHtml(item.access)}</span>` : ""}
+        ${item.status ? `<span class="mini-pill status">${escapeHtml(item.status)}</span>` : ""}
         ${item.capabilities.map((capability) => `<span class="mini-pill capability">${capability}</span>`).join("")}
       </div>
       <p>${item.summary}</p>
@@ -1188,6 +1370,9 @@ function renderSettings(data) {
       </div>
       <small>${(item.languages || []).join(" / ")}</small>
       <small>${t("settings.syncOpenclaw")}: ${item.sync?.openclaw || "manual"} | ${t("settings.syncWorkbuddy")}: ${item.sync?.workbuddy || "manual"}</small>
+      ${(item.requirements || []).length ? `<div class="provider-notes"><strong>Needs</strong><ul>${item.requirements.map((requirement) => `<li>${escapeHtml(requirement)}</li>`).join("")}</ul></div>` : ""}
+      ${(item.notes || []).length ? `<div class="provider-notes"><strong>Route Tips</strong><ul>${item.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
+      ${item.installCommand ? `<div class="provider-install"><strong>Install</strong><code>${escapeHtml(item.installCommand)}</code></div>` : ""}
       <div class="provider-actions">
         ${(item.actions || []).map((action) => `
           <button
@@ -1230,6 +1415,16 @@ function renderSettings(data) {
       <p>${Object.values(catalog).some((provider) => provider.sync?.openclaw) ? "Manual import / export" : "Not set"}</p>
       <p>${t("settings.syncWorkbuddy")}: Public sync API not confirmed</p>
     </div>
+    ${runtimeProfile ? `
+      <div class="settings-card">
+        <strong>Runtime Strategy</strong>
+        <p>${escapeHtml(runtimeProfile.label || "-")}</p>
+        <p>${escapeHtml(runtimeProfile.summary || "-")}</p>
+        <p>Local: ${escapeHtml((runtimeProfile.localRoles || []).join(" / ") || "-")}</p>
+        <p>Cloud: ${escapeHtml((runtimeProfile.cloudRoles || []).join(" / ") || "-")}</p>
+        <p>Installed local models: ${escapeHtml((runtimeProfile.localDetected || []).slice(0, 5).join(", ") || "-")}</p>
+      </div>
+    ` : ""}
   `;
 }
 
@@ -1241,11 +1436,178 @@ function updateSpokenLine(text) {
 function updateConversation(conversation) {
   if (!latestDashboard) return;
   latestDashboard.conversation = conversation;
+  testConversation = Array.isArray(conversation) ? conversation : testConversation;
   renderVoice(latestDashboard);
+  renderTestLab();
+}
+
+function focusUiNode(node, selector = "") {
+  let target = node;
+  if (!(target instanceof HTMLElement)) return false;
+  if (selector) {
+    const nested = target.matches(selector) ? target : target.querySelector(selector);
+    if (nested instanceof HTMLElement) target = nested;
+  }
+  if (!target.classList.contains("remote-target") && !["INPUT", "TEXTAREA", "BUTTON"].includes(target.tagName)) {
+    const fallback = target.querySelector(".remote-target, button, textarea, input, [tabindex]");
+    if (fallback instanceof HTMLElement) target = fallback;
+  }
+  target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+  if (typeof target.focus === "function") {
+    target.focus();
+  }
+  return true;
+}
+
+function executeUiAction(action) {
+  if (!action || typeof action !== "object") return false;
+  if (action.type === "switch_tab" && action.tab && tabs.includes(action.tab)) {
+    activateTab(action.tab);
+    return true;
+  }
+  if (action.type === "focus_element") {
+    if (action.tab && tabs.includes(action.tab)) {
+      activateTab(action.tab, false);
+    }
+    requestAnimationFrame(() => {
+      const target = (action.selector && document.querySelector(action.selector))
+        || (action.targetId && document.getElementById(action.targetId));
+      if (target instanceof HTMLElement) {
+        focusUiNode(target);
+      }
+    });
+    return true;
+  }
+  if (action.type === "select_agent") {
+    if (action.tab && tabs.includes(action.tab)) {
+      activateTab(action.tab, false);
+    }
+    if (action.agentId) {
+      selectStudioAgent(action.agentId);
+    }
+    requestAnimationFrame(() => {
+      const target = (action.selector && document.querySelector(action.selector))
+        || (action.agentId && document.querySelector(`[data-agent-id="${action.agentId}"]`))
+        || document.getElementById("test-generate-feature");
+      if (target instanceof HTMLElement) {
+        focusUiNode(target);
+      }
+    });
+    return true;
+  }
+  return false;
+}
+
+async function refreshCustomAgentStudio() {
+  customAgentStudio.isLoading = true;
+  try {
+    const response = await fetch("/api/custom-agents");
+    const payload = await response.json();
+    if (!response.ok) {
+      customAgentStudio.items = [];
+      customAgentStudio.recentActions = [{ createdAt: "", summary: payload.error || "Failed to load custom agents." }];
+      customAgentStudio.selectedAgentId = "";
+      return;
+    }
+    customAgentStudio.items = Array.isArray(payload.items) ? payload.items : [];
+    customAgentStudio.recentActions = Array.isArray(payload.recentActions) ? payload.recentActions : [];
+    const selectedStillExists = customAgentStudio.items.some((item) => item.id === customAgentStudio.selectedAgentId);
+    if (!selectedStillExists) {
+      const preferred = customAgentStudio.items.find((item) => item.status === "complete") || customAgentStudio.items[0];
+      customAgentStudio.selectedAgentId = preferred?.id || "";
+    }
+  } catch (error) {
+    customAgentStudio.items = [];
+    customAgentStudio.recentActions = [{ createdAt: "", summary: String(error.message || error) }];
+    customAgentStudio.selectedAgentId = "";
+  } finally {
+    customAgentStudio.isLoading = false;
+  }
+}
+
+async function sendTestMessage() {
+  const input = document.getElementById("test-input");
+  const message = input?.value?.trim() || "";
+  if (!message && !testUploadAttachment) return;
+  if (input) input.value = "";
+  if (testUploadAttachment) {
+    await sendTestAttachmentMessage(message);
+    testUploadAttachment = null;
+  } else {
+    await sendVoiceMessage(message, { speakReply: false });
+  }
+  renderTestLab();
+}
+
+async function sendTestAttachmentMessage(message) {
+  const selected = getSelectedStudioAgent();
+  if (!selected || selected.status !== "complete") {
+    updateSpokenLine("HomeHub: Select a completed blueprint before sending an image.");
+    return;
+  }
+  const userText = message || `[Image uploaded] ${testUploadAttachment?.name || ""}`.trim();
+  testConversation.push({
+    speaker: "You",
+    text: userText,
+    time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+  });
+  renderTestLab();
+  const response = await fetch("/api/custom-agents/intake", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: selected.id,
+      locale: currentLocale,
+      message,
+      attachments: [testUploadAttachment]
+    })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    updateSpokenLine(`HomeHub: ${payload.error || "Failed to process the uploaded image."}`);
+    return;
+  }
+  testConversation.push({
+    speaker: "HomeHub",
+    text: payload.reply || "Image received.",
+    time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+  });
+  updateSpokenLine(`HomeHub: ${payload.reply || "Image received."}`);
+  await refreshCustomAgentStudio();
+  await loadDashboard();
+}
+
+async function generateSelectedFeature() {
+  const selected = getSelectedStudioAgent();
+  if (!selected || selected.status !== "complete") {
+    updateSpokenLine(t("test.noBlueprintSelected"));
+    return;
+  }
+  customAgentStudio.isGenerating = true;
+  renderTestLab();
+  try {
+    const response = await fetch("/api/custom-agents/generate-feature", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selected.id })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unknown error");
+    }
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.generated", { name: selected.name || "Blueprint" }));
+  } catch (error) {
+    updateSpokenLine(t("test.generateFailed", { error: String(error.message || error) }));
+  } finally {
+    customAgentStudio.isGenerating = false;
+    renderTestLab();
+  }
 }
 
 function revealInScrollableParent(target) {
-  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice");
+  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice, #test-conversation, #studio-blueprints, #studio-actions-log");
   if (!scrollParent) return;
   target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
@@ -1306,8 +1668,21 @@ async function triggerRemoteAction(target) {
     await toggleMicrophoneRecording();
     return;
   }
+  if (target.id === "test-send") {
+    await sendTestMessage();
+    return;
+  }
+  if (target.id === "test-generate-feature") {
+    await generateSelectedFeature();
+    return;
+  }
   if (target.dataset.languageCode) {
     await persistLanguage(target.dataset.languageCode);
+    return;
+  }
+  if (target.dataset.agentId) {
+    selectStudioAgent(target.dataset.agentId);
+    updateSpokenLine(t("prompts.selected", { title: target.dataset.title || target.textContent || "blueprint" }));
     return;
   }
   if (target.dataset.providerType && target.dataset.providerId) {
@@ -1372,9 +1747,7 @@ function setupRemoteNavigation() {
   document.addEventListener("click", async (event) => {
     const target = event.target.closest(".remote-target");
     if (!target) return;
-    if (target.dataset.languageCode || target.dataset.providerType || target.classList.contains("fake-qr") || target.id === "mic-orb" || target.id === "reminder-complete") {
-      await triggerRemoteAction(target);
-    }
+    await triggerRemoteAction(target);
   });
 
   document.addEventListener("keydown", async (event) => {
@@ -1403,11 +1776,49 @@ function setupRemoteNavigation() {
   });
 }
 
+function setupTestControls() {
+  const input = document.getElementById("test-input");
+  if (input) {
+    input.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        await sendTestMessage();
+      }
+    });
+  }
+  const imageInput = document.getElementById("test-image-input");
+  if (imageInput) {
+    imageInput.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        testUploadAttachment = null;
+        renderTestLab();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const base64 = result.includes(",") ? result.split(",")[1] : "";
+        testUploadAttachment = {
+          name: file.name,
+          mimeType: file.type || "image/png",
+          sizeBytes: file.size || 0,
+          imageBase64: base64
+        };
+        renderTestLab();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+}
+
 async function loadDashboard() {
   const response = await fetch("/api/dashboard");
   const data = await response.json();
   latestDashboard = data;
   currentLocale = data.languageSettings?.current || currentLocale;
+  testConversation = Array.isArray(data.conversation) ? data.conversation : testConversation;
+  await refreshCustomAgentStudio();
   applyStaticTranslations();
   renderClock();
   renderStatusStrip(data);
@@ -1419,6 +1830,7 @@ async function loadDashboard() {
   renderSkills(data.skillCatalog);
   renderPairing(data.pairingSession, data.relayMessages);
   renderVoice(data);
+  renderTestLab();
   renderReminderOverlay(data);
   renderSettings(data);
   renderFloatingBuddy();
@@ -1499,7 +1911,8 @@ async function saveCustomProvider() {
   await loadDashboard();
   updateSpokenLine(t("prompts.customProviderSaved", { label: body.label || body.id }));
 }
-async function sendVoiceMessage(message) {
+async function sendVoiceMessage(message, options = {}) {
+  const { speakReply = true } = options;
   const clean = String(message || "").trim();
   if (!clean) return;
   updateSpokenLine(`${t("speakers.you")}: ${clean}`);
@@ -1517,6 +1930,9 @@ async function sendVoiceMessage(message) {
     updateSpokenLine(`HomeHub: ${payload.error || t("voice.sendFailure")}`);
     return;
   }
+  if (payload.uiAction) {
+    executeUiAction(payload.uiAction);
+  }
   updateConversation(payload.conversation || []);
   if (payload.voiceRoute && latestDashboard) {
     latestDashboard.lastVoiceRoute = payload.voiceRoute;
@@ -1531,7 +1947,7 @@ async function sendVoiceMessage(message) {
   }
   await loadDashboard();
   updateSpokenLine(`${localizeSpeaker("HomeHub")}: ${payload.reply}`);
-  speakWithHomeHub(payload.reply);
+  if (speakReply) speakWithHomeHub(payload.reply);
 }
 
 async function transcribeBlob(blob) {
@@ -1715,6 +2131,7 @@ function setupReminderOverlayControls() {
 setupTabs();
 setupRemoteNavigation();
 setupVoiceControls();
+setupTestControls();
 setupCustomProviderControls();
 setupReminderOverlayControls();
 loadBuddyPosition();

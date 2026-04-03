@@ -24,6 +24,7 @@
         <button class="tab-chip remote-target is-selected" role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home" data-tab="home" tabindex="0">Home</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-agents" id="tab-agents" data-tab="agents" tabindex="-1">Agents</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-voice" id="tab-voice" data-tab="voice" tabindex="-1">Voice</button>
+        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-test" id="tab-test" data-tab="test" tabindex="-1">Test</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-pairing" id="tab-pairing" data-tab="pairing" tabindex="-1">Pairing</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings" data-tab="settings" tabindex="-1">Settings</button>
       </nav>
@@ -103,6 +104,41 @@
                 <span class="pill" id="conversation-pill">Transcript</span>
               </div>
               <div class="conversation-list" id="conversation"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-test" role="tabpanel" aria-labelledby="tab-test" hidden>
+          <div class="stage-grid two-col">
+            <article class="panel section-card">
+              <div class="panel-header">
+                <h2 id="test-title">Text Test Lab</h2>
+                <span class="pill" id="test-pill">Agent Factory</span>
+              </div>
+              <div class="voice-guidance" id="test-guidance">Use text instead of voice to test HomeHub routing, follow-up questions, and replies.</div>
+              <div class="conversation-list test-conversation-list" id="test-conversation"></div>
+              <div class="test-input-row">
+                <textarea id="test-input" class="settings-input test-input" rows="3" placeholder="Type a request such as: create an agent that reviews our family bills every Sunday."></textarea>
+                <div class="test-action-stack">
+                  <label for="test-image-input" id="test-image-pick" class="test-action remote-target test-action-secondary" tabindex="0">Attach Image</label>
+                  <input id="test-image-input" type="file" accept="image/*" hidden>
+                  <button id="test-send" class="test-action remote-target" type="button">Send Test Message</button>
+                </div>
+              </div>
+              <div class="test-upload-meta" id="test-upload-meta"></div>
+            </article>
+
+            <article class="panel section-card">
+              <div class="panel-header">
+                <h2 id="test-blueprints-title">Blueprint Studio</h2>
+                <span class="pill" id="test-blueprints-pill">Generate Feature</span>
+              </div>
+              <div class="voice-guidance" id="test-blueprints-guidance">Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.</div>
+              <div class="studio-list" id="studio-blueprints"></div>
+              <div class="studio-actions">
+                <button id="test-generate-feature" class="test-action remote-target" type="button">Generate Feature from Blueprint</button>
+              </div>
+              <div class="mini-list" id="studio-actions-log"></div>
             </article>
           </div>
         </section>

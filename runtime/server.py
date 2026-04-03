@@ -3,6 +3,7 @@ import io
 import json
 import os
 import random
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -11,7 +12,7 @@ from copy import deepcopy
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 try:
     from features.base import RuntimeBridge
@@ -62,12 +63,27 @@ MODEL_PROVIDERS = [
         "endpointHint": "https://generativelanguage.googleapis.com",
     },
     {
+        "id": "huggingface",
+        "name": "Hugging Face",
+        "type": "cloud",
+        "capabilities": ["chat", "vision", "embeddings", "speech", "open-weight"],
+        "endpointHint": "https://api-inference.huggingface.co",
+    },
+    {
         "id": "ollama",
         "name": "Ollama Local",
         "type": "local",
         "capabilities": ["chat", "vision"],
         "endpointHint": "http://localhost:11434",
     },
+]
+
+OLLAMA_BIN_CANDIDATES = [
+    os.environ.get("HOMEHUB_OLLAMA_BIN", "").strip(),
+    os.environ.get("OLLAMA_BIN", "").strip(),
+    os.environ.get("LOCALAPPDATA", "").strip() + "\\Programs\\Ollama\\ollama.exe" if os.environ.get("LOCALAPPDATA") else "",
+    "C:\\Users\\hy\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
+    "ollama",
 ]
 
 SKILLS = [
@@ -225,6 +241,30 @@ VOICE_PROFILE = {
     "locale": "en-US",
 }
 
+RUNTIME_PROFILES = [
+    {
+        "id": "edge-hybrid",
+        "label": "Edge Hybrid",
+        "summary": "Default for industrial boxes: keep wake, fallback chat, and basic routing local; use API for heavy planning and premium voice.",
+        "localRoles": ["wake word", "offline fallback", "light chat", "receipt fallback"],
+        "cloudRoles": ["deep planning", "image-heavy reasoning", "high-end voice", "service generation review"],
+    },
+    {
+        "id": "local-essential",
+        "label": "Local Essential",
+        "summary": "Privacy-first and low-cost mode. HomeHub prefers local models even if responses are slower or less capable.",
+        "localRoles": ["wake word", "chat", "vision fallback", "feature drafts", "speech stack"],
+        "cloudRoles": ["only when forced"],
+    },
+    {
+        "id": "cloud-enhanced",
+        "label": "Cloud Enhanced",
+        "summary": "Best experience mode. Local models stay as backup, while major reasoning and multimodal tasks go to API models.",
+        "localRoles": ["wake word", "offline backup", "quick fallback"],
+        "cloudRoles": ["planner", "vision", "generation review", "premium TTS", "embeddings"],
+    },
+]
+
 AUDIO_PROVIDER_CATALOG = {
     "openai": {
         "label": "OpenAI",
@@ -379,6 +419,40 @@ AUDIO_PROVIDER_CATALOG = {
             "runtime": "catalog",
         },
     },
+    "sensevoice-local": {
+        "label": "SenseVoice Local",
+        "editable": False,
+        "sync": {"openclaw": "manual-import", "workbuddy": "manual"},
+        "stt": {
+            "defaultModel": "SenseVoiceSmall",
+            "fallbackModel": "whisper-large-v3",
+            "supportedLanguages": ["zh-CN", "en-US", "ja-JP"],
+            "runtime": "catalog",
+        },
+        "tts": {
+            "defaultModel": "not-configured",
+            "fallbackModel": "not-configured",
+            "supportedLanguages": [],
+            "runtime": "catalog",
+        },
+    },
+    "kokoro-local": {
+        "label": "Kokoro Local",
+        "editable": False,
+        "sync": {"openclaw": "manual-import", "workbuddy": "manual"},
+        "stt": {
+            "defaultModel": "not-configured",
+            "fallbackModel": "not-configured",
+            "supportedLanguages": [],
+            "runtime": "catalog",
+        },
+        "tts": {
+            "defaultModel": "Kokoro-82M-v1.1-zh",
+            "fallbackModel": "edge-multilingual-neural",
+            "supportedLanguages": ["zh-CN", "en-US"],
+            "runtime": "catalog",
+        },
+    },
 }
 
 AUDIO_STACK = {
@@ -392,7 +466,7 @@ AUDIO_STACK = {
         "fallbackModel": "system-tts",
         "mode": "multilingual speech synthesis",
     },
-    "recommendedRealtime": "Realtime API speech-to-speech for low-latency dialogue",
+    "recommendedRealtime": "Use gpt-realtime-1.5 for cloud speech-to-speech, or SenseVoice + Kokoro for a local-first stack.",
 }
 
 LANGUAGE_SETTINGS = {
@@ -521,8 +595,217 @@ def get_custom_capability_entries():
     return entries
 
 
+def find_ollama_binary():
+    for candidate in OLLAMA_BIN_CANDIDATES:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.exists():
+            return str(path)
+        if candidate.lower() == "ollama":
+            return candidate
+    return ""
+
+
+def load_ollama_inventory():
+    binary = find_ollama_binary()
+    if not binary:
+        return {"available": False, "installed": [], "error": "missing-binary"}
+    try:
+        result = subprocess.run(
+            [binary, "list"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {"available": False, "installed": [], "error": "list-failed"}
+    if result.returncode != 0:
+        return {"available": True, "installed": [], "error": "list-failed"}
+
+    installed = []
+    for raw_line in result.stdout.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("NAME"):
+            continue
+        parts = re.split(r"\s{2,}", line)
+        if not parts:
+            continue
+        item = {
+            "name": parts[0],
+            "size": parts[2] if len(parts) > 2 else "",
+            "modified": parts[3] if len(parts) > 3 else "",
+        }
+        installed.append(item)
+    return {"available": True, "installed": installed, "error": ""}
+
+
+def build_recommended_model_stacks(local_inventory):
+    installed_names = [item["name"] for item in local_inventory.get("installed", [])]
+    detected_qwen = [name for name in installed_names if name.startswith("qwen")]
+    has_qwen_15 = "qwen2.5:1.5b-instruct" in installed_names
+    has_qwen_coder = any(name.startswith("qwen2.5-coder:7b") for name in installed_names)
+    has_qwen_vl = any(name.startswith("qwen2.5vl:7b") for name in installed_names)
+    local_summary = (
+        f"Detected locally via Ollama: {', '.join(installed_names[:4])}."
+        if installed_names
+        else "No local Ollama models detected yet."
+    )
+    return [
+        {
+            "id": "homehub-router-frontier",
+            "label": "HomeHub Planner Stack",
+            "source": "HomeHub Recommended",
+            "summary": "Primary cloud stack for intent understanding, agent planning, tool routing, and creation review.",
+            "models": ["gpt-5.4", "gpt-5.4-mini", "gpt-4o"],
+            "capabilities": ["Planner", "Reasoning", "Tool Use", "Vision", "Subagents"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "manual", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "API",
+            "access": "Paid",
+            "status": "Recommended default",
+            "notes": [
+                "Use the strongest model for task spec and agent creation review.",
+                "Use the mini tier for follow-up questions and substeps to control cost.",
+                "Switch to GPT-4o when the request includes images, receipts, or mixed media.",
+            ],
+            "requirements": ["OPENAI_API_KEY"],
+        },
+        {
+            "id": "homehub-open-weight-reasoning",
+            "label": "Open-weight Reasoning Stack",
+            "source": "OpenAI Open Models",
+            "summary": "Open-weight fallback for agentic planning, structured outputs, and self-hosted routing.",
+            "models": ["gpt-oss-20b", "gpt-oss-120b"],
+            "capabilities": ["Reasoning", "Tool Use", "Structured Output", "Self-hosted"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "manual", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "Self-host / provider",
+            "access": "Open weight",
+            "status": "Ready to add",
+            "notes": [
+                "Best when HomeHub needs auditable reasoning and custom hosting.",
+                "Use 20b for lower-latency local or edge deployment, 120b for higher-end servers.",
+            ],
+            "requirements": ["vLLM, Ollama, llama.cpp, or another compatible runtime"],
+        },
+        {
+            "id": "homehub-local-general",
+            "label": "Local General LLM Stack",
+            "source": "Ollama Local",
+            "summary": f"Free local conversation and fallback routing for HomeHub. {local_summary}",
+            "models": detected_qwen or ["qwen2.5:7b-instruct", "qwen2.5:3b-instruct", "qwen2.5:1.5b-instruct"],
+            "capabilities": ["Local Chat", "Fallback", "Drafting", "Offline First"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "easy", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "Ollama",
+            "access": "Free local",
+            "status": "Installed" if detected_qwen else "Suggested",
+            "notes": [
+                "Use the 7B tier for everyday family requests and 3B for low-RAM fallback.",
+                "Use the 1.5B tier as the emergency fallback for low-spec boxes or background watchdog tasks.",
+                "Keep this as the no-cloud fallback when API keys are unavailable.",
+            ],
+            "requirements": ["Ollama running locally on port 11434"],
+            "installCommand": "" if has_qwen_15 else "ollama pull qwen2.5:1.5b-instruct",
+        },
+        {
+            "id": "homehub-local-coder",
+            "label": "Local Agent Builder / Coder",
+            "source": "Ollama Local",
+            "summary": "OpenClaw-style local code and tool scaffolding stack for generating features and services.",
+            "models": ["qwen2.5-coder:7b", "qwen2.5-coder:14b"],
+            "capabilities": ["Code Gen", "Tool Schema", "Feature Scaffolding", "Repair"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "easy", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "Ollama",
+            "access": "Free local",
+            "status": "Installed" if has_qwen_coder else "Suggested",
+            "notes": [
+                "Strong local choice for creating HomeHub feature templates and simple services.",
+                "Pairs well with a stronger planner model that decides when generation is needed.",
+            ],
+            "requirements": ["Ollama 0.6+ recommended"],
+            "installCommand": "" if has_qwen_coder else "ollama pull qwen2.5-coder:7b",
+        },
+        {
+            "id": "homehub-vision-docs",
+            "label": "Receipt / Document Vision Stack",
+            "source": "Hybrid Vision",
+            "summary": "For receipts, invoices, screenshots, and home paperwork that must become structured records.",
+            "models": ["gpt-4o", "qwen2.5vl:7b"],
+            "capabilities": ["Vision", "OCR-style Understanding", "Structured Output", "Receipts"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "easy", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "API + Ollama",
+            "access": "Hybrid",
+            "status": "Installed" if has_qwen_vl else "Recommended for bill agents",
+            "notes": [
+                "Prefer GPT-4o for the best mixed text-image understanding.",
+                "Use Qwen2.5-VL locally when privacy matters or API cost needs to stay near zero.",
+            ],
+            "requirements": ["Image upload pipeline in HomeHub"],
+            "installCommand": "" if has_qwen_vl else "ollama pull qwen2.5vl:7b",
+        },
+        {
+            "id": "homehub-retrieval-memory",
+            "label": "Memory / Retrieval Stack",
+            "source": "RAG / Embeddings",
+            "summary": "Retrieval layer for household memory, document grounding, and agent memory search.",
+            "models": ["BAAI/bge-m3", "text-embedding-3-large"],
+            "capabilities": ["Embeddings", "RAG", "Long Docs", "Multilingual Search"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "manual", "workbuddy": "easy"},
+            "editable": False,
+            "actions": [],
+            "deployment": "Local + API",
+            "access": "Hybrid",
+            "status": "Recommended",
+            "notes": [
+                "Use BGE-M3 locally for multilingual retrieval and dense+sparse hybrid search.",
+                "Use OpenAI embeddings when you need turnkey managed APIs and hosted scale.",
+            ],
+            "requirements": ["Vector store or retrieval backend"],
+        },
+        {
+            "id": "homehub-voice-local",
+            "label": "Local Speech Stack",
+            "source": "Hugging Face Local",
+            "summary": "Local-first voice stack for speech recognition and TTS without depending on cloud speech APIs.",
+            "models": ["SenseVoiceSmall", "Kokoro-82M-v1.1-zh", "whisper-large-v3"],
+            "capabilities": ["STT", "TTS", "Emotion-aware ASR", "Voice Replies"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "manual-import", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "Local runtime",
+            "access": "Free local",
+            "status": "Ready to integrate",
+            "notes": [
+                "SenseVoice is better for fast multilingual speech understanding and voice events.",
+                "Kokoro is a small open-weight TTS option for Chinese and English playback.",
+            ],
+            "requirements": ["Local Python runtime for ASR/TTS inference"],
+        },
+    ]
+
+
 def build_ai_capability_catalog(provider_catalog, selected_audio):
-    catalog = [
+    local_inventory = load_ollama_inventory()
+    catalog = build_recommended_model_stacks(local_inventory) + [
         {
             "id": "openclaw-wake-word",
             "label": "OpenClaw Wake Word",
@@ -658,8 +941,341 @@ def build_ai_capability_catalog(provider_catalog, selected_audio):
                 "actions": actions,
             }
         )
+    if local_inventory.get("available"):
+        for item in local_inventory.get("installed", []):
+            catalog.append(
+                {
+                    "id": f"ollama-installed-{item['name'].replace(':', '-').replace('.', '-')}",
+                    "label": f"Ollama Installed: {item['name']}",
+                    "source": "Detected Local Runtime",
+                    "summary": "Already present on this HomeHub machine and available for local orchestration work.",
+                    "models": [item["name"]],
+                    "capabilities": ["Local Runtime", "Detected", "Ready"],
+                    "languages": ["zh-CN", "en-US", "ja-JP"],
+                    "sync": {"openclaw": "easy", "workbuddy": "manual"},
+                    "editable": False,
+                    "actions": [],
+                    "deployment": "Ollama",
+                    "access": "Free local",
+                    "status": "Installed",
+                    "notes": [
+                        f"Size: {item.get('size') or 'unknown'}",
+                        f"Modified: {item.get('modified') or 'unknown'}",
+                    ],
+                }
+            )
     catalog.extend(get_custom_capability_entries())
     return catalog
+
+
+def get_runtime_profile():
+    selected_id = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
+    for item in RUNTIME_PROFILES:
+        if item["id"] == selected_id:
+            return deepcopy(item)
+    return deepcopy(RUNTIME_PROFILES[0])
+
+
+def build_runtime_strategy(local_inventory):
+    installed_names = [item["name"] for item in local_inventory.get("installed", [])]
+    profile = get_runtime_profile()
+    return {
+        **profile,
+        "localDetected": installed_names,
+        "apiReady": {
+            "openai": bool(SECRETS.get("openaiApiKey")),
+            "google": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
+        },
+        "recommendedFlow": [
+            {"stage": "Wake + watchdog", "preferred": "local", "models": ["Porcupine or sherpa wake word", "qwen2.5:1.5b-instruct"]},
+            {"stage": "Daily chat fallback", "preferred": "local", "models": ["qwen2.5:3b-instruct", "qwen2.5:7b-instruct"]},
+            {"stage": "Feature / service generation", "preferred": "hybrid", "models": ["qwen2.5-coder:7b", "gpt-5.4"]},
+            {"stage": "Receipt and bill understanding", "preferred": "hybrid", "models": ["qwen2.5vl:7b", "gpt-4o"]},
+            {"stage": "Deep planning and review", "preferred": "cloud", "models": ["gpt-5.4", "gpt-5.4-mini"]},
+        ],
+    }
+
+
+def detect_input_modes(user_text):
+    lowered = str(user_text or "").lower()
+    modes = ["text"]
+    if any(token in lowered for token in ["image", "photo", "screenshot", "receipt", "invoice", "picture"]) or any(
+        token in user_text for token in ["图片", "照片", "截图", "账单图", "小票", "发票"]
+    ):
+        modes.append("image")
+    if any(token in lowered for token in ["say", "voice", "speak", "audio"]) or any(token in user_text for token in ["语音", "说话", "听我"]):
+        modes.append("voice")
+    return sorted(set(modes))
+
+
+def infer_task_spec_with_openai(user_text, locale):
+    if not SECRETS.get("openaiApiKey"):
+        return None
+    payload = openai_chat_json(
+        (
+            "You are HomeHub's task-spec parser. Return JSON only with keys: "
+            "taskType, intent, urgency, requiresImage, requiresGeneration, requiresScheduling, "
+            "requiresLongRunningAgent, preferredExecution, missingInfo, summary. "
+            "Valid taskType values: agent_creation, reminder, schedule, bill_intake, general_chat, study_plan, ui_navigation, network_lookup. "
+            "Valid urgency values: low, normal, high. "
+            "Valid preferredExecution values: local, cloud, hybrid."
+        ),
+        json.dumps({"locale": locale, "message": user_text}, ensure_ascii=False),
+        "gpt-4o-mini",
+    )
+    return payload if isinstance(payload, dict) else None
+
+
+def build_task_spec(user_text, locale):
+    lowered = str(user_text or "").lower()
+    spec = {
+        "taskType": "general_chat",
+        "intent": "general-chat",
+        "summary": "General household conversation or Q&A.",
+        "urgency": "normal",
+        "inputModes": detect_input_modes(user_text),
+        "requiresImage": False,
+        "requiresGeneration": False,
+        "requiresScheduling": False,
+        "requiresLongRunningAgent": False,
+        "preferredExecution": "hybrid",
+        "missingInfo": [],
+    }
+    if detect_ui_action(user_text, locale):
+        spec.update(
+            {
+                "taskType": "ui_navigation",
+                "intent": "ui-action",
+                "summary": "Navigate the TV shell UI directly.",
+                "preferredExecution": "local",
+            }
+        )
+        return spec
+    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
+        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    ):
+        spec.update(
+            {
+                "taskType": "network_lookup",
+                "intent": "network-lookup",
+                "summary": "Query approved external sources and return a sourced summary.",
+                "preferredExecution": "hybrid",
+            }
+        )
+        return spec
+
+    if any(token in user_text for token in ["智能体", "助手", "代理", "机器人"]) or any(
+        token in lowered for token in ["agent", "assistant", "workflow", "bot"]
+    ):
+        spec.update(
+            {
+                "taskType": "agent_creation",
+                "intent": "custom-agent-builder",
+                "summary": "Create, refine, or activate a long-running HomeHub agent.",
+                "requiresGeneration": True,
+                "requiresLongRunningAgent": True,
+                "preferredExecution": "hybrid",
+            }
+        )
+
+    if any(token in user_text for token in ["提醒", "闹钟"]) or "remind me" in lowered:
+        spec.update(
+            {
+                "taskType": "reminder",
+                "intent": "local-schedule",
+                "summary": "Create or manage a reminder.",
+                "requiresScheduling": True,
+                "preferredExecution": "local",
+            }
+        )
+    elif any(token in user_text for token in ["日程", "会议", "安排", "行程"]) or any(
+        token in lowered for token in ["schedule", "calendar", "meeting"]
+    ):
+        spec.update(
+            {
+                "taskType": "schedule",
+                "intent": "local-schedule",
+                "summary": "Create or query an event or schedule.",
+                "requiresScheduling": True,
+                "preferredExecution": "local",
+            }
+        )
+
+    if any(token in user_text for token in ["账单", "扣费", "发票", "小票", "收据"]) or any(
+        token in lowered for token in ["bill", "receipt", "invoice", "charge", "expense"]
+    ):
+        spec.update(
+            {
+                "taskType": "bill_intake" if "image" in spec["inputModes"] else spec["taskType"],
+                "summary": "Understand or track bills, receipts, or charge records.",
+                "requiresImage": "image" in spec["inputModes"] or spec["requiresImage"],
+                "preferredExecution": "hybrid",
+            }
+        )
+    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
+        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    ):
+        spec.update(
+            {
+                "taskType": "network_lookup",
+                "intent": "network-lookup",
+                "summary": "Query approved external sources and return a sourced summary.",
+                "preferredExecution": "hybrid",
+            }
+        )
+    if any(token in user_text for token in ["学习计划", "复习", "作业"]) or any(
+        token in lowered for token in ["study plan", "homework", "revision plan"]
+    ):
+        spec.update(
+            {
+                "taskType": "study_plan",
+                "intent": "study-plan-agent",
+                "summary": "Create or continue a study plan agent workflow.",
+                "requiresLongRunningAgent": True,
+                "preferredExecution": "hybrid",
+            }
+        )
+
+    if spec["taskType"] == "agent_creation":
+        missing = []
+        if not any(token in user_text for token in ["每", "每天", "每周", "每月", "收到", "上传", "定时"]) and not any(
+            token in lowered for token in ["daily", "weekly", "monthly", "when", "trigger", "schedule"]
+        ):
+            missing.append("trigger")
+        if not any(token in user_text for token in ["输出", "结果", "记录", "汇总", "提醒"]) and not any(
+            token in lowered for token in ["output", "result", "summary", "record", "alert"]
+        ):
+            missing.append("output")
+        spec["missingInfo"] = missing
+
+    ai_spec = infer_task_spec_with_openai(user_text, locale)
+    if ai_spec:
+        task_type = str(ai_spec.get("taskType", "")).strip()
+        if (
+            task_type in {"agent_creation", "reminder", "schedule", "bill_intake", "general_chat", "study_plan", "ui_navigation", "network_lookup"}
+            and not (spec["taskType"] != "general_chat" and task_type == "general_chat")
+        ):
+            spec["taskType"] = task_type
+        spec["intent"] = str(ai_spec.get("intent", spec["intent"])).strip() or spec["intent"]
+        spec["summary"] = str(ai_spec.get("summary", spec["summary"])).strip() or spec["summary"]
+        if str(ai_spec.get("urgency", "")).strip() in {"low", "normal", "high"}:
+            spec["urgency"] = str(ai_spec.get("urgency")).strip()
+        spec["requiresImage"] = bool(ai_spec.get("requiresImage", spec["requiresImage"]))
+        spec["requiresGeneration"] = bool(ai_spec.get("requiresGeneration", spec["requiresGeneration"]))
+        spec["requiresScheduling"] = bool(ai_spec.get("requiresScheduling", spec["requiresScheduling"]))
+        spec["requiresLongRunningAgent"] = bool(ai_spec.get("requiresLongRunningAgent", spec["requiresLongRunningAgent"]))
+        preferred = str(ai_spec.get("preferredExecution", spec["preferredExecution"])).strip()
+        if preferred in {"local", "cloud", "hybrid"}:
+            spec["preferredExecution"] = preferred
+        if isinstance(ai_spec.get("missingInfo"), list):
+            spec["missingInfo"] = [str(item).strip() for item in ai_spec.get("missingInfo", []) if str(item).strip()]
+    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
+        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    ):
+        spec["taskType"] = "network_lookup"
+        spec["intent"] = "network-lookup"
+        spec["summary"] = "Query approved external sources and return a sourced summary."
+        spec["preferredExecution"] = "hybrid"
+    return spec
+
+
+def build_tool_registry_snapshot():
+    return deepcopy(TOOL_REGISTRY)
+
+
+def build_tool_plan(task_spec, route):
+    selected = route.get("selected") or {}
+    feature_id = selected.get("featureId", "")
+    plan = []
+    for tool in TOOL_REGISTRY:
+        handles = set(tool.get("handles", []))
+        if task_spec["taskType"] in handles or task_spec["intent"] in handles or tool.get("featureId") == feature_id:
+            plan.append(
+                {
+                    "toolId": tool["id"],
+                    "label": tool["label"],
+                    "execution": tool["execution"],
+                    "kind": tool["kind"],
+                    "selected": tool.get("featureId") == feature_id,
+                }
+            )
+    if not plan:
+        plan.append(
+            {
+                "toolId": "general-chat",
+                "label": "General Chat",
+                "execution": "hybrid",
+                "kind": "core",
+                "selected": True,
+            }
+        )
+    return plan
+
+
+def select_model_route(task_spec, runtime_strategy, local_inventory):
+    installed = set(runtime_strategy.get("localDetected", []))
+    route = {
+        "execution": task_spec.get("preferredExecution", "hybrid"),
+        "primaryModel": "qwen2.5:3b-instruct" if "qwen2.5:3b-instruct" in installed else "gpt-5.4-mini",
+        "fallbackModel": "qwen2.5:1.5b-instruct" if "qwen2.5:1.5b-instruct" in installed else "qwen2.5:3b-instruct",
+        "reason": "Balanced default for mixed household conversations.",
+    }
+    task_type = task_spec.get("taskType")
+    if task_type == "ui_navigation":
+        return {
+            "execution": "local",
+            "primaryModel": "rule-based-ui-router",
+            "fallbackModel": "none",
+            "reason": "Direct TV navigation should stay local and deterministic.",
+        }
+    if task_type in {"reminder", "schedule"}:
+        return {
+            "execution": "local",
+            "primaryModel": "rule-based-scheduler",
+            "fallbackModel": "gpt-4o-mini",
+            "reason": "Schedules and reminders should prefer local deterministic parsing.",
+        }
+    if task_type == "agent_creation":
+        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["primaryModel"])
+        fallback = "qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["fallbackModel"]
+        return {
+            "execution": "hybrid" if runtime_strategy.get("apiReady", {}).get("openai") else "local",
+            "primaryModel": primary,
+            "fallbackModel": fallback,
+            "reason": "Agent creation needs stronger planning and structured follow-up, with a local coder fallback.",
+        }
+    if task_type == "bill_intake":
+        primary = "gpt-4o" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else route["primaryModel"])
+        fallback = "qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else "qwen2.5:7b-instruct"
+        return {
+            "execution": "hybrid",
+            "primaryModel": primary,
+            "fallbackModel": fallback,
+            "reason": "Bill and receipt understanding benefits from multimodal reasoning, with local vision fallback when needed.",
+        }
+    if task_type == "network_lookup":
+        return {
+            "execution": "hybrid",
+            "primaryModel": "gpt-4o-mini" if runtime_strategy.get("apiReady", {}).get("openai") else route["primaryModel"],
+            "fallbackModel": "qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"],
+            "reason": "Controlled network lookup fetches approved sources first, then summarizes with a chat model.",
+        }
+    if task_type == "study_plan":
+        return {
+            "execution": "hybrid" if runtime_strategy.get("apiReady", {}).get("openai") else "local",
+            "primaryModel": "gpt-5.4-mini" if runtime_strategy.get("apiReady", {}).get("openai") else route["primaryModel"],
+            "fallbackModel": "qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"],
+            "reason": "Study planning benefits from structured reasoning but can fall back to local chat models.",
+        }
+    if runtime_strategy.get("id") == "local-essential":
+        route["execution"] = "local"
+        route["reason"] = "Local Essential mode keeps daily work on-device whenever possible."
+    elif runtime_strategy.get("id") == "cloud-enhanced" and runtime_strategy.get("apiReady", {}).get("openai"):
+        route["execution"] = "cloud"
+        route["primaryModel"] = "gpt-5.4-mini"
+        route["fallbackModel"] = "qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"]
+        route["reason"] = "Cloud Enhanced mode prefers API models for better quality while keeping local fallback."
+    return route
 
 
 def load_secrets_file():
@@ -801,6 +1417,7 @@ def load_persisted_settings():
             "language": LANGUAGE_SETTINGS["current"],
             "sttProvider": "google",
             "ttsProvider": "google",
+            "runtimeProfile": "edge-hybrid",
         }
 
     try:
@@ -810,6 +1427,7 @@ def load_persisted_settings():
             "language": LANGUAGE_SETTINGS["current"],
             "sttProvider": "google",
             "ttsProvider": "google",
+            "runtimeProfile": "edge-hybrid",
         }
 
     supported_codes = {item["code"] for item in LANGUAGE_SETTINGS["supported"]}
@@ -825,10 +1443,16 @@ def load_persisted_settings():
     if tts_provider not in supported_providers:
         tts_provider = "google"
 
+    supported_profiles = {item["id"] for item in RUNTIME_PROFILES}
+    runtime_profile = data.get("runtimeProfile", "edge-hybrid")
+    if runtime_profile not in supported_profiles:
+        runtime_profile = "edge-hybrid"
+
     return {
         "language": language,
         "sttProvider": stt_provider,
         "ttsProvider": tts_provider,
+        "runtimeProfile": runtime_profile,
     }
 
 
@@ -872,6 +1496,102 @@ SYSTEM_STATUS = {
     "remoteHint": "Use Left/Right to switch tabs, Enter to open cards.",
 }
 
+NETWORK_LOOKUP_POLICIES = {
+    "safe-general": {
+        "id": "safe-general",
+        "label": "Safe General",
+        "allowedDomains": [
+            "wikipedia.org",
+            "wikimedia.org",
+            "openai.com",
+            "platform.openai.com",
+            "huggingface.co",
+            "ollama.com",
+            "developer.mozilla.org",
+            "docs.python.org",
+            "weather.gov",
+            "cdc.gov",
+            "who.int",
+            "github.com",
+        ],
+        "maxSources": 3,
+        "allowDirectUrls": True,
+    },
+    "official-only": {
+        "id": "official-only",
+        "label": "Official Only",
+        "allowedDomains": [
+            "openai.com",
+            "platform.openai.com",
+            "huggingface.co",
+            "ollama.com",
+            "weather.gov",
+            "cdc.gov",
+            "who.int",
+            "github.com",
+        ],
+        "maxSources": 2,
+        "allowDirectUrls": True,
+    },
+}
+
+TOOL_REGISTRY = [
+    {
+        "id": "custom-agent-builder",
+        "label": "Custom Agent Builder",
+        "kind": "feature",
+        "featureId": "custom-agents",
+        "handles": ["agent_creation", "agent_revision", "service_scaffold"],
+        "inputModes": ["text", "voice"],
+        "execution": "hybrid",
+    },
+    {
+        "id": "local-schedule",
+        "label": "Local Schedule",
+        "kind": "feature",
+        "featureId": "local-schedule",
+        "handles": ["schedule", "reminder", "calendar_query"],
+        "inputModes": ["text", "voice"],
+        "execution": "local",
+    },
+    {
+        "id": "study-plan-agents",
+        "label": "Study Plan Agents",
+        "kind": "feature",
+        "featureId": "study-plan-agents",
+        "handles": ["study_plan", "learning_agent"],
+        "inputModes": ["text", "voice"],
+        "execution": "hybrid",
+    },
+    {
+        "id": "general-chat",
+        "label": "General Chat",
+        "kind": "core",
+        "featureId": "homehub-core",
+        "handles": ["general_chat", "qa", "small_talk"],
+        "inputModes": ["text", "voice", "image"],
+        "execution": "hybrid",
+    },
+    {
+        "id": "vision-bill-intake",
+        "label": "Bill Vision Intake",
+        "kind": "pipeline",
+        "featureId": "homehub-core",
+        "handles": ["bill_intake", "receipt_understanding", "document_vision"],
+        "inputModes": ["image", "text", "voice"],
+        "execution": "hybrid",
+    },
+    {
+        "id": "network-lookup",
+        "label": "Controlled Network Lookup",
+        "kind": "core",
+        "featureId": "homehub-core",
+        "handles": ["network_lookup", "web_query", "fact_refresh"],
+        "inputModes": ["text", "voice"],
+        "execution": "hybrid",
+    },
+]
+
 VOICE_CONVERSATION = [
     {
         "speaker": "HomeHub",
@@ -901,6 +1621,26 @@ LAST_VOICE_ROUTE = {
         "score": 0.4,
     },
     "candidates": [],
+    "taskSpec": {
+        "taskType": "general_chat",
+        "intent": "general-chat",
+        "summary": "General household conversation or Q&A.",
+        "urgency": "normal",
+        "inputModes": ["text"],
+        "requiresImage": False,
+        "requiresGeneration": False,
+        "requiresScheduling": False,
+        "requiresLongRunningAgent": False,
+        "preferredExecution": "hybrid",
+        "missingInfo": [],
+    },
+    "toolPlan": [{"toolId": "general-chat", "label": "General Chat", "execution": "hybrid", "kind": "core", "selected": True}],
+    "modelRoute": {
+        "execution": "hybrid",
+        "primaryModel": "qwen2.5:3b-instruct",
+        "fallbackModel": "qwen2.5:1.5b-instruct",
+        "reason": "Balanced default for mixed household conversations.",
+    },
 }
 PENDING_VOICE_CLARIFICATION = None
 
@@ -958,6 +1698,150 @@ def json_post(url, payload, headers=None):
         raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error: {exc}") from exc
+
+
+def json_get(url, headers=None, timeout=30):
+    request = urllib.request.Request(url, headers=headers or {}, method="GET")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read()
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            return json.loads(body.decode("utf-8"))
+        return body.decode("utf-8", errors="ignore")
+
+
+def normalize_domain(value):
+    host = str(value or "").strip().lower()
+    if not host:
+        return ""
+    if "://" in host:
+        host = urlparse(host).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host.split(":")[0]
+
+
+def domain_allowed(host, allowed_domains):
+    normalized = normalize_domain(host)
+    return any(normalized == item or normalized.endswith(f".{item}") for item in allowed_domains)
+
+
+def extract_urls_from_text(text):
+    return re.findall(r"https?://[^\s)>\"]+", str(text or ""))
+
+
+def strip_html_excerpt(html_text, limit=420):
+    text = re.sub(r"(?is)<script.*?>.*?</script>", " ", html_text)
+    text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+    title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", text)
+    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", title_match.group(1))).strip() if title_match else ""
+    plain = re.sub(r"(?s)<[^>]+>", " ", text)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    return {"title": title, "excerpt": plain[:limit]}
+
+
+def fetch_allowed_url(url, allowed_domains):
+    host = normalize_domain(url)
+    if not domain_allowed(host, allowed_domains):
+        return {"ok": False, "error": f"domain_not_allowed:{host}"}
+    try:
+        content = json_get(url, headers={"User-Agent": "HomeHub/0.1"})
+    except Exception as exc:
+        return {"ok": False, "error": f"fetch_failed:{exc}"}
+    if isinstance(content, dict):
+        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": json.dumps(content, ensure_ascii=False)[:420]}
+    parsed = strip_html_excerpt(str(content))
+    return {"ok": True, "url": url, "title": parsed.get("title", ""), "excerpt": parsed.get("excerpt", "")}
+
+
+def wikipedia_lookup(query, locale):
+    language = "zh" if str(locale).startswith("zh") else ("ja" if str(locale).startswith("ja") else "en")
+    params = urlencode({"action": "opensearch", "search": query, "limit": 1, "namespace": 0, "format": "json"})
+    search_url = f"https://{language}.wikipedia.org/w/api.php?{params}"
+    try:
+        response = json_get(search_url, headers={"User-Agent": "HomeHub/0.1"})
+    except Exception as exc:
+        return {"ok": False, "error": f"wikipedia_search_failed:{exc}"}
+    if not isinstance(response, list) or len(response) < 4 or not response[1]:
+        return {"ok": False, "error": "no_wikipedia_match"}
+    title = str(response[1][0]).strip()
+    summary_url = f"https://{language}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
+    try:
+        summary = json_get(summary_url, headers={"User-Agent": "HomeHub/0.1"})
+    except Exception as exc:
+        return {"ok": False, "error": f"wikipedia_summary_failed:{exc}"}
+    if not isinstance(summary, dict):
+        return {"ok": False, "error": "invalid_wikipedia_summary"}
+    return {
+        "ok": True,
+        "url": str(summary.get("content_urls", {}).get("desktop", {}).get("page", "")).strip() or summary_url,
+        "title": str(summary.get("title", title)).strip(),
+        "excerpt": str(summary.get("extract", "")).strip(),
+    }
+
+
+def build_network_lookup_reply(result, locale):
+    if not result.get("ok"):
+        if locale == "zh-CN":
+            return f"这次受控联网查询没有拿到结果：{result.get('error', 'unknown error')}。"
+        if locale == "ja-JP":
+            return f"制御付きネット検索は結果を返せませんでした: {result.get('error', 'unknown error')}."
+        return f"The controlled network lookup did not return a usable result: {result.get('error', 'unknown error')}."
+    answer = str(result.get("answer", "")).strip()
+    sources = result.get("sources", [])
+    if locale == "zh-CN":
+        if sources:
+            return f"{answer}\n来源：{'；'.join(str(item.get('url', '')) for item in sources[:3])}"
+        return answer
+    if sources:
+        return f"{answer}\nSources: {'; '.join(str(item.get('url', '')) for item in sources[:3])}"
+    return answer
+
+
+def perform_controlled_network_lookup(query, locale, policy_id="safe-general", preferred_sources=None, allowed_domains=None):
+    policy = NETWORK_LOOKUP_POLICIES.get(policy_id) or NETWORK_LOOKUP_POLICIES["safe-general"]
+    merged_domains = [normalize_domain(item) for item in policy.get("allowedDomains", [])]
+    for item in preferred_sources or []:
+        normalized = normalize_domain(item)
+        if normalized and "." in normalized and normalized not in merged_domains:
+            merged_domains.append(normalized)
+    for item in allowed_domains or []:
+        normalized = normalize_domain(item)
+        if normalized and normalized not in merged_domains:
+            merged_domains.append(normalized)
+
+    sources = []
+    direct_urls = extract_urls_from_text(query)
+    for url in direct_urls[: policy.get("maxSources", 3)]:
+        fetched = fetch_allowed_url(url, merged_domains)
+        if fetched.get("ok"):
+            sources.append(fetched)
+    if not sources and domain_allowed("wikipedia.org", merged_domains):
+        wiki = wikipedia_lookup(query, locale)
+        if wiki.get("ok"):
+            sources.append(wiki)
+    if not sources:
+        return {
+            "ok": False,
+            "error": "no_allowed_source_found",
+            "policy": policy["id"],
+            "allowedDomains": merged_domains,
+            "sources": [],
+        }
+
+    answer = sources[0].get("excerpt", "").strip()
+    if len(answer) > 320:
+        answer = answer[:320].rstrip() + "..."
+    title = str(sources[0].get("title", "")).strip()
+    if title:
+        answer = f"{title}: {answer}" if answer else title
+    return {
+        "ok": True,
+        "policy": policy["id"],
+        "allowedDomains": merged_domains,
+        "answer": answer,
+        "sources": sources[: policy.get("maxSources", 3)],
+    }
 
 
 def build_wav_from_pcm(pcm_bytes, channels=1, rate=24000, sample_width=2):
@@ -1173,9 +2057,10 @@ def openai_synthesize_speech(text_value, locale, model_name):
 
 
 def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
+    runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
     api_key = SECRETS.get("openaiApiKey", "")
-    if not api_key:
-        return None
+    if not api_key or runtime_profile == "local-essential":
+        return ollama_chat_json(system_prompt, user_prompt, select_local_json_model(model_name))
     payload = {
         "model": model_name,
         "messages": [
@@ -1202,7 +2087,7 @@ def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
         return json.loads(content)
     except Exception:
-        return None
+        return ollama_chat_json(system_prompt, user_prompt, select_local_json_model(model_name))
 
 
 def build_runtime_bridge():
@@ -1211,8 +2096,191 @@ def build_runtime_bridge():
         get_setting=lambda key, default=None: PERSISTED_SETTINGS.get(key, default),
         get_secret=lambda key, default=None: SECRETS.get(key, default),
         openai_json=openai_chat_json,
+        analyze_image=analyze_image_with_homehub,
+        network_lookup=perform_controlled_network_lookup,
         log=lambda message: print(f"[features] {message}"),
     )
+
+
+def ollama_chat_raw(system_prompt, user_prompt, model_name):
+    binary = find_ollama_binary()
+    if not binary or not model_name:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
+    request = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        message = data.get("message", {})
+        content = message.get("content", "")
+        return str(content).strip() if content else None
+    except Exception:
+        return None
+
+
+def ollama_chat_json(system_prompt, user_prompt, model_name):
+    binary = find_ollama_binary()
+    if not binary or not model_name:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.1},
+    }
+    request = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = str((data.get("message") or {}).get("content", "")).strip()
+        return json.loads(content) if content else None
+    except Exception:
+        return None
+
+
+def select_local_json_model(model_name=""):
+    inventory = load_ollama_inventory()
+    installed = {item["name"] for item in inventory.get("installed", [])}
+    if "coder" in str(model_name).lower() and "qwen2.5-coder:7b" in installed:
+        return "qwen2.5-coder:7b"
+    if "qwen2.5-coder:7b" in installed:
+        return "qwen2.5-coder:7b"
+    if "qwen2.5:7b-instruct" in installed:
+        return "qwen2.5:7b-instruct"
+    if "qwen2.5:3b-instruct" in installed:
+        return "qwen2.5:3b-instruct"
+    if "qwen2.5:1.5b-instruct" in installed:
+        return "qwen2.5:1.5b-instruct"
+    return ""
+
+
+def select_local_chat_model():
+    inventory = load_ollama_inventory()
+    installed = {item["name"] for item in inventory.get("installed", [])}
+    if "qwen2.5:7b-instruct" in installed:
+        return "qwen2.5:7b-instruct"
+    if "qwen2.5:3b-instruct" in installed:
+        return "qwen2.5:3b-instruct"
+    if "qwen2.5:1.5b-instruct" in installed:
+        return "qwen2.5:1.5b-instruct"
+    return ""
+
+
+def select_local_vision_model():
+    inventory = load_ollama_inventory()
+    installed = {item["name"] for item in inventory.get("installed", [])}
+    if "qwen2.5vl:7b" in installed:
+        return "qwen2.5vl:7b"
+    return ""
+
+
+def ollama_vision_json(prompt, image_base64, mime_type, model_name):
+    binary = find_ollama_binary()
+    if not binary or not model_name or not image_base64:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+                "images": [image_base64],
+            }
+        ],
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.1},
+    }
+    request = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = str((data.get("message") or {}).get("content", "")).strip()
+        return json.loads(content) if content else None
+    except Exception:
+        return None
+
+
+def openai_vision_json(prompt, image_base64, mime_type, model_name="gpt-4o"):
+    api_key = SECRETS.get("openaiApiKey", "")
+    if not api_key or not image_base64:
+        return None
+    payload = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}},
+                ],
+            }
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+    }
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return json.loads(str(content).strip())
+    except Exception:
+        return None
+
+
+def analyze_image_with_homehub(prompt, image_base64, mime_type="image/png", preferred_model=""):
+    runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
+    local_model = preferred_model if preferred_model.startswith("qwen2.5vl") else select_local_vision_model()
+    if runtime_profile != "local-essential":
+        cloud_result = openai_vision_json(prompt, image_base64, mime_type, "gpt-4o")
+        if cloud_result:
+            if isinstance(cloud_result, dict):
+                cloud_result.setdefault("provider", "openai")
+                cloud_result.setdefault("model", "gpt-4o")
+            return cloud_result
+    local_result = ollama_vision_json(prompt, image_base64, mime_type, local_model)
+    if isinstance(local_result, dict):
+        local_result.setdefault("provider", "ollama")
+        local_result.setdefault("model", local_model or "qwen2.5vl:7b")
+    return local_result
 
 
 def transcribe_audio(provider_id, audio_base64, mime_type, locale):
@@ -1722,6 +2790,7 @@ def build_assistant_memory_snapshot():
 
 def build_dashboard():
     provider_catalog = get_audio_provider_catalog()
+    local_inventory = load_ollama_inventory()
     agents = deepcopy(BASE_AGENTS)
     for agent in agents:
         delta = random.randint(-4, 6)
@@ -1810,10 +2879,14 @@ def build_dashboard():
                 "editable": sum(1 for provider in provider_catalog.values() if provider.get("editable")),
             },
         },
+        "networkLookup": {
+            "policies": list(NETWORK_LOOKUP_POLICIES.values()),
+        },
         "modelCatalog": build_ai_capability_catalog(
             provider_catalog,
             {"stt": stt_provider_id, "tts": tts_provider_id},
         ),
+        "runtimeProfile": build_runtime_strategy(local_inventory),
         "languageSettings": {
             **LANGUAGE_SETTINGS,
             "current": PERSISTED_SETTINGS["language"],
@@ -1879,18 +2952,19 @@ def build_agent_factory_reply(locale):
     if locale == "zh-CN":
         joined = "；".join(f"{item['name']}：{item['summary']}" for item in agent_types[:3])
         example = agent_types[0].get("examplePrompt", "")
-        return f"我可以帮你创建这些智能体：{joined}。你可以直接说：“{example}”。"
+        return f"我可以帮你创建这些智能体：{joined}。你可以直接说：“{example}”。如果你的需求里还有缺失资料，我会继续主动追问你。"
     if locale == "ja-JP":
-        return "作成できるエージェントを案内します。"
+        return "作成できるエージェントを案内します。必要な情報が足りなければこちらから追加で確認します。"
     joined = "; ".join(f"{item['name']}: {item['summary']}" for item in agent_types[:3])
     example = agent_types[0].get("examplePrompt", "")
-    return f"I can create these agent types: {joined}. Try saying: '{example}'."
+    return f"I can create these agent types: {joined}. Try saying: '{example}'. If the request is incomplete, I will ask follow-up questions before finishing the agent."
 
 
 def openai_chat_reply(system_prompt, user_prompt, model_name="gpt-4o-mini"):
+    runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
     api_key = SECRETS.get("openaiApiKey", "")
-    if not api_key:
-        return None
+    if not api_key or runtime_profile == "local-essential":
+        return ollama_chat_raw(system_prompt, user_prompt, select_local_chat_model())
     payload = {
         "model": model_name,
         "messages": [
@@ -1917,7 +2991,7 @@ def openai_chat_reply(system_prompt, user_prompt, model_name="gpt-4o-mini"):
         text = str(content or "").strip()
         return text or None
     except Exception:
-        return None
+        return ollama_chat_raw(system_prompt, user_prompt, select_local_chat_model())
 
 
 def build_feature_intent_catalog(locale):
@@ -2023,7 +3097,7 @@ def orchestrate_voice_route(user_text, locale, heuristic_route):
     return heuristic_route
 
 
-def build_general_voice_reply(user_text, locale):
+def build_general_voice_reply(user_text, locale, model_route=None):
     recent_turns = CURRENT_CONVERSATION[-6:]
     conversation_context = "\n".join(f"{item['speaker']}: {item['text']}" for item in recent_turns)
     if locale == "zh-CN":
@@ -2045,10 +3119,15 @@ def build_general_voice_reply(user_text, locale):
             "Reply naturally and briefly when the user is not creating a schedule or reminder. "
             "Do not say that you merely received the voice input, and do not claim actions you did not perform."
         )
-    ai_reply = openai_chat_reply(
-        system_prompt,
-        f"Locale: {locale}\nRecent conversation:\n{conversation_context}\nUser: {user_text}",
-    )
+    preferred_model = str((model_route or {}).get("primaryModel", "")).strip()
+    preferred_execution = str((model_route or {}).get("execution", "")).strip()
+    user_prompt = f"Locale: {locale}\nRecent conversation:\n{conversation_context}\nUser: {user_text}"
+    if preferred_execution == "local" and preferred_model and preferred_model != "rule-based-scheduler":
+        ai_reply = ollama_chat_raw(system_prompt, user_prompt, preferred_model)
+    else:
+        ai_reply = openai_chat_reply(system_prompt, user_prompt, "gpt-4o-mini")
+        if not ai_reply and preferred_model and preferred_model.startswith("qwen"):
+            ai_reply = ollama_chat_raw(system_prompt, user_prompt, preferred_model)
     if ai_reply:
         return ai_reply
 
@@ -2072,9 +3151,23 @@ def build_general_voice_reply(user_text, locale):
 
 def route_voice_request(user_text, locale):
     runtime = build_runtime_bridge()
+    task_spec = build_task_spec(user_text, locale)
+    runtime_strategy = build_runtime_strategy(load_ollama_inventory())
     route = FEATURE_MANAGER.route_voice_intent(user_text, locale, runtime)
+    selected = route.get("selected") or {}
+    if selected.get("featureId") == "custom-agents" and float(selected.get("score", 0.0) or 0.0) >= 0.9:
+        direct_route = {
+            "kind": "feature",
+            "selected": selected,
+            "candidates": route.get("candidates", []),
+            "reasoning": "High-confidence custom agent builder intent matched locally.",
+        }
+        direct_route["taskSpec"] = task_spec
+        direct_route["toolPlan"] = build_tool_plan(task_spec, direct_route)
+        direct_route["modelRoute"] = select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])})
+        return direct_route
     heuristic_route = {
-        "kind": "feature" if route.get("selected") else ("agent_factory" if is_generic_agent_request(user_text) else "general"),
+        "kind": "feature" if route.get("selected") else ("agent_factory" if is_generic_agent_request(user_text) or task_spec["taskType"] == "agent_creation" else "general"),
         "selected": route.get("selected")
         or (
             {
@@ -2084,7 +3177,7 @@ def route_voice_request(user_text, locale):
                 "action": "list_agent_types",
                 "score": 0.82,
             }
-            if is_generic_agent_request(user_text)
+            if is_generic_agent_request(user_text) or task_spec["taskType"] == "agent_creation"
             else {
                 "intent": "general-chat",
                 "featureId": "homehub-core",
@@ -2095,7 +3188,26 @@ def route_voice_request(user_text, locale):
         ),
         "candidates": route.get("candidates", []),
     }
-    return orchestrate_voice_route(user_text, locale, heuristic_route)
+    routed = orchestrate_voice_route(user_text, locale, heuristic_route)
+    if task_spec["taskType"] == "agent_creation" and routed.get("kind") == "general":
+        custom_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "custom-agents"), None)
+        if custom_candidate:
+            routed["kind"] = "feature"
+            routed["selected"] = custom_candidate
+            routed["reasoning"] = "Task spec identified agent creation, so HomeHub pinned the request to the custom agent builder."
+        else:
+            routed["kind"] = "agent_factory"
+            routed["reasoning"] = "Task spec identified agent creation, so HomeHub kept the request in agent factory mode."
+    if task_spec["taskType"] in {"reminder", "schedule"} and routed.get("kind") == "general":
+        schedule_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "local-schedule"), None)
+        if schedule_candidate:
+            routed["kind"] = "feature"
+            routed["selected"] = schedule_candidate
+            routed["reasoning"] = "Task spec identified schedule work, so HomeHub pinned the request to the local schedule feature."
+    routed["taskSpec"] = task_spec
+    routed["toolPlan"] = build_tool_plan(task_spec, routed)
+    routed["modelRoute"] = select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])})
+    return routed
 
 
 def build_clarification_reply(route, locale):
@@ -2116,6 +3228,9 @@ def serialize_voice_route(route):
         "candidates": route.get("candidates", []),
         "clarificationQuestion": route.get("clarificationQuestion", ""),
         "reasoning": route.get("reasoning", ""),
+        "taskSpec": route.get("taskSpec"),
+        "toolPlan": route.get("toolPlan", []),
+        "modelRoute": route.get("modelRoute"),
     }
 
 
@@ -2125,6 +3240,120 @@ def build_pending_clarification_snapshot():
     return dict(PENDING_VOICE_CLARIFICATION)
 
 
+def detect_ui_action(user_text, locale):
+    normalized = str(user_text or "").strip().lower()
+    if not normalized:
+        return None
+    focus_patterns = [
+        (
+            {
+                "type": "focus_element",
+                "tab": "settings",
+                "targetId": "language-title",
+                "selector": "#languages .remote-target",
+                "source": "voice_command",
+            },
+            ["语言设置", "语言模式", "language mode", "language settings", "言語モード"],
+        ),
+        (
+            {
+                "type": "focus_element",
+                "tab": "settings",
+                "targetId": "audio-stack-title",
+                "selector": "#model-stack-cards .focusable-card",
+                "source": "voice_command",
+            },
+            ["语音设置", "音频设置", "模型目录", "audio settings", "voice settings", "model stack", "音声設定", "モデル一覧"],
+        ),
+        (
+            {
+                "type": "focus_element",
+                "tab": "test",
+                "targetId": "test-input",
+                "selector": "#test-input",
+                "source": "voice_command",
+            },
+            ["文字测试", "测试输入", "text test", "test input", "テキストテスト"],
+        ),
+        (
+            {
+                "type": "focus_element",
+                "tab": "test",
+                "targetId": "test-blueprints-title",
+                "selector": "#studio-blueprints .remote-target",
+                "source": "voice_command",
+            },
+            ["蓝图工作室", "蓝图列表", "blueprint studio", "blueprint list", "ブループリント"],
+        ),
+        (
+            {
+                "type": "focus_element",
+                "tab": "pairing",
+                "targetId": "pairing-code",
+                "selector": ".fake-qr",
+                "source": "voice_command",
+            },
+            ["配对码", "二维码", "pairing qr", "pairing code", "qr code", "qr", "qrコード"],
+        ),
+        (
+            {
+                "type": "focus_element",
+                "tab": "agents",
+                "targetId": "agents-title",
+                "selector": "#agents .remote-target",
+                "source": "voice_command",
+            },
+            ["智能体面板", "agent panel", "agents panel", "agent list", "エージェント一覧"],
+        ),
+    ]
+    for action, patterns in focus_patterns:
+        if any(pattern in normalized for pattern in patterns):
+            return action
+    tab_patterns = [
+        ("home", ["进入首页", "回到首页", "打开首页", "go home", "open home", "home tab", "ホーム", "ホームに"]),
+        ("agents", ["进入智能体", "打开智能体", "进入agents", "open agents", "show agents", "agent tab", "エージェント"]),
+        ("voice", ["进入语音", "打开语音", "voice tab", "open voice", "音声"]),
+        ("test", ["进入测试", "打开测试", "进入测试台", "打开测试台", "text test", "open test", "test tab", "テスト"]),
+        ("pairing", ["进入配对", "打开配对", "pairing tab", "open pairing", "ペアリング"]),
+        ("settings", ["进入设置", "打开设置", "go to settings", "open settings", "settings tab", "設定"]),
+    ]
+    for tab_name, patterns in tab_patterns:
+        if any(pattern in normalized for pattern in patterns):
+            return {
+                "type": "switch_tab",
+                "tab": tab_name,
+                "source": "voice_command",
+            }
+    return None
+
+
+def build_ui_action_reply(action, locale):
+    if not action:
+        return ""
+    action_type = str(action.get("type", "")).strip()
+    tab_name = str(action.get("tab", "")).strip()
+    labels = {
+        "home": {"zh-CN": "首页", "ja-JP": "ホーム", "default": "Home"},
+        "agents": {"zh-CN": "智能体", "ja-JP": "エージェント", "default": "Agents"},
+        "voice": {"zh-CN": "语音", "ja-JP": "音声", "default": "Voice"},
+        "test": {"zh-CN": "测试", "ja-JP": "テスト", "default": "Test"},
+        "pairing": {"zh-CN": "配对", "ja-JP": "ペアリング", "default": "Pairing"},
+        "settings": {"zh-CN": "设置", "ja-JP": "設定", "default": "Settings"},
+    }
+    label = labels.get(tab_name, {}).get(locale) or labels.get(tab_name, {}).get("default") or tab_name
+    if action_type == "focus_element":
+        if locale == "zh-CN":
+            return f"好的，正在打开{label}里的相关区域。"
+        if locale == "ja-JP":
+            return f"{label}内の関連エリアを表示します。"
+        return f"Opening the relevant area inside {label}."
+    if locale == "zh-CN":
+        return f"好的，正在进入{label}。"
+    if locale == "ja-JP":
+        return f"{label}タブを表示します。"
+    return f"Opening the {label} tab."
+
+
 def resolve_voice_request(user_text, locale):
     global PENDING_VOICE_CLARIFICATION
 
@@ -2132,6 +3361,71 @@ def resolve_voice_request(user_text, locale):
     original_text = user_text
     combined_text = user_text
     clarification_context = PENDING_VOICE_CLARIFICATION
+    ui_action = detect_ui_action(original_text, locale)
+    network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
+        token in str(original_text or "").lower() for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    )
+
+    if ui_action and not clarification_context:
+        PENDING_VOICE_CLARIFICATION = None
+        return {
+            "reply": build_ui_action_reply(ui_action, locale),
+            "route": {
+                "kind": "ui_action",
+                "selected": {
+                    "intent": "ui-action",
+                    "featureId": "tv-shell",
+                    "featureName": "TV Shell",
+                    "action": ui_action.get("type"),
+                    "target": ui_action.get("tab"),
+                    "score": 0.99,
+                },
+                "candidates": [],
+                "clarificationQuestion": "",
+                "reasoning": "Detected a direct TV navigation command.",
+            },
+            "pendingClarification": None,
+            "uiAction": ui_action,
+        }
+
+    if network_hint and not clarification_context:
+        task_spec = {
+            "taskType": "network_lookup",
+            "intent": "network-lookup",
+            "summary": "Query approved external sources and return a sourced summary.",
+            "urgency": "normal",
+            "inputModes": ["text"],
+            "requiresImage": False,
+            "requiresGeneration": False,
+            "requiresScheduling": False,
+            "requiresLongRunningAgent": False,
+            "preferredExecution": "hybrid",
+            "missingInfo": [],
+        }
+        runtime_strategy = build_runtime_strategy(load_ollama_inventory())
+        route = {
+            "kind": "general",
+            "selected": {
+                "intent": "network-lookup",
+                "featureId": "homehub-core",
+                "featureName": "HomeHub Core",
+                "action": "controlled_network_lookup",
+                "score": 0.91,
+            },
+            "candidates": [],
+            "reasoning": "Detected a controlled network lookup request from the message.",
+            "taskSpec": task_spec,
+            "toolPlan": build_tool_plan(task_spec, {"selected": {"featureId": "homehub-core"}}),
+            "modelRoute": select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])}),
+        }
+        lookup_result = perform_controlled_network_lookup(original_text, locale)
+        return {
+            "reply": build_network_lookup_reply(lookup_result, locale),
+            "route": serialize_voice_route(route),
+            "pendingClarification": None,
+            "uiAction": None,
+            "lookupResult": lookup_result,
+        }
 
     if clarification_context:
         combined_text = (
@@ -2140,6 +3434,7 @@ def resolve_voice_request(user_text, locale):
         )
 
     route = route_voice_request(combined_text, locale)
+    lookup_result = None
 
     if route.get("kind") == "clarify":
         PENDING_VOICE_CLARIFICATION = {
@@ -2157,17 +3452,23 @@ def resolve_voice_request(user_text, locale):
 
     if route.get("kind") == "feature":
         result = FEATURE_MANAGER.dispatch_voice_intent(route, combined_text, locale, runtime) or {}
-        reply = result.get("reply") or build_general_voice_reply(original_text, locale)
+        reply = result.get("reply") or build_general_voice_reply(original_text, locale, route.get("modelRoute"))
+        ui_action = result.get("uiAction")
+    elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
+        lookup_result = perform_controlled_network_lookup(combined_text if clarification_context else original_text, locale)
+        reply = build_network_lookup_reply(lookup_result, locale)
     elif route.get("kind") == "agent_factory":
         reply = build_agent_factory_reply(locale)
     else:
-        reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale)
+        reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
 
     PENDING_VOICE_CLARIFICATION = None
     return {
         "reply": reply,
         "route": serialize_voice_route(route),
         "pendingClarification": None,
+        "uiAction": ui_action,
+        "lookupResult": lookup_result,
     }
 
 
@@ -2176,6 +3477,7 @@ def build_voice_router_snapshot(locale):
     features = FEATURE_MANAGER.list_features(runtime)
     return {
         "pendingVoiceClarification": build_pending_clarification_snapshot(),
+        "toolRegistry": build_tool_registry_snapshot(),
         "featureIntents": [
             {
                 "featureId": item.get("id"),
@@ -2190,8 +3492,12 @@ def build_voice_router_snapshot(locale):
 
 def is_generic_agent_request(user_text):
     lowered = user_text.lower()
-    zh_request = "智能体" in user_text and any(token in user_text for token in ["创建", "新建", "能创建", "有哪些", "什么"])
-    en_request = "agent" in lowered and any(token in lowered for token in ["create", "make", "what", "available"])
+    zh_targets = ["智能体", "助手", "代理", "机器人"]
+    zh_verbs = ["创建", "新建", "做一个", "做个", "帮我做", "帮我创建", "能创建", "有哪些", "什么"]
+    en_targets = ["agent", "assistant", "bot", "workflow"]
+    en_verbs = ["create", "make", "build", "what", "available", "design"]
+    zh_request = any(target in user_text for target in zh_targets) and any(token in user_text for token in zh_verbs)
+    en_request = any(target in lowered for target in en_targets) and any(token in lowered for token in en_verbs)
     return zh_request or en_request
 
 
@@ -2205,6 +3511,7 @@ def build_last_voice_route(user_text, locale):
 
 def build_dashboard():
     provider_catalog = get_audio_provider_catalog()
+    local_inventory = load_ollama_inventory()
     agents = deepcopy(BASE_AGENTS)
     for agent in agents:
         delta = random.randint(-4, 6)
@@ -2299,6 +3606,7 @@ def build_dashboard():
             provider_catalog,
             {"stt": stt_provider_id, "tts": tts_provider_id},
         ),
+        "runtimeProfile": build_runtime_strategy(local_inventory),
         "languageSettings": {
             **LANGUAGE_SETTINGS,
             "current": PERSISTED_SETTINGS["language"],
@@ -2372,6 +3680,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/providers":
             self._send_json(MODEL_PROVIDERS)
+            return
+
+        if path == "/api/network/policies":
+            self._send_json({"items": list(NETWORK_LOOKUP_POLICIES.values())})
             return
 
         if path == "/api/skills":
@@ -2560,6 +3872,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, **result})
             return
 
+        if parsed.path == "/api/network/query":
+            body = preview_body or self._read_json_body()
+            if not body or "query" not in body:
+                self._send_json({"error": "query is required"}, status=400)
+                return
+            locale = body.get("locale", PERSISTED_SETTINGS["language"])
+            policy_id = str(body.get("policyId", "safe-general")).strip() or "safe-general"
+            preferred_sources = body.get("preferredSources", []) if isinstance(body.get("preferredSources", []), list) else []
+            allowed_domains = body.get("allowedDomains", []) if isinstance(body.get("allowedDomains", []), list) else []
+            result = perform_controlled_network_lookup(str(body.get("query", "")).strip(), locale, policy_id, preferred_sources, allowed_domains)
+            self._send_json({"ok": result.get("ok", False), **result})
+            return
+
         if parsed.path == "/api/voice/chat":
             body = preview_body or self._read_json_body()
             if not body or "message" not in body:
@@ -2595,6 +3920,8 @@ class Handler(BaseHTTPRequestHandler):
                     "conversation": CURRENT_CONVERSATION,
                     "voiceRoute": voice_route,
                     "pendingVoiceClarification": resolution.get("pendingClarification"),
+                    "uiAction": resolution.get("uiAction"),
+                    "lookupResult": resolution.get("lookupResult"),
                     "assistantMemory": build_assistant_memory_snapshot(),
                     "audio": audio_payload,
                 }
@@ -2667,6 +3994,26 @@ class Handler(BaseHTTPRequestHandler):
                 "candidates": [],
                 "clarificationQuestion": "",
                 "reasoning": "",
+                "taskSpec": {
+                    "taskType": "general_chat",
+                    "intent": "general-chat",
+                    "summary": "General household conversation or Q&A.",
+                    "urgency": "normal",
+                    "inputModes": ["text"],
+                    "requiresImage": False,
+                    "requiresGeneration": False,
+                    "requiresScheduling": False,
+                    "requiresLongRunningAgent": False,
+                    "preferredExecution": "hybrid",
+                    "missingInfo": [],
+                },
+                "toolPlan": [{"toolId": "general-chat", "label": "General Chat", "execution": "hybrid", "kind": "core", "selected": True}],
+                "modelRoute": {
+                    "execution": "hybrid",
+                    "primaryModel": "qwen2.5:3b-instruct",
+                    "fallbackModel": "qwen2.5:1.5b-instruct",
+                    "reason": "Balanced default for mixed household conversations.",
+                },
             }
             PENDING_VOICE_CLARIFICATION = None
             FEATURE_MANAGER.reset(runtime)

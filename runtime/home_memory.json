@@ -50,28 +50,30 @@
       "title": "HomeHub reminder",
       "triggerAt": "2026-04-03T02:54",
       "eventId": "",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
       "createdAt": "2026-04-02T22:53",
-      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。"
+      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。",
+      "completedAt": "2026-04-03T11:12"
     },
     {
       "id": "rem-20260402225358-402",
       "title": "HomeHub reminder",
       "triggerAt": "2026-04-03T02:54",
       "eventId": "",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
       "createdAt": "2026-04-02T22:53",
-      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。"
+      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。",
+      "completedAt": "2026-04-03T11:12"
     },
     {
       "id": "rem-20260402225757-232",
@@ -127,9 +129,41 @@
       ],
       "createdAt": "2026-04-02T23:28",
       "notes": "Original request: Original request: 帮我提醒一下\nClarification answer: 明天下午三点"
+    },
+    {
+      "id": "rem-20260403113841-163",
+      "title": "HomeHub reminder",
+      "triggerAt": "2026-04-03T20:00",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-03T11:38",
+      "notes": "Original request: 记账，并且每周提醒，在这里每周六的下午20点"
     }
   ],
   "recentActions": [
+    {
+      "id": "act-20260403113841-539",
+      "kind": "create-reminder",
+      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T20:00.",
+      "createdAt": "2026-04-03T11:38"
+    },
+    {
+      "id": "act-20260403111233-928",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'HomeHub reminder'.",
+      "createdAt": "2026-04-03T11:12"
+    },
+    {
+      "id": "act-20260403111232-324",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'HomeHub reminder'.",
+      "createdAt": "2026-04-03T11:12"
+    },
     {
       "id": "act-20260402233013-521",
       "kind": "complete-reminder",
@@ -183,12 +217,6 @@
       "kind": "create-reminder",
       "summary": "Created reminder '22点48分给老婆打电话' for 2026-04-02T22:48.",
       "createdAt": "2026-04-02T22:47"
-    },
-    {
-      "id": "act-local-memory-ready",
-      "kind": "init",
-      "summary": "HomeHub local memory is ready for schedule and reminder requests.",
-      "createdAt": "2026-04-02T22:41"
     }
   ]
 }

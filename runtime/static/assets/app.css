@@ -200,6 +200,12 @@ button:focus-visible,
     rgba(13, 22, 34, 0.96);
 }
 
+.floating-buddy.pose-test .floating-buddy-bubble {
+  background:
+    radial-gradient(circle at top left, rgba(255, 189, 92, 0.16), transparent 42%),
+    rgba(13, 22, 34, 0.96);
+}
+
 .floating-buddy.pose-pairing .floating-buddy-bubble {
   background:
     radial-gradient(circle at top left, rgba(125, 222, 210, 0.16), transparent 42%),
@@ -1001,6 +1007,107 @@ button {
   color: #122508;
 }
 
+.test-conversation-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-right: 4px;
+  min-height: 0;
+  align-content: start;
+}
+
+.test-input-row {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.test-action-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.test-input {
+  min-height: 110px;
+  resize: none;
+}
+
+.test-action {
+  min-width: 220px;
+  min-height: 50px;
+  border: 1px solid rgba(255, 207, 133, 0.38);
+  background: linear-gradient(135deg, rgba(255, 189, 92, 0.94), rgba(255, 132, 89, 0.96));
+  color: #08111a;
+  cursor: pointer;
+}
+
+.test-action-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(101, 182, 255, 0.12);
+  border: 1px solid rgba(101, 182, 255, 0.24);
+  color: var(--text);
+}
+
+.test-upload-meta {
+  min-height: 22px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.studio-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.studio-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(18, 31, 46, 0.96);
+}
+
+.studio-card.is-selected {
+  border-color: rgba(255, 207, 133, 0.42);
+  background: linear-gradient(135deg, rgba(255, 189, 92, 0.12), rgba(18, 31, 46, 0.96));
+}
+
+.studio-card p,
+.studio-card small {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.studio-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.studio-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.studio-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 #mic-orb.is-recording .mic-ring {
   border-color: rgba(255, 93, 93, 0.6);
   box-shadow:
@@ -1089,6 +1196,21 @@ button {
   color: #c9d6ff;
 }
 
+.provider-card .mini-pill.deployment {
+  background: rgba(255, 188, 110, 0.16);
+  color: #ffd7a1;
+}
+
+.provider-card .mini-pill.access {
+  background: rgba(160, 126, 255, 0.16);
+  color: #ddd0ff;
+}
+
+.provider-card .mini-pill.status {
+  background: rgba(123, 227, 95, 0.18);
+  color: #d1f7c0;
+}
+
 .provider-models {
   display: grid;
   gap: 6px;
@@ -1123,6 +1245,40 @@ button {
 
 .provider-card small {
   color: var(--muted);
+}
+
+.provider-notes,
+.provider-install {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 18, 28, 0.58);
+  border: 1px solid rgba(102, 148, 198, 0.18);
+}
+
+.provider-notes strong,
+.provider-install strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.provider-notes ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  display: grid;
+  gap: 4px;
+}
+
+.provider-install code {
+  display: block;
+  white-space: pre-wrap;
+  color: #ffe8c1;
+  font-size: 12px;
 }
 
 .custom-provider-form {
@@ -1240,8 +1396,11 @@ button {
 #skills,
 #relay,
 #conversation,
+#test-conversation,
 #languages,
-#audio-stack {
+#audio-stack,
+#studio-blueprints,
+#studio-actions-log {
   flex: 1 1 auto;
   overflow: auto;
   padding-right: 4px;
@@ -1254,8 +1413,11 @@ button {
 #agents,
 #relay,
 #conversation,
+#test-conversation,
 #languages,
-#audio-stack {
+#audio-stack,
+#studio-blueprints,
+#studio-actions-log {
   height: 100%;
 }
 
@@ -1266,6 +1428,10 @@ button {
 
 #conversation {
   align-content: start;
+}
+
+#studio-actions-log {
+  margin-top: 14px;
 }
 
 #model-stack-scroll {
@@ -1291,8 +1457,11 @@ button {
 #skills::-webkit-scrollbar,
 #relay::-webkit-scrollbar,
 #conversation::-webkit-scrollbar,
+#test-conversation::-webkit-scrollbar,
 #languages::-webkit-scrollbar,
 #audio-stack::-webkit-scrollbar,
+#studio-blueprints::-webkit-scrollbar,
+#studio-actions-log::-webkit-scrollbar,
 #model-stack-scroll::-webkit-scrollbar,
 .voice-stage .voice-card::-webkit-scrollbar {
   width: 8px;
@@ -1306,8 +1475,11 @@ button {
 #skills:hover,
 #relay:hover,
 #conversation:hover,
+#test-conversation:hover,
 #languages:hover,
 #audio-stack:hover,
+#studio-blueprints:hover,
+#studio-actions-log:hover,
 #model-stack-scroll:hover,
 #modules:focus-within,
 #timeline:focus-within,
@@ -1316,7 +1488,9 @@ button {
 #skills:focus-within,
 #relay:focus-within,
 #conversation:focus-within,
+#test-conversation:focus-within,
 .settings-scroll-area:focus-within,
+.studio-list:focus-within,
 .voice-stage .voice-card:hover,
 .voice-stage .voice-card:focus-within {
   scrollbar-width: thin;
@@ -1329,8 +1503,11 @@ button {
 #skills:hover::-webkit-scrollbar,
 #relay:hover::-webkit-scrollbar,
 #conversation:hover::-webkit-scrollbar,
+#test-conversation:hover::-webkit-scrollbar,
 #languages:hover::-webkit-scrollbar,
 #audio-stack:hover::-webkit-scrollbar,
+#studio-blueprints:hover::-webkit-scrollbar,
+#studio-actions-log:hover::-webkit-scrollbar,
 #model-stack-scroll:hover::-webkit-scrollbar,
 #modules:focus-within::-webkit-scrollbar,
 #timeline:focus-within::-webkit-scrollbar,
@@ -1339,7 +1516,9 @@ button {
 #skills:focus-within::-webkit-scrollbar,
 #relay:focus-within::-webkit-scrollbar,
 #conversation:focus-within::-webkit-scrollbar,
+#test-conversation:focus-within::-webkit-scrollbar,
 .settings-scroll-area:focus-within::-webkit-scrollbar,
+.studio-list:focus-within::-webkit-scrollbar,
 .voice-stage .voice-card:hover::-webkit-scrollbar,
 .voice-stage .voice-card:focus-within::-webkit-scrollbar {
   width: 8px;
@@ -1352,8 +1531,11 @@ button {
 #skills:hover::-webkit-scrollbar-thumb,
 #relay:hover::-webkit-scrollbar-thumb,
 #conversation:hover::-webkit-scrollbar-thumb,
+#test-conversation:hover::-webkit-scrollbar-thumb,
 #languages:hover::-webkit-scrollbar-thumb,
 #audio-stack:hover::-webkit-scrollbar-thumb,
+#studio-blueprints:hover::-webkit-scrollbar-thumb,
+#studio-actions-log:hover::-webkit-scrollbar-thumb,
 #model-stack-scroll:hover::-webkit-scrollbar-thumb,
 #modules:focus-within::-webkit-scrollbar-thumb,
 #timeline:focus-within::-webkit-scrollbar-thumb,
@@ -1362,7 +1544,9 @@ button {
 #skills:focus-within::-webkit-scrollbar-thumb,
 #relay:focus-within::-webkit-scrollbar-thumb,
 #conversation:focus-within::-webkit-scrollbar-thumb,
+#test-conversation:focus-within::-webkit-scrollbar-thumb,
 .settings-scroll-area:focus-within::-webkit-scrollbar-thumb,
+.studio-list:focus-within::-webkit-scrollbar-thumb,
 .voice-stage .voice-card:hover::-webkit-scrollbar-thumb,
 .voice-stage .voice-card:focus-within::-webkit-scrollbar-thumb {
   background: rgba(142, 197, 255, 0.45);

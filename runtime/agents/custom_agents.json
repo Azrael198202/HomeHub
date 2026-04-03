@@ -1,0 +1,99 @@
+{
+  "items": [
+    {
+      "id": "custom-agent-test-bill",
+      "type": "custom-agent",
+      "name": "????",
+      "status": "complete",
+      "createdAt": "2026-04-03T10:00",
+      "updatedAt": "2026-04-03T12:43",
+      "profile": {
+        "name": "????",
+        "goal": "????????",
+        "primaryUser": "?????",
+        "trigger": "??? 20:00",
+        "inputs": "?????????",
+        "output": "???????",
+        "checkPrompt": "?????????",
+        "noInputAction": "??????",
+        "hasInputAction": "???????",
+        "constraints": "??????????"
+      },
+      "qaHistory": [],
+      "artifact": "",
+      "generatedFeaturePath": "",
+      "generatedFeatureId": "",
+      "records": [
+        {
+          "id": "custom-agent-test-bill-attachment_input-20260403T1243",
+          "kind": "attachment_input",
+          "message": "?????????",
+          "createdAt": "2026-04-03T12:43",
+          "payload": {
+            "message": "?????????",
+            "attachments": [
+              {
+                "name": "bill.png",
+                "mimeType": "image/png",
+                "sizeBytes": 16
+              }
+            ],
+            "analysis": {}
+          }
+        }
+      ]
+    }
+  ],
+  "recentActions": [
+    {
+      "id": "custom-act-2026-04-03T12:43",
+      "summary": "Recorded attachment_input payload for '????'.",
+      "createdAt": "2026-04-03T12:43"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:39",
+      "summary": "Created custom agent draft '完成创建刚才所说的智能体智能体'.",
+      "createdAt": "2026-04-03T11:39"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:36",
+      "summary": "Created custom agent draft '帮我创建一个每周记账的智能体智能体'.",
+      "createdAt": "2026-04-03T11:36"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:27",
+      "summary": "Completed custom agent '账单守望者'.",
+      "createdAt": "2026-04-03T11:27"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:27",
+      "summary": "Completed custom agent '账单守望者'.",
+      "createdAt": "2026-04-03T11:27"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:27",
+      "summary": "Prepared review summary for '账单守望者'.",
+      "createdAt": "2026-04-03T11:27"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:27",
+      "summary": "Created custom agent draft '帮我创建一个每周整理账单的智能体智能体'.",
+      "createdAt": "2026-04-03T11:27"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:26",
+      "summary": "Prepared review summary for '账单守望者'.",
+      "createdAt": "2026-04-03T11:26"
+    },
+    {
+      "id": "custom-act-2026-04-03T11:14",
+      "summary": "Created custom agent draft '帮我创建一个每周整理家庭账单的智能体智能体'.",
+      "createdAt": "2026-04-03T11:14"
+    },
+    {
+      "id": "custom-agents-ready",
+      "summary": "Custom agent studio is ready.",
+      "createdAt": "2026-04-03T11:08"
+    }
+  ]
+}

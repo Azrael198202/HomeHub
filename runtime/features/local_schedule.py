@@ -92,6 +92,15 @@ class Feature(HomeHubFeature):
     def now_local(self) -> datetime:
         return datetime.now().replace(second=0, microsecond=0)
 
+    def has_active_agent_builder_session(self, runtime: RuntimeBridge) -> bool:
+        store = runtime.state.get("custom-agents")
+        if not isinstance(store, dict):
+            return False
+        for item in store.get("items", []):
+            if item.get("status") in {"collecting", "review"}:
+                return True
+        return False
+
     def parse_iso_datetime(self, value) -> datetime | None:
         try:
             return datetime.fromisoformat(str(value))
@@ -380,6 +389,8 @@ class Feature(HomeHubFeature):
         return payload if isinstance(payload, dict) else None
 
     def detect_local_assistant_action(self, user_text: str, locale: str, runtime: RuntimeBridge) -> dict:
+        if self.has_active_agent_builder_session(runtime):
+            return {"action": "none"}
         lowered = user_text.lower()
         ai_result = self.try_extract_schedule_with_openai(user_text, locale, runtime)
         if isinstance(ai_result, dict) and ai_result.get("action") in {"create_event", "create_reminder", "show_schedule"}:

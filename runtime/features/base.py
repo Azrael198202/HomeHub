@@ -14,6 +14,8 @@ class RuntimeBridge:
     get_setting: Callable[[str, Any], Any]
     get_secret: Callable[[str, Any], Any]
     openai_json: Callable[[str, str, str], dict[str, Any] | None]
+    analyze_image: Callable[[str, str, str, str], dict[str, Any] | None] | None = None
+    network_lookup: Callable[[str, str, str, list[str] | None, list[str] | None], dict[str, Any]] | None = None
     log: Callable[[str], None] | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
