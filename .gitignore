@@ -12,3 +12,5 @@ runtime/secrets.local.json
 runtime/secrets.prod.json
 runtime/usage-cost-log.jsonl
 runtime/google-cloud-service-account.json
+tools/codex-sync/codex-sync.config.json
+tools/codex-sync/__pycache__/

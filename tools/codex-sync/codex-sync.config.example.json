@@ -1,0 +1,16 @@
+{
+  "sourceDir": "C:/path/to/your/codex-records",
+  "repoDir": "C:/path/to/your/github-clone",
+  "machineName": "DESKTOP-01",
+  "branch": "main",
+  "targetRoot": "records",
+  "deleteMissing": false,
+  "includePatterns": [
+    "**/*"
+  ],
+  "excludePatterns": [
+    ".git/**",
+    ".DS_Store",
+    "Thumbs.db"
+  ]
+}
