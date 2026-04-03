@@ -1,0 +1,51 @@
+{
+  "settings": {
+    "enabled": true
+  },
+  "items": [
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-item-20260403T1606",
+      "amount": 3200,
+      "category": "买菜",
+      "currency": "JPY",
+      "sourceText": "今天买菜花了3200日元，记到账单里",
+      "createdAt": "2026-04-03T16:06"
+    }
+  ],
+  "recentActions": [
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260403T1606",
+      "summary": "Calculated today total: 3200 JPY.",
+      "createdAt": "2026-04-03T16:06"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260403T1606",
+      "summary": "Recorded 3200 JPY for 买菜.",
+      "createdAt": "2026-04-03T16:06"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-ready",
+      "summary": "家庭账单 scaffold is ready for implementation.",
+      "createdAt": "2026-04-03T14:26"
+    }
+  ],
+  "lastRun": "2026-04-03T16:06",
+  "lastSummary": {
+    "period": "today",
+    "total": 3200,
+    "count": 1,
+    "threshold": 2000,
+    "overThreshold": true,
+    "items": [
+      {
+        "id": "u5bb6_u5ead_u8d26_u5355-item-20260403T1606",
+        "amount": 3200,
+        "category": "买菜",
+        "currency": "JPY",
+        "sourceText": "今天买菜花了3200日元，记到账单里",
+        "createdAt": "2026-04-03T16:06"
+      }
+    ],
+    "generatedAt": "2026-04-03T16:06"
+  }
+}

@@ -1,39 +1,10 @@
 {
-  "events": [
-    {
-      "id": "evt-20260402225757-368",
-      "title": "明天下午三点的日程",
-      "startAt": "2026-04-03T15:00",
-      "endAt": "2026-04-03T16:00",
-      "participants": [],
-      "location": "",
-      "source": "homehub-local",
-      "createdAt": "2026-04-02T22:57",
-      "notes": "Original request: 帮我创建明天下午三点的日程，提前半小时提醒",
-      "linkedReminderIds": [
-        "rem-20260402225757-232"
-      ]
-    },
-    {
-      "id": "evt-20260402231053-632",
-      "title": "明天下午三点的日程",
-      "startAt": "2026-04-03T15:00",
-      "endAt": "2026-04-03T16:00",
-      "participants": [],
-      "location": "",
-      "source": "homehub-local",
-      "createdAt": "2026-04-02T23:10",
-      "notes": "Original request: 帮我创建明天下午三点的日程，提前半小时提醒",
-      "linkedReminderIds": [
-        "rem-20260402231053-892"
-      ]
-    }
-  ],
+  "events": [],
   "reminders": [
     {
-      "id": "rem-20260402224712-602",
-      "title": "22点48分给老婆打电话",
-      "triggerAt": "2026-04-02T22:48",
+      "id": "rem-20260403144431-975",
+      "title": "查看总消费金额",
+      "triggerAt": "2026-04-03T14:45",
       "eventId": "",
       "status": "done",
       "channels": [
@@ -41,14 +12,70 @@
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-02T22:47",
-      "notes": "Original request: 提醒我22点48分给老婆打电话。",
-      "completedAt": "2026-04-02T22:50"
+      "createdAt": "2026-04-03T14:44",
+      "notes": "Original request: Original request: 今天2点41分能再提醒我一下花了多少钱吗\nClarification answer: 本周的，现在修改一下时间，今天下午14点45分提醒我，总的消费金额",
+      "completedAt": "2026-04-03T14:45"
     },
     {
-      "id": "rem-20260402225338-924",
-      "title": "HomeHub reminder",
-      "triggerAt": "2026-04-03T02:54",
+      "id": "rem-20260403144906-346",
+      "title": "本周消费总额提醒",
+      "triggerAt": "2026-04-10T14:50+00:00",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-03T14:49",
+      "notes": "Original request: 请再14点50分提醒我一下，我本周的总的消费金额是多少。如果超出2000，就发生预警提醒我注意。花费超额了。"
+    },
+    {
+      "id": "rem-20260403145307-742",
+      "title": "本周消费总额预警",
+      "triggerAt": "2026-04-03T15:00+00:00",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-03T14:53",
+      "notes": "Original request: 请在今天15点提醒我一下，我本周的总的消费金额是多少。如果超出2000，就发生预警提醒我注意。花费超额了。"
+    },
+    {
+      "id": "rem-20260403152120-814",
+      "title": "本周消费总额提醒",
+      "triggerAt": "2026-04-04T00:20",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-03T15:21",
+      "notes": "Original request: 请在今天的15点20分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额"
+    },
+    {
+      "id": "rem-20260403152304-383",
+      "title": "本周消费总额检查",
+      "triggerAt": "2026-04-04T00:25",
+      "eventId": "",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-03T15:23",
+      "notes": "Original request: 请在今天的15点25分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额"
+    },
+    {
+      "id": "rem-20260403154541-214",
+      "title": "到今天为止，我一共花了多少钱，有没有超过2000的预警金额",
+      "triggerAt": "2026-04-03T15:47",
       "eventId": "",
       "status": "done",
       "channels": [
@@ -56,14 +83,14 @@
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-02T22:53",
-      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。",
-      "completedAt": "2026-04-03T11:12"
+      "createdAt": "2026-04-03T15:45",
+      "notes": "Original request: 请在今天的15点47分，提醒我到今天为止，我一共花了多少钱，有没有超过2000的预警金额。",
+      "completedAt": "2026-04-03T15:47"
     },
     {
-      "id": "rem-20260402225358-402",
-      "title": "HomeHub reminder",
-      "triggerAt": "2026-04-03T02:54",
+      "id": "rem-20260403155344-729",
+      "title": "消费提醒",
+      "triggerAt": "2026-04-03T15:55",
       "eventId": "",
       "status": "done",
       "channels": [
@@ -71,40 +98,14 @@
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-02T22:53",
-      "notes": "Original request: 帮我创建提醒20 2点54分给老婆打电话。",
-      "completedAt": "2026-04-03T11:12"
+      "createdAt": "2026-04-03T15:53",
+      "notes": "Original request: 请在今天15点55分检查我今天截至当时的总消费。无论是否超过2000日元，都先告诉我总金额；如果超过2000日元，再附加预警说明。以提醒的方式。",
+      "completedAt": "2026-04-03T15:56"
     },
     {
-      "id": "rem-20260402225757-232",
-      "title": "Reminder: 明天下午三点的日程",
-      "triggerAt": "2026-04-03T14:30",
-      "eventId": "evt-20260402225757-368",
-      "status": "pending",
-      "channels": [
-        "voice",
-        "tv",
-        "mobile"
-      ],
-      "createdAt": "2026-04-02T22:57"
-    },
-    {
-      "id": "rem-20260402231053-892",
-      "title": "Reminder: 明天下午三点的日程",
-      "triggerAt": "2026-04-03T14:30",
-      "eventId": "evt-20260402231053-632",
-      "status": "pending",
-      "channels": [
-        "voice",
-        "tv",
-        "mobile"
-      ],
-      "createdAt": "2026-04-02T23:10"
-    },
-    {
-      "id": "rem-20260402232821-508",
-      "title": "23点30分打电话给老婆",
-      "triggerAt": "2026-04-02T23:30",
+      "id": "rem-20260403160614-785",
+      "title": "消费提醒",
+      "triggerAt": "2026-04-03T15:55",
       "eventId": "",
       "status": "done",
       "channels": [
@@ -112,111 +113,106 @@
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-02T23:28",
-      "notes": "Original request: 提醒我23点30分打电话给老婆。",
-      "completedAt": "2026-04-02T23:30"
-    },
-    {
-      "id": "rem-20260402232823-440",
-      "title": "HomeHub reminder",
-      "triggerAt": "2026-04-03T15:00",
-      "eventId": "",
-      "status": "pending",
-      "channels": [
-        "voice",
-        "tv",
-        "mobile"
-      ],
-      "createdAt": "2026-04-02T23:28",
-      "notes": "Original request: Original request: 帮我提醒一下\nClarification answer: 明天下午三点"
-    },
-    {
-      "id": "rem-20260403113841-163",
-      "title": "HomeHub reminder",
-      "triggerAt": "2026-04-03T20:00",
-      "eventId": "",
-      "status": "pending",
-      "channels": [
-        "voice",
-        "tv",
-        "mobile"
-      ],
-      "createdAt": "2026-04-03T11:38",
-      "notes": "Original request: 记账，并且每周提醒，在这里每周六的下午20点"
+      "createdAt": "2026-04-03T16:06",
+      "notes": "今天截至目前总消费是 3200 日元。 已超过 2000 日元预警额度。\nOriginal request: 请在今天15点55分检查我今天截至当时的总消费。无论是否超过2000日元，都先告诉我总金额，如果超过2000日元，再附加预警说明。",
+      "workflow": {
+        "kind": "feature_api",
+        "featureId": "u5bb6_u5ead_u8d26_u5355",
+        "request": {
+          "mode": "api",
+          "method": "POST",
+          "path": "/api/u5bb6_u5ead_u8d26_u5355/run",
+          "body": {
+            "action": "report_today_total",
+            "period": "today",
+            "threshold": 2000,
+            "includeTotalAlways": true
+          }
+        },
+        "originalRequest": "请在今天15点55分检查我今天截至当时的总消费。无论是否超过2000日元，都先告诉我总金额，如果超过2000日元，再附加预警说明。"
+      },
+      "workflowResult": {
+        "ok": true,
+        "reply": "今天截至目前总消费是 3200 日元。 已超过 2000 日元预警额度。",
+        "executedAt": "2026-04-03T15:56",
+        "featureId": "u5bb6_u5ead_u8d26_u5355"
+      },
+      "executedAt": "2026-04-03T15:56",
+      "completedAt": "2026-04-03T16:07"
     }
   ],
   "recentActions": [
     {
-      "id": "act-20260403113841-539",
-      "kind": "create-reminder",
-      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T20:00.",
-      "createdAt": "2026-04-03T11:38"
-    },
-    {
-      "id": "act-20260403111233-928",
+      "id": "act-20260403160710-205",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'HomeHub reminder'.",
-      "createdAt": "2026-04-03T11:12"
+      "summary": "Completed reminder '消费提醒'.",
+      "createdAt": "2026-04-03T16:07"
     },
     {
-      "id": "act-20260403111232-324",
+      "id": "act-20260403160614-141",
+      "kind": "execute-reminder-workflow",
+      "summary": "Executed reminder workflow for '消费提醒'.",
+      "createdAt": "2026-04-03T15:56"
+    },
+    {
+      "id": "act-20260403160614-143",
+      "kind": "create-reminder",
+      "summary": "Created reminder '消费提醒' for 2026-04-03T15:55.",
+      "createdAt": "2026-04-03T16:06"
+    },
+    {
+      "id": "act-20260403155645-263",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'HomeHub reminder'.",
-      "createdAt": "2026-04-03T11:12"
+      "summary": "Completed reminder '消费提醒'.",
+      "createdAt": "2026-04-03T15:56"
     },
     {
-      "id": "act-20260402233013-521",
+      "id": "act-20260403155344-400",
+      "kind": "create-reminder",
+      "summary": "Created reminder '消费提醒' for 2026-04-03T15:55.",
+      "createdAt": "2026-04-03T15:53"
+    },
+    {
+      "id": "act-20260403154759-708",
       "kind": "complete-reminder",
-      "summary": "Completed reminder '23点30分打电话给老婆'.",
-      "createdAt": "2026-04-02T23:30"
+      "summary": "Completed reminder '到今天为止，我一共花了多少钱，有没有超过2000的预警金额'.",
+      "createdAt": "2026-04-03T15:47"
     },
     {
-      "id": "act-20260402232823-241",
+      "id": "act-20260403154541-358",
       "kind": "create-reminder",
-      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T15:00.",
-      "createdAt": "2026-04-02T23:28"
+      "summary": "Created reminder '到今天为止，我一共花了多少钱，有没有超过2000的预警金额' for 2026-04-03T15:47.",
+      "createdAt": "2026-04-03T15:45"
     },
     {
-      "id": "act-20260402232821-326",
+      "id": "act-20260403152304-417",
       "kind": "create-reminder",
-      "summary": "Created reminder '23点30分打电话给老婆' for 2026-04-02T23:30.",
-      "createdAt": "2026-04-02T23:28"
+      "summary": "Created reminder '本周消费总额检查' for 2026-04-04T00:25.",
+      "createdAt": "2026-04-03T15:23"
     },
     {
-      "id": "act-20260402231053-777",
-      "kind": "create-event",
-      "summary": "Created schedule '明天下午三点的日程' for 2026-04-03T15:00.",
-      "createdAt": "2026-04-02T23:10"
-    },
-    {
-      "id": "act-20260402225757-377",
-      "kind": "create-event",
-      "summary": "Created schedule '明天下午三点的日程' for 2026-04-03T15:00.",
-      "createdAt": "2026-04-02T22:57"
-    },
-    {
-      "id": "act-20260402225358-732",
+      "id": "act-20260403152120-452",
       "kind": "create-reminder",
-      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T02:54.",
-      "createdAt": "2026-04-02T22:53"
+      "summary": "Created reminder '本周消费总额提醒' for 2026-04-04T00:20.",
+      "createdAt": "2026-04-03T15:21"
     },
     {
-      "id": "act-20260402225338-963",
+      "id": "act-20260403145307-277",
       "kind": "create-reminder",
-      "summary": "Created reminder 'HomeHub reminder' for 2026-04-03T02:54.",
-      "createdAt": "2026-04-02T22:53"
+      "summary": "Created reminder '本周消费总额预警' for 2026-04-03T15:00+00:00.",
+      "createdAt": "2026-04-03T14:53"
     },
     {
-      "id": "act-20260402225051-137",
+      "id": "act-20260403144906-685",
+      "kind": "create-reminder",
+      "summary": "Created reminder '本周消费总额提醒' for 2026-04-10T14:50+00:00.",
+      "createdAt": "2026-04-03T14:49"
+    },
+    {
+      "id": "act-20260403144522-502",
       "kind": "complete-reminder",
-      "summary": "Completed reminder '22点48分给老婆打电话'.",
-      "createdAt": "2026-04-02T22:50"
-    },
-    {
-      "id": "act-20260402224712-594",
-      "kind": "create-reminder",
-      "summary": "Created reminder '22点48分给老婆打电话' for 2026-04-02T22:48.",
-      "createdAt": "2026-04-02T22:47"
+      "summary": "Completed reminder '查看总消费金额'.",
+      "createdAt": "2026-04-03T14:45"
     }
   ]
 }

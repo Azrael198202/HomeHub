@@ -2091,7 +2091,7 @@ def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
 
 
 def build_runtime_bridge():
-    return RuntimeBridge(
+    runtime = RuntimeBridge(
         root=ROOT,
         get_setting=lambda key, default=None: PERSISTED_SETTINGS.get(key, default),
         get_secret=lambda key, default=None: SECRETS.get(key, default),
@@ -2100,6 +2100,8 @@ def build_runtime_bridge():
         network_lookup=perform_controlled_network_lookup,
         log=lambda message: print(f"[features] {message}"),
     )
+    runtime.invoke_feature = lambda feature_id, payload, locale: FEATURE_MANAGER.invoke_feature(feature_id, payload, locale, runtime)
+    return runtime
 
 
 def ollama_chat_raw(system_prompt, user_prompt, model_name):
@@ -3632,7 +3634,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            # The browser canceled or replaced the request before the response finished.
+            return
 
     def _send_file(self, file_path: Path, content_type: str):
         if not file_path.exists() or not file_path.is_file():

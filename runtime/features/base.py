@@ -16,6 +16,7 @@ class RuntimeBridge:
     openai_json: Callable[[str, str, str], dict[str, Any] | None]
     analyze_image: Callable[[str, str, str, str], dict[str, Any] | None] | None = None
     network_lookup: Callable[[str, str, str, list[str] | None, list[str] | None], dict[str, Any]] | None = None
+    invoke_feature: Callable[[str, dict[str, Any], str], dict[str, Any] | None] | None = None
     log: Callable[[str], None] | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
@@ -27,6 +28,11 @@ class RuntimeBridge:
     def emit_log(self, message: str) -> None:
         if self.log:
             self.log(message)
+
+    def call_feature(self, feature_id: str, payload: dict[str, Any], locale: str) -> dict[str, Any] | None:
+        if not self.invoke_feature:
+            return None
+        return self.invoke_feature(feature_id, payload, locale)
 
 
 class HomeHubFeature:

@@ -1,99 +1,88 @@
 {
   "items": [
     {
-      "id": "custom-agent-test-bill",
+      "id": "custom-agent-20260403142506",
       "type": "custom-agent",
-      "name": "????",
+      "name": "家庭账单",
       "status": "complete",
-      "createdAt": "2026-04-03T10:00",
-      "updatedAt": "2026-04-03T12:43",
+      "createdAt": "2026-04-03T14:25",
+      "updatedAt": "2026-04-03T16:06",
       "profile": {
-        "name": "????",
-        "goal": "????????",
-        "primaryUser": "?????",
-        "trigger": "??? 20:00",
-        "inputs": "?????????",
-        "output": "???????",
-        "checkPrompt": "?????????",
-        "noInputAction": "??????",
-        "hasInputAction": "???????",
-        "constraints": "??????????"
+        "name": "家庭账单",
+        "goal": "记录用户的消费并提供每周的消费总结和提醒",
+        "primaryUser": "家庭成员，使用你的人。",
+        "trigger": "用户输入消费或根据图片内容进行金额记录，或者询问本周的消费总额和详细情况",
+        "inputs": "[{'name': '消费类型', 'type': 'string', 'description': '用户输入的消费类型，如衣服、餐饮等'}, {'name': '消费金额', 'type': 'number', 'description': '用户输入的消费金额'}, {'name': '图片内容', 'type': 'image', 'description': '用户提供的图片，用于识别消费金额'}]",
+        "output": "[{'name': '记录结果', 'type': 'string', 'description': '消费记录的结果，包括消费类型和金额'}, {'name': '每周总结', 'type': 'string', 'description': '每周六晚上六点发送的消费总结消息，包括总花费和详细消费情况'}]",
+        "constraints": "[{'condition': '无法判断是什么消费时', 'action': '用其他来记录'}, {'condition': '用户询问本周的消费总额和详细情况', 'action': '总结性告诉我花费总额和都花在什么地方了'}]",
+        "checkPrompt": "请确认您是否需要创建一个名为“家庭账单”的智能体，该智能体能够记录用户的消费并提供每周的消费总结和提醒。",
+        "noInputAction": "请提供更多详细信息以便我更好地理解您的需求。",
+        "hasInputAction": "好的，请告诉我您希望如何使用这个智能体。",
+        "allowNetworkLookup": "False",
+        "preferredSources": "",
+        "lookupPolicy": "safe-general"
       },
-      "qaHistory": [],
-      "artifact": "",
-      "generatedFeaturePath": "",
-      "generatedFeatureId": "",
+      "qaHistory": [
+        {
+          "questionKey": "primaryUser",
+          "answer": "家庭成员，使用你的人。",
+          "createdAt": "2026-04-03T14:25"
+        }
+      ],
+      "artifact": "# 家庭账单\n\n## Goal\n记录用户的消费并提供每周的消费总结和提醒\n\n## Primary User\n家庭成员，使用你的人。\n\n## Trigger\n用户输入消费或根据图片内容进行金额记录，或者询问本周的消费总额和详细情况\n\n## Required Inputs\n[{'name': '消费类型', 'type': 'string', 'description': '用户输入的消费类型，如衣服、餐饮等'}, {'name': '消费金额', 'type': 'number', 'description': '用户输入的消费金额'}, {'name': '图片内容', 'type': 'image', 'description': '用户提供的图片，用于识别消费金额'}]\n\n## Output\n[{'name': '记录结果', 'type': 'string', 'description': '消费记录的结果，包括消费类型和金额'}, {'name': '每周总结', 'type': 'string', 'description': '每周六晚上六点发送的消费总结消息，包括总花费和详细消费情况'}]\n\n## Proactive Check Prompt\n请确认您是否需要创建一个名为“家庭账单”的智能体，该智能体能够记录用户的消费并提供每周的消费总结和提醒。\n\n## If No New Input\n请提供更多详细信息以便我更好地理解您的需求。\n\n## If New Input Arrives\n好的，请告诉我您希望如何使用这个智能体。\n\n## Network Lookup\nAllowed: False\nPreferred Sources: \nLookup Policy: safe-general\n\n## Constraints\n[{'condition': '无法判断是什么消费时', 'action': '用其他来记录'}, {'condition': '用户询问本周的消费总额和详细情况', 'action': '总结性告诉我花费总额和都花在什么地方了'}]\n\n## HomeHub Execution Notes\n- 在语音或文字对话中识别用户需求。\n- 如果资料不完整，先主动追问，再执行。\n- 在允许范围内复用本地家庭记忆、文档、日程和消息桥接输入。\n- 在执行过程中持续给用户简短进度反馈。",
+      "generatedFeaturePath": "E:\\pw\\HomeHub\\runtime\\features\\u5bb6_u5ead_u8d26_u5355_feature.py",
+      "generatedFeatureId": "u5bb6_u5ead_u8d26_u5355",
       "records": [
         {
-          "id": "custom-agent-test-bill-attachment_input-20260403T1243",
-          "kind": "attachment_input",
-          "message": "?????????",
-          "createdAt": "2026-04-03T12:43",
-          "payload": {
-            "message": "?????????",
-            "attachments": [
-              {
-                "name": "bill.png",
-                "mimeType": "image/png",
-                "sizeBytes": 16
-              }
-            ],
-            "analysis": {}
-          }
+          "id": "custom-agent-20260403142506-has_input-20260403T1606",
+          "kind": "has_input",
+          "message": "今天买菜花了3200日元，记到账单里",
+          "createdAt": "2026-04-03T16:06"
+        },
+        {
+          "id": "custom-agent-20260403142506-has_input-20260403T1545",
+          "kind": "has_input",
+          "message": "今天买菜花了3200日元，记到账单里",
+          "createdAt": "2026-04-03T15:45"
         }
       ]
     }
   ],
   "recentActions": [
     {
-      "id": "custom-act-2026-04-03T12:43",
-      "summary": "Recorded attachment_input payload for '????'.",
-      "createdAt": "2026-04-03T12:43"
+      "id": "custom-act-2026-04-03T16:06",
+      "summary": "Recorded has_input update for '家庭账单'.",
+      "createdAt": "2026-04-03T16:06"
     },
     {
-      "id": "custom-act-2026-04-03T11:39",
-      "summary": "Created custom agent draft '完成创建刚才所说的智能体智能体'.",
-      "createdAt": "2026-04-03T11:39"
+      "id": "custom-act-2026-04-03T15:45",
+      "summary": "Recorded has_input update for '家庭账单'.",
+      "createdAt": "2026-04-03T15:45"
     },
     {
-      "id": "custom-act-2026-04-03T11:36",
-      "summary": "Created custom agent draft '帮我创建一个每周记账的智能体智能体'.",
-      "createdAt": "2026-04-03T11:36"
+      "id": "custom-act-2026-04-03T14:26",
+      "summary": "Generated feature scaffold for '家庭账单' at u5bb6_u5ead_u8d26_u5355_feature.py.",
+      "createdAt": "2026-04-03T14:26"
     },
     {
-      "id": "custom-act-2026-04-03T11:27",
-      "summary": "Completed custom agent '账单守望者'.",
-      "createdAt": "2026-04-03T11:27"
+      "id": "custom-act-2026-04-03T14:26",
+      "summary": "Completed custom agent '家庭账单'.",
+      "createdAt": "2026-04-03T14:26"
     },
     {
-      "id": "custom-act-2026-04-03T11:27",
-      "summary": "Completed custom agent '账单守望者'.",
-      "createdAt": "2026-04-03T11:27"
+      "id": "custom-act-2026-04-03T14:25",
+      "summary": "Prepared review summary for '家庭账单'.",
+      "createdAt": "2026-04-03T14:25"
     },
     {
-      "id": "custom-act-2026-04-03T11:27",
-      "summary": "Prepared review summary for '账单守望者'.",
-      "createdAt": "2026-04-03T11:27"
-    },
-    {
-      "id": "custom-act-2026-04-03T11:27",
-      "summary": "Created custom agent draft '帮我创建一个每周整理账单的智能体智能体'.",
-      "createdAt": "2026-04-03T11:27"
-    },
-    {
-      "id": "custom-act-2026-04-03T11:26",
-      "summary": "Prepared review summary for '账单守望者'.",
-      "createdAt": "2026-04-03T11:26"
-    },
-    {
-      "id": "custom-act-2026-04-03T11:14",
-      "summary": "Created custom agent draft '帮我创建一个每周整理家庭账单的智能体智能体'.",
-      "createdAt": "2026-04-03T11:14"
+      "id": "custom-act-2026-04-03T14:25",
+      "summary": "Created custom agent draft '家庭账单'.",
+      "createdAt": "2026-04-03T14:25"
     },
     {
       "id": "custom-agents-ready",
       "summary": "Custom agent studio is ready.",
-      "createdAt": "2026-04-03T11:08"
+      "createdAt": "2026-04-03T14:16"
     }
   ]
 }

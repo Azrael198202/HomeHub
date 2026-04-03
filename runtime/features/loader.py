@@ -18,15 +18,19 @@ class FeatureManager:
         items: list[tuple[str, int]] = []
         if not self.features_dir.exists():
             return ()
-        for path in sorted(self.features_dir.glob("*.py")):
+        for path in sorted(self.features_dir.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
             if path.name.startswith("_") or path.name in {"__init__.py", "base.py", "loader.py"}:
                 continue
-            items.append((path.name, path.stat().st_mtime_ns))
+            items.append((str(path.relative_to(self.features_dir)), path.stat().st_mtime_ns))
         return tuple(items)
 
     def _load_feature_from_path(self, path: Path) -> HomeHubFeature:
         package_name = __package__ or "features"
-        module_name = f"{package_name}.{path.stem}__dynamic_{path.stat().st_mtime_ns}"
+        relative_parts = list(path.relative_to(self.features_dir).with_suffix("").parts)
+        relative_parts[-1] = f"{relative_parts[-1]}__dynamic_{path.stat().st_mtime_ns}"
+        module_name = ".".join([package_name, *relative_parts])
         spec = importlib.util.spec_from_file_location(module_name, path)
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Unable to load feature spec for {path.name}")
@@ -55,8 +59,8 @@ class FeatureManager:
             return
 
         loaded: list[HomeHubFeature] = []
-        for filename, _ in signature:
-            path = self.features_dir / filename
+        for relative_path, _ in signature:
+            path = self.features_dir / relative_path
             feature = self._load_feature_from_path(path)
             feature.on_refresh(runtime)
             loaded.append(feature)
@@ -109,6 +113,32 @@ class FeatureManager:
                 result.setdefault("route", selected)
                 return result
         return None
+
+    def get_feature(self, feature_id: str, runtime: RuntimeBridge) -> HomeHubFeature | None:
+        self.refresh(runtime)
+        for feature in self._features:
+            if feature.feature_id == feature_id:
+                return feature
+        return None
+
+    def invoke_feature(self, feature_id: str, payload: dict[str, Any] | None, locale: str, runtime: RuntimeBridge) -> dict[str, Any] | None:
+        feature = self.get_feature(feature_id, runtime)
+        if feature is None:
+            return {"ok": False, "error": f"Feature '{feature_id}' not found."}
+        request = dict(payload or {})
+        mode = str(request.get("mode", "voice")).strip().lower() or "voice"
+        if mode == "api":
+            response = feature.handle_api(
+                str(request.get("method", "POST")).upper(),
+                str(request.get("path", "")).strip(),
+                request.get("query", {}) if isinstance(request.get("query", {}), dict) else {},
+                request.get("body") if isinstance(request.get("body"), dict) else {},
+                runtime,
+            )
+            return response or {"ok": False, "error": f"Feature '{feature_id}' did not handle the API request."}
+        message = str(request.get("message", "")).strip()
+        result = feature.handle_voice_chat(message, locale, runtime)
+        return result or {"ok": False, "error": f"Feature '{feature_id}' did not return a voice result."}
 
     def enhance_household_modules(
         self,

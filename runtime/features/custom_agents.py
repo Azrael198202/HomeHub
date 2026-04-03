@@ -59,6 +59,26 @@ ZH = {
     ],
 }
 
+AGENT_ACTIVATION_PHRASES = {
+    "zh-CN": [
+        "\u6253\u5f00\u667a\u80fd\u4f53\u5de5\u4f5c\u5ba4",
+        "\u8fdb\u5165\u667a\u80fd\u4f53\u5de5\u4f5c\u5ba4",
+        "\u6211\u60f3\u521b\u5efa\u667a\u80fd\u4f53",
+        "\u5e2e\u6211\u521b\u5efa\u667a\u80fd\u4f53",
+        "\u5e2e\u6211\u505a\u4e2a\u52a9\u624b",
+        "\u5217\u51fa\u6211\u7684\u667a\u80fd\u4f53",
+        "\u67e5\u770b\u6211\u7684\u667a\u80fd\u4f53",
+    ],
+    "default": [
+        "open custom agents",
+        "open agent studio",
+        "create an agent",
+        "build an assistant",
+        "show my agents",
+        "list my agents",
+    ],
+}
+
 
 def zh(locale: str, text: str, fallback: str) -> str:
     return text if locale == "zh-CN" else fallback
@@ -77,7 +97,12 @@ class Feature(HomeHubFeature):
         return data
 
     def voice_intents(self) -> list[dict]:
-        return [{"id": "custom-agent-builder", "name": "Custom Agent Builder", "summary": "Creates custom HomeHub agents and can generate feature scaffolds from completed blueprints."}]
+        return [{
+            "id": "custom-agent-builder",
+            "name": "Custom Agent Builder",
+            "summary": "Creates custom HomeHub agents, routes messages to matching existing agents, and can generate feature scaffolds from completed blueprints.",
+            "activationPhrases": AGENT_ACTIVATION_PHRASES["zh-CN"] + AGENT_ACTIVATION_PHRASES["default"],
+        }]
 
     def list_agent_types(self, locale: str, runtime: RuntimeBridge) -> list[dict]:
         if locale == "zh-CN":
@@ -142,6 +167,13 @@ class Feature(HomeHubFeature):
         en = any(token in lowered for token in ["create", "build", "make", "generate"]) and any(token in lowered for token in ["agent", "assistant", "bot", "workflow"])
         return cn or en
 
+    def matches_activation_phrase(self, message: str, locale: str) -> bool:
+        normalized = str(message or "").strip().lower()
+        if not normalized:
+            return False
+        phrases = AGENT_ACTIVATION_PHRASES.get(locale, []) + AGENT_ACTIVATION_PHRASES["default"]
+        return any(phrase.lower() in normalized for phrase in phrases)
+
     def is_list_request(self, message: str) -> bool:
         lowered = message.lower()
         return any(token in message for token in ["\u67e5\u770b", "\u5217\u51fa", "\u6709\u54ea\u4e9b", "\u8be6\u60c5"]) or any(token in lowered for token in ["list", "show", "view", "details"])
@@ -149,6 +181,12 @@ class Feature(HomeHubFeature):
     def is_cancel_request(self, message: str) -> bool:
         lowered = message.lower()
         return any(token in message for token in ["\u53d6\u6d88", "\u505c\u6b62", "\u4e0d\u7528\u4e86"]) or any(token in lowered for token in ["cancel", "stop", "never mind"])
+
+    def should_force_create(self, message: str) -> bool:
+        lowered = message.lower()
+        return any(token in message for token in ["\u4ecd\u7136\u65b0\u5efa", "\u8fd8\u662f\u65b0\u5efa", "\u91cd\u65b0\u521b\u5efa", "\u53e6\u5efa\u4e00\u4e2a"]) or any(
+            token in lowered for token in ["create anyway", "new one anyway", "create another", "still create"]
+        )
 
     def looks_like_agent_topic(self, message: str) -> bool:
         lowered = message.lower()
@@ -196,6 +234,133 @@ class Feature(HomeHubFeature):
                 return agent
         return None
 
+    def split_keywords(self, text: str) -> set[str]:
+        raw = str(text or "").lower()
+        return {
+            token.strip()
+            for token in re.split(r"[\s,，。；;、:/|()\[\]{}<>\"'\n\r\t\-]+", raw)
+            if len(token.strip()) >= 2
+        }
+
+    def keyword_set(self, text: str) -> set[str]:
+        raw = str(text or "").lower()
+        return {
+            token.strip()
+            for token in re.split(r"[\s,，。；;、:/|()\[\]{}<>\"'\n\r\t]+", raw)
+            if len(token.strip()) >= 2
+        }
+
+    def split_keywords(self, text: str) -> set[str]:
+        raw = str(text or "").lower()
+        tokens = {
+            token.strip()
+            for token in re.split(r"[\s,/|()\[\]{}<>\"'\n\r\t\-]+", raw)
+            if len(token.strip()) >= 2
+        }
+        for chunk in re.findall(r"[\u4e00-\u9fff]{2,}", raw):
+            size = len(chunk)
+            for width in range(2, min(5, size + 1)):
+                for start in range(0, size - width + 1):
+                    tokens.add(chunk[start:start + width])
+        return tokens
+
+    def agent_business_keywords(self, agent: dict) -> set[str]:
+        profile = agent.get("profile", {})
+        parts = [
+            agent.get("name", ""),
+            profile.get("goal", ""),
+            profile.get("inputs", ""),
+            profile.get("output", ""),
+            profile.get("checkPrompt", ""),
+            profile.get("hasInputAction", ""),
+            profile.get("constraints", ""),
+        ]
+        keywords: set[str] = set()
+        for part in parts:
+            keywords.update(self.split_keywords(str(part)))
+        return keywords
+
+    def business_match_score(self, agent: dict, message: str) -> float:
+        message_tokens = self.split_keywords(message)
+        message_text = str(message or "").strip().lower()
+        if not message_tokens:
+            message_tokens = set()
+        keywords = self.agent_business_keywords(agent)
+        profile = agent.get("profile", {})
+        fields = [
+            str(agent.get("name", "")).strip().lower(),
+            str(profile.get("goal", "")).strip().lower(),
+            str(profile.get("inputs", "")).strip().lower(),
+            str(profile.get("output", "")).strip().lower(),
+            str(profile.get("checkPrompt", "")).strip().lower(),
+            str(profile.get("hasInputAction", "")).strip().lower(),
+        ]
+        if not keywords and not any(fields):
+            return 0.0
+        overlap = message_tokens & keywords
+        score = len(overlap)
+        if agent.get("name") and str(agent.get("name")) in message:
+            score += 4
+        for field in fields:
+            if not field:
+                continue
+            if field in message_text:
+                score += 3
+                continue
+            for token in self.split_keywords(field):
+                if len(token) >= 2 and token in message_text:
+                    score += 1
+        goal = str(profile.get("goal", "")).strip()
+        if goal and any(token in goal.lower() for token in message_tokens):
+            score += 1
+        return float(score)
+
+    def find_matching_operational_agent(self, message: str, runtime: RuntimeBridge) -> dict | None:
+        candidates: list[tuple[float, dict]] = []
+        for agent in self.sorted_agents(runtime):
+            if agent.get("status") != "complete":
+                continue
+            if not any(str(agent.get("profile", {}).get(key, "")).strip() for key in ["checkPrompt", "noInputAction", "hasInputAction"]):
+                continue
+            score = self.business_match_score(agent, message)
+            if score > 0:
+                candidates.append((score, agent))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1].get("updatedAt", "")), reverse=True)
+        return candidates[0][1] if candidates[0][0] >= 1 else None
+
+    def similarity_score(self, left: dict, right: dict) -> float:
+        left_tokens = self.agent_business_keywords(left)
+        right_tokens = self.agent_business_keywords(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        overlap = left_tokens & right_tokens
+        union = left_tokens | right_tokens
+        score = len(overlap) / max(len(union), 1)
+        if left.get("name") and right.get("name") and left.get("name") == right.get("name"):
+            score += 0.35
+        return score
+
+    def find_similar_agents(self, draft_profile: dict, runtime: RuntimeBridge, limit: int = 3) -> list[dict]:
+        draft = {"name": draft_profile.get("name", ""), "profile": draft_profile}
+        ranked: list[tuple[float, dict]] = []
+        for agent in self.sorted_agents(runtime):
+            score = self.similarity_score(draft, agent)
+            if score >= 0.18:
+                ranked.append((score, agent))
+        ranked.sort(key=lambda item: (item[0], item[1].get("updatedAt", "")), reverse=True)
+        return [item[1] for item in ranked[:limit]]
+
+    def similar_agents_message(self, draft_profile: dict, matches: list[dict], locale: str) -> str:
+        if not matches:
+            return ""
+        names = "、".join(str(item.get("name", "")) for item in matches if item.get("name"))
+        if locale == "zh-CN":
+            requested = draft_profile.get("name") or draft_profile.get("goal") or "\u8fd9\u4e2a\u667a\u80fd\u4f53"
+            return f"\u6211\u627e\u5230\u4e86\u51e0\u4e2a\u76f8\u8fd1\u7684\u667a\u80fd\u4f53\uff1a{names}\u3002\u5982\u679c\u4f60\u662f\u60f3\u7ee7\u7eed\u7528\u5b83\u4eec\uff0c\u53ef\u4ee5\u76f4\u63a5\u8bf4\u540d\u5b57\uff1b\u5982\u679c\u4ecd\u7136\u8981\u65b0\u5efa {requested}\uff0c\u8bf7\u660e\u786e\u8bf4\u201c\u4ecd\u7136\u65b0\u5efa\u201d\u3002"
+        return f"I found similar agents: {names}. If you want one of those, say its name. If you still want a brand new one, say 'create anyway'."
+
     def next_question(self, agent: dict, locale: str) -> tuple[str, str] | None:
         profile = agent.get("profile", {})
         for key, prompt in ZH["qs"]:
@@ -208,11 +373,27 @@ class Feature(HomeHubFeature):
 
     def is_confirmation_message(self, message: str) -> bool:
         lowered = message.lower().strip()
-        return any(token in message for token in ["确认创建", "可以开始", "没问题", "开始创建", "就这样", "可以了"]) or lowered in {"ok", "okay", "confirm", "looks good", "go ahead", "确认"}
+        confirm_tokens = [
+            "\u786e\u8ba4\u521b\u5efa",
+            "\u53ef\u4ee5\u5f00\u59cb",
+            "\u5f00\u59cb\u521b\u5efa",
+            "\u6ca1\u95ee\u9898",
+            "\u597d\u7684",
+            "\u786e\u8ba4",
+        ]
+        return any(token in message for token in confirm_tokens) or lowered in {"ok", "okay", "confirm", "looks good", "go ahead"}
 
     def is_revision_message(self, message: str) -> bool:
         lowered = message.lower()
-        return any(token in message for token in ["修改", "改成", "补充", "调整", "不是", "不对"]) or any(token in lowered for token in ["change", "update", "adjust", "revise"])
+        revision_tokens = [
+            "\u4fee\u6539",
+            "\u6539\u4e00\u4e0b",
+            "\u8c03\u6574",
+            "\u8865\u5145",
+            "\u4fee\u6b63",
+            "\u6539\u6210",
+        ]
+        return any(token in message for token in revision_tokens) or any(token in lowered for token in ["change", "update", "adjust", "revise"])
 
     def extract_partial_blueprint(self, message: str, locale: str, runtime: RuntimeBridge) -> dict:
         payload = runtime.openai_json(
@@ -246,14 +427,14 @@ class Feature(HomeHubFeature):
             match = re.search(r"\u53eb(?:\u505a)?(.{2,20}?)(?:\u7684)?(?:\u667a\u80fd\u4f53|\u52a9\u624b|\u4ee3\u7406|\u673a\u5668\u4eba)", message)
             if match:
                 profile["name"] = match.group(1).strip()
-        if any(token in message for token in ["账单", "扣费", "账务"]) or any(token in lowered for token in ["bill", "invoice", "expense", "charge"]):
+        if any(token in message for token in ["\u8d26\u5355", "\u6263\u8d39", "\u53d1\u7968", "\u6536\u636e", "\u622a\u56fe"]) or any(token in lowered for token in ["bill", "invoice", "expense", "charge", "receipt", "screenshot"]):
             profile["inputs"] = profile["inputs"] or zh(locale, "\u8d26\u5355\u622a\u56fe\u3001\u8d26\u5355\u6587\u5b57\u3001\u6263\u8d39\u6d88\u606f", "Bill screenshots, bill text, and charge notifications")
             profile["output"] = profile["output"] or zh(locale, "\u8d26\u5355\u6c47\u603b\u3001\u5f02\u5e38\u63d0\u9192\u3001\u8bb0\u5f55\u5f52\u6863", "Bill summaries, anomaly alerts, and archived records")
             profile["checkPrompt"] = profile["checkPrompt"] or zh(locale, "\u4eca\u5929\u6709\u65b0\u7684\u8d26\u5355\u6216\u6263\u8d39\u8bb0\u5f55\u5417\uff1f", "Do you have any new bills or charge records today?")
             profile["noInputAction"] = profile["noInputAction"] or zh(locale, "\u8bb0\u5f55\u672c\u6b21\u65e0\u65b0\u8d26\u5355\uff0c\u7ed3\u675f\u8fd9\u4e00\u8f6e\u68c0\u67e5", "Record that there are no new bills this round and finish the check")
             profile["hasInputAction"] = profile["hasInputAction"] or zh(locale, "\u63a5\u6536\u8d26\u5355\u56fe\u7247\u6216\u6587\u5b57\uff0c\u8bb0\u5f55\u53d1\u9001\u65f6\u95f4\uff0c\u5f52\u6863\u5185\u5bb9\u5e76\u8f93\u51fa\u6458\u8981", "Accept bill images or text, record the send time, archive the content, and output a summary")
             profile["constraints"] = profile["constraints"] or zh(locale, "\u5728\u786e\u8ba4\u524d\u4e0d\u8981\u81ea\u52a8\u8ba4\u5b9a\u6263\u6b3e\u6b63\u5e38", "Do not assume charges are valid before confirmation")
-        if any(token in message for token in ["联网", "上网", "搜索", "查询", "官网", "官方", "最新"]) or any(
+        if any(token in message for token in ["\u67e5\u4e00\u4e0b", "\u67e5\u8be2", "\u641c\u7d22", "\u8054\u7f51", "\u5b98\u65b9", "\u6700\u65b0", "\u65b0\u95fb", "\u5929\u6c14"]) or any(
             token in lowered for token in ["search", "lookup", "web", "online", "official", "latest", "news", "weather"]
         ):
             profile["allowNetworkLookup"] = profile["allowNetworkLookup"] or "yes"
@@ -269,15 +450,15 @@ class Feature(HomeHubFeature):
         patch = {key: str(ai.get(key, "")).strip() for key in ["name", "goal", "primaryUser", "trigger", "inputs", "output", "constraints", "checkPrompt", "noInputAction", "hasInputAction", "allowNetworkLookup", "preferredSources", "lookupPolicy"] if str(ai.get(key, "")).strip()}
         lowered = message.lower()
         if not patch.get("trigger") and (
-            any(token in message for token in ["周", "星期", "每天", "每周", "每月"])
+            any(token in message for token in ["\u6bcf\u5929", "\u6bcf\u5468", "\u6bcf\u6708", "\u5468\u4e00", "\u5468\u65e5"])
             or any(token in lowered for token in ["daily", "weekly", "monthly", "monday", "tuesday", "sunday"])
         ):
             patch["trigger"] = message.strip()
-        if not patch.get("constraints") and any(token in message for token in ["先确认", "不要自动", "必须", "仅", "先问"]) :
+        if not patch.get("constraints") and any(token in message for token in ["\u4e0d\u8981", "\u5fc5\u987b", "\u7981\u6b62", "\u9650\u5236", "\u539f\u5219"]):
             patch["constraints"] = message.strip()
-        if not patch.get("output") and any(token in message for token in ["总结", "提醒", "汇总", "归档"]) :
+        if not patch.get("output") and any(token in message for token in ["\u8f93\u51fa", "\u7ed3\u679c", "\u603b\u7ed3", "\u63d0\u9192"]):
             patch["output"] = message.strip()
-        if any(token in message for token in ["联网", "上网", "搜索", "查询", "官网", "官方"]) or any(token in lowered for token in ["search", "lookup", "web", "online", "official"]):
+        if any(token in message for token in ["\u67e5\u4e00\u4e0b", "\u67e5\u8be2", "\u641c\u7d22", "\u8054\u7f51", "\u5b98\u65b9", "\u6700\u65b0"]) or any(token in lowered for token in ["search", "lookup", "web", "online", "official"]):
             patch["allowNetworkLookup"] = "yes"
             patch.setdefault("lookupPolicy", "safe-general")
         return patch
@@ -382,15 +563,15 @@ class Feature(HomeHubFeature):
         lines = [
             zh(locale, ZH["review_intro"].format(name=agent["name"]), f"{agent['name']} is ready for review:"),
             "",
-            f"1. {zh(locale, '长期任务', 'Long-term mission')}: {p.get('goal') or '-'}",
-            f"2. {zh(locale, '主要服务对象', 'Primary user')}: {p.get('primaryUser') or '-'}",
-            f"3. {zh(locale, '触发时机', 'Trigger')}: {p.get('trigger') or '-'}",
-            f"4. {zh(locale, '需要接收的输入', 'Inputs')}: {p.get('inputs') or '-'}",
-            f"5. {zh(locale, '输出结果', 'Output')}: {p.get('output') or '-'}",
-            f"6. {zh(locale, '主动提问方式', 'Proactive question')}: {p.get('checkPrompt') or '-'}",
-            f"7. {zh(locale, '如果没有新内容', 'When there is no new input')}: {p.get('noInputAction') or '-'}",
-            f"8. {zh(locale, '如果收到了新内容', 'When new input arrives')}: {p.get('hasInputAction') or '-'}",
-            f"9. {zh(locale, '限制与原则', 'Constraints')}: {p.get('constraints') or '-'}",
+            f"1. {zh(locale, '\u957f\u671f\u4efb\u52a1', 'Long-term mission')}: {p.get('goal') or '-'}",
+            f"2. {zh(locale, '\u4e3b\u8981\u670d\u52a1\u5bf9\u8c61', 'Primary user')}: {p.get('primaryUser') or '-'}",
+            f"3. {zh(locale, '\u89e6\u53d1\u65f6\u673a', 'Trigger')}: {p.get('trigger') or '-'}",
+            f"4. {zh(locale, '\u9700\u8981\u7684\u8f93\u5165', 'Inputs')}: {p.get('inputs') or '-'}",
+            f"5. {zh(locale, '\u8f93\u51fa\u7ed3\u679c', 'Output')}: {p.get('output') or '-'}",
+            f"6. {zh(locale, '\u4e3b\u52a8\u8be2\u95ee\u7528\u8bed', 'Proactive question')}: {p.get('checkPrompt') or '-'}",
+            f"7. {zh(locale, '\u6ca1\u6709\u65b0\u8f93\u5165\u65f6\u7684\u5904\u7406', 'When there is no new input')}: {p.get('noInputAction') or '-'}",
+            f"8. {zh(locale, '\u6709\u65b0\u8f93\u5165\u65f6\u7684\u5904\u7406', 'When new input arrives')}: {p.get('hasInputAction') or '-'}",
+            f"9. {zh(locale, '\u7ea6\u675f\u4e0e\u539f\u5219', 'Constraints')}: {p.get('constraints') or '-'}",
             "",
             zh(locale, ZH["review_confirm"], "Reply with 'confirm' or 'OK' to create it, or tell me what to change."),
         ]
@@ -420,11 +601,11 @@ class Feature(HomeHubFeature):
 
     def looks_like_negative_report(self, message: str) -> bool:
         lowered = message.lower()
-        return any(token in message for token in ["没有", "今天没有", "暂无", "没新的"]) or any(token in lowered for token in ["no bill", "nothing new", "no new"])
+        return any(token in message for token in ["\u6ca1\u6709", "\u65e0\u65b0", "\u6ca1\u6709\u65b0\u8d26\u5355", "\u6ca1\u6709\u65b0\u5185\u5bb9"]) or any(token in lowered for token in ["no bill", "nothing new", "no new"])
 
     def looks_like_positive_report(self, message: str) -> bool:
         lowered = message.lower()
-        return any(token in message for token in ["有", "账单", "图片", "截图", "扣费", "发你"]) or any(token in lowered for token in ["bill", "invoice", "charge", "screenshot", "image", "uploaded"])
+        return any(token in message for token in ["\u8d26\u5355", "\u53d1\u7968", "\u6536\u636e", "\u622a\u56fe", "\u56fe\u7247", "\u4e0a\u4f20"]) or any(token in lowered for token in ["bill", "invoice", "charge", "screenshot", "image", "uploaded"])
 
     def record_agent_event(self, agent: dict, kind: str, message: str, runtime: RuntimeBridge) -> dict:
         stamp = self.now_iso()
@@ -465,44 +646,21 @@ class Feature(HomeHubFeature):
             return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
         if self.looks_like_positive_report(message):
             self.record_agent_event(agent, "has_input", message, runtime)
+            generated_feature_id = str(agent.get("generatedFeatureId", "")).strip()
+            if generated_feature_id:
+                forwarded = runtime.call_feature(generated_feature_id, {"mode": "voice", "message": message}, locale)
+                if isinstance(forwarded, dict):
+                    forwarded_reply = str(forwarded.get("reply") or forwarded.get("message") or "").strip()
+                    if forwarded_reply:
+                        return {"reply": forwarded_reply, "uiAction": self.studio_ui_action(agent), "featureResult": forwarded}
+                    body = forwarded.get("body") if isinstance(forwarded.get("body"), dict) else {}
+                    if body:
+                        body_reply = str(body.get("reply") or body.get("message") or "").strip()
+                        if body_reply:
+                            return {"reply": body_reply, "uiAction": self.studio_ui_action(agent), "featureResult": body}
             reply = zh(locale, f"\u5df2\u7ecf\u8bb0\u5f55\u8fd9\u6b21\u53d1\u6765\u7684\u5185\u5bb9\uff0c{agent['name']}\u540e\u7eed\u4f1a\u6309\u84dd\u56fe\u53bb\u5f52\u6863\u3001\u6c47\u603b\u548c\u63d0\u9192\u3002", f"I recorded this new input for {agent['name']} and will handle it according to the blueprint.")
             return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
         return None
-
-    def handle_operational_payload(self, agent: dict, message: str, attachments: list[dict], runtime: RuntimeBridge, locale: str) -> dict:
-        prompt = (
-            "Analyze this uploaded household bill or receipt image for HomeHub. "
-            "Return JSON only with keys: summary, merchant, amount, currency, date, category, confidence, needsReview. "
-            "If a value is unknown, use an empty string."
-        )
-        attachment = attachments[0] if attachments else {}
-        analysis = None
-        if runtime.analyze_image and attachment.get("imageBase64"):
-            analysis = runtime.analyze_image(prompt, str(attachment.get("imageBase64", "")), str(attachment.get("mimeType", "image/png")), "qwen2.5vl:7b")
-        analysis = analysis if isinstance(analysis, dict) else {}
-        summary = str(analysis.get("summary", "")).strip() or (message.strip() if message.strip() else "Uploaded a bill image for review.")
-        payload = {
-            "message": message.strip(),
-            "attachments": [
-                {
-                    "name": str(item.get("name", "")).strip(),
-                    "mimeType": str(item.get("mimeType", "")).strip(),
-                    "sizeBytes": int(item.get("sizeBytes", 0) or 0),
-                }
-                for item in attachments
-            ],
-            "analysis": analysis,
-        }
-        self.record_agent_payload(agent, "attachment_input", payload, runtime)
-        if locale == "zh-CN":
-            reply = f"已经把这次图片账单记进 {agent['name']}。摘要：{summary}"
-            if analysis.get("amount"):
-                reply += f"；金额 {analysis.get('amount')}{analysis.get('currency') or ''}"
-            if analysis.get("needsReview"):
-                reply += "。这张账单我建议你再人工确认一次。"
-            return {"reply": reply, "uiAction": self.studio_ui_action(agent), "analysis": analysis}
-        reply = f"I saved this uploaded bill image into {agent['name']}. Summary: {summary}"
-        return {"reply": reply, "uiAction": self.studio_ui_action(agent), "analysis": analysis}
 
     def handle_operational_payload(self, agent: dict, message: str, attachments: list[dict], runtime: RuntimeBridge, locale: str) -> dict:
         prompt = self.attachment_analysis_prompt(agent, locale)
@@ -528,11 +686,11 @@ class Feature(HomeHubFeature):
         follow_up = str(analysis.get("followUpQuestion", "")).strip()
         suggested = str(analysis.get("suggestedAction", "")).strip()
         if locale == "zh-CN":
-            reply = f"已经把这次图片输入记进 {agent['name']}。摘要：{summary}"
+            reply = f"\u6211\u5df2\u7ecf\u628a\u8fd9\u4efd\u4e0a\u4f20\u5185\u5bb9\u8bb0\u5f55\u5230 {agent['name']}\u3002\u6458\u8981\uff1a{summary}"
             if suggested:
-                reply += f"；建议动作：{suggested}"
+                reply += f"\u3002\u5efa\u8bae\u5904\u7406\uff1a{suggested}"
             if follow_up:
-                reply += f"；下一步我想确认：{follow_up}"
+                reply += f"\u3002\u4e0b\u4e00\u6b65\u53ef\u4ee5\u8865\u5145\uff1a{follow_up}"
             return {"reply": reply, "uiAction": self.studio_ui_action(agent), "analysis": analysis}
         reply = f"I saved this uploaded image into {agent['name']}. Summary: {summary}"
         if suggested:
@@ -543,10 +701,10 @@ class Feature(HomeHubFeature):
 
     def handle_network_lookup(self, agent: dict, query: str, runtime: RuntimeBridge, locale: str) -> dict:
         if not self.blueprint_allows_network(agent):
-            reply = zh(locale, f"{agent['name']} 这份蓝图目前没有开启联网查询。你可以在蓝图里补充“允许联网查询”。", f"{agent['name']} is not allowed to use network lookup yet. Update the blueprint to allow it first.")
+            reply = zh(locale, f"{agent['name']} \u8fd9\u4efd\u84dd\u56fe\u8fd8\u6ca1\u6709\u5f00\u542f\u8054\u7f51\u67e5\u8be2\u3002\u53ef\u4ee5\u5148\u5728\u84dd\u56fe\u91cc\u8865\u5145\u201c\u5141\u8bb8\u8054\u7f51\u67e5\u8be2\u201d\u3002", f"{agent['name']} is not allowed to use network lookup yet. Update the blueprint to allow it first.")
             return {"reply": reply, "uiAction": self.studio_ui_action(agent), "lookup": {"ok": False, "error": "network_lookup_disabled"}}
         if not runtime.network_lookup:
-            reply = zh(locale, "当前运行时还没有接上联网查询能力。", "The current runtime does not have network lookup enabled yet.")
+            reply = zh(locale, "\u5f53\u524d runtime \u8fd8\u6ca1\u6709\u542f\u7528\u8054\u7f51\u67e5\u8be2\u80fd\u529b\u3002", "The current runtime does not have network lookup enabled yet.")
             return {"reply": reply, "uiAction": self.studio_ui_action(agent), "lookup": {"ok": False, "error": "network_lookup_unavailable"}}
         lookup = runtime.network_lookup(
             query,
@@ -558,10 +716,10 @@ class Feature(HomeHubFeature):
         self.record_agent_payload(agent, "network_lookup", {"message": query.strip(), "lookup": lookup}, runtime)
         if locale == "zh-CN":
             if not lookup.get("ok"):
-                reply = f"我试着联网查了，但这次没有拿到结果：{lookup.get('error', 'unknown error')}。"
+                reply = f"\u6211\u8bd5\u8fc7\u53d7\u63a7\u8054\u7f51\u67e5\u8be2\uff0c\u4f46\u8fd9\u6b21\u6ca1\u6709\u62ff\u5230\u53ef\u7528\u7ed3\u679c\uff1a{lookup.get('error', 'unknown error')}\u3002"
             else:
-                answer = str(lookup.get("answer", "")).strip() or "已经找到一些外部信息。"
-                reply = f"我已经按受控策略替 {agent['name']} 联网查询。{answer}"
+                answer = str(lookup.get("answer", "")).strip() or "\u6211\u627e\u5230\u4e86\u4e00\u4e9b\u5916\u90e8\u4fe1\u606f\u3002"
+                reply = f"\u6211\u5df2\u7ecf\u4e3a {agent['name']} \u6267\u884c\u4e86\u53d7\u63a7\u8054\u7f51\u67e5\u8be2\u3002{answer}"
         else:
             if not lookup.get("ok"):
                 reply = f"I tried a controlled network lookup, but it did not return usable results: {lookup.get('error', 'unknown error')}."
@@ -616,7 +774,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from .base import HomeHubFeature, RuntimeBridge
+from ..base import HomeHubFeature, RuntimeBridge
 
 
 BLUEPRINT = {blueprint}
@@ -821,12 +979,13 @@ def load_feature() -> HomeHubFeature:
         return slug[:-8] if slug.endswith("_feature") else slug
 
     def generated_feature_path(self, agent: dict, runtime: RuntimeBridge) -> Path:
-        return runtime.root / "features" / f"{self.generated_feature_id(agent)}_feature.py"
+        return runtime.root / "features" / "customize" / f"{self.generated_feature_id(agent)}_feature.py"
 
     def generate_feature_template(self, agent: dict, runtime: RuntimeBridge, overwrite: bool = False) -> dict:
         if agent.get("status") != "complete":
             return {"ok": False, "error": "not_ready", "path": ""}
         path = self.generated_feature_path(agent, runtime)
+        path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists() and not overwrite:
             return {"ok": False, "error": "exists", "path": str(path)}
         path.write_text(self.render_generated_feature(agent), encoding="utf-8")
@@ -903,15 +1062,23 @@ def load_feature() -> HomeHubFeature:
         lowered = message.lower()
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
+        operational = self.find_matching_operational_agent(message, runtime)
         blockers = ["\u5929\u6c14", "\u51e0\u70b9", "\u65f6\u95f4", "weather", "time"]
+        activation = self.matches_activation_phrase(message, locale)
         if self.should_generate_feature(message):
             return {"intent": "custom-agent-builder", "action": "generate_feature", "score": 0.98}
         if self.is_create_request(message):
             return {"intent": "custom-agent-builder", "action": "create_agent", "score": 0.99}
+        if activation:
+            if self.is_list_request(message):
+                return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.93}
+            return {"intent": "custom-agent-builder", "action": "general_agent_help", "score": 0.9}
         if collecting and not any(token in lowered or token in message for token in blockers):
             return {"intent": "custom-agent-builder", "action": "continue_collecting", "score": 0.95}
         if review and not any(token in lowered or token in message for token in blockers):
             return {"intent": "custom-agent-builder", "action": "review_blueprint", "score": 0.96}
+        if operational and not self.looks_like_agent_topic(message) and not any(token in lowered or token in message for token in blockers):
+            return {"intent": "custom-agent-builder", "action": "operational_agent", "score": 0.91}
         if self.looks_like_agent_topic(message) and self.is_list_request(message):
             return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.9}
         if self.looks_like_agent_topic(message):
@@ -934,6 +1101,11 @@ def load_feature() -> HomeHubFeature:
                 return {"reply": zh(locale, ZH["exists"].format(name=agent["name"], path=result["path"]), f"The feature scaffold already exists at {result['path']}."), "uiAction": self.studio_ui_action(agent)}
             return {"reply": zh(locale, ZH["generated"].format(name=agent["name"], path=result["path"]), f"I generated the feature scaffold for {agent['name']} at {result['path']}."), "uiAction": self.studio_ui_action(agent)}
         if self.is_create_request(message):
+            draft_profile = self.infer_initial_profile(message, locale, runtime)
+            if not self.should_force_create(message):
+                similar = self.find_similar_agents(draft_profile, runtime)
+                if similar:
+                    return {"reply": self.similar_agents_message(draft_profile, similar, locale), "uiAction": self.studio_ui_action(similar[0])}
             agent = self.create_agent(runtime, message, locale)
             q = self.next_question(agent, locale)
             return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
@@ -952,11 +1124,16 @@ def load_feature() -> HomeHubFeature:
                 return {"reply": zh(locale, ZH["confirmed"].format(name=review["name"]), f"{review['name']} has been created and confirmed."), "uiAction": self.studio_ui_action(review)}
             if self.is_revision_message(message) or message.strip():
                 return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
-        operational = self.latest_operational_agent(runtime)
+        operational = self.find_matching_operational_agent(message, runtime) or self.latest_operational_agent(runtime)
         if operational and not self.looks_like_agent_topic(message) and not any(token in lowered or token in message for token in blockers):
             result = self.handle_operational_report(operational, message, runtime, locale)
             if result:
                 return result
+        if self.matches_activation_phrase(message, locale):
+            if self.is_list_request(message):
+                agent = self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
+                return {"reply": self.agent_detail_message(agent, locale), "uiAction": self.studio_ui_action(agent)} if agent else {"reply": zh(locale, ZH["empty"], "No custom agents yet."), "uiAction": self.studio_ui_action()}
+            return {"reply": zh(locale, ZH["help"], "Describe the ongoing job you want this agent to own, and I will ask for whatever information is still missing."), "uiAction": self.studio_ui_action(focus_input=True)}
         if self.looks_like_agent_topic(message) and self.is_list_request(message):
             agent = self.find_agent_by_hint(message, runtime)
             return {"reply": self.agent_detail_message(agent, locale), "uiAction": self.studio_ui_action(agent)} if agent else {"reply": zh(locale, ZH["empty"], "No custom agents yet."), "uiAction": self.studio_ui_action()}
@@ -1058,3 +1235,4 @@ def load_feature() -> HomeHubFeature:
 
 def load_feature() -> HomeHubFeature:
     return Feature()
+
