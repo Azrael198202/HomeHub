@@ -6,11 +6,15 @@
   "targetRoot": "records",
   "deleteMissing": false,
   "includePatterns": [
-    "**/*"
+    "**/*",
+    "*"
   ],
   "excludePatterns": [
     ".git/**",
     ".DS_Store",
     "Thumbs.db"
+  ],
+  "importFromMachines": [
+    "DESKTOP-01"
   ]
 }
