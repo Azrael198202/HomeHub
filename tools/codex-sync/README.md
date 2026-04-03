@@ -42,7 +42,7 @@ records/
   "deleteMissing": false,
   "includePatterns": ["**/*", "*"],
   "excludePatterns": [".git/**", ".DS_Store", "Thumbs.db"],
-  "importFromMachines": ["DESKTOP-01"]
+  "importFromMachines": []
 }
 ```
 
@@ -52,7 +52,7 @@ records/
 - `repoDir`: a local clone of your GitHub repository
 - `machineName`: optional, defaults to the system hostname
 - `deleteMissing`: if `true`, deletes files in the machine folder that no longer exist in `sourceDir`
-- `importFromMachines`: the machine folders to import from when pulling records into a local Codex folder
+- `importFromMachines`: the machine folders to import from when pulling records into a local Codex folder; use `[]` on a primary machine that should only push and never import
 
 ## Push sync
 
@@ -87,6 +87,7 @@ Use pull sync to bring the latest repository records into a local Codex folder.
 3. Imports missing files.
 4. Skips files that are already identical.
 5. Avoids overwriting files that changed locally after the last import.
+6. If `importFromMachines` is empty, it only refreshes the Git repository and stops.
 
 Windows:
 

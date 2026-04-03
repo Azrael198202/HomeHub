@@ -57,8 +57,6 @@ def load_config() -> PullConfig:
         fail(f"repoDir does not exist or is not a directory: {repo_dir}")
     if not (repo_dir / ".git").exists():
         fail(f"repoDir is not a Git repository: {repo_dir}")
-    if not import_from_machines:
-        fail("Config must include importFromMachines, for example [\"HY-WINDOWS\"].")
 
     return PullConfig(
         source_dir=source_dir,
@@ -201,10 +199,16 @@ def main() -> None:
 
     print(f"Pulling latest records from: {config.repo_dir}")
     print(f"Importing into local Codex dir: {config.source_dir}")
-    print(f"Importing machine records: {', '.join(config.import_from_machines)}")
+    if config.import_from_machines:
+        print(f"Importing machine records: {', '.join(config.import_from_machines)}")
+    else:
+        print("No importFromMachines configured. Pull completed, import skipped.")
 
     run_git(config.repo_dir, "checkout", config.branch)
     run_git(config.repo_dir, "pull", "--rebase", "origin", config.branch)
+
+    if not config.import_from_machines:
+        return
 
     state_path = config.source_dir / ".codex-sync-import-state.json"
     state = load_import_state(state_path)
