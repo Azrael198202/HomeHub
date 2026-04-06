@@ -1465,6 +1465,18 @@ class Feature(HomeHubFeature):
                 if send_error:
                     out_item["error"] = send_error
             self.save_store(store, runtime)
+            self.write_debug_log(
+                runtime,
+                "bridge_result_processed",
+                {
+                    "messageId": message_id,
+                    "channel": completed.get("channel", ""),
+                    "targetUser": target_user,
+                    "replyPreview": reply[:240],
+                    "sendOk": send_ok,
+                    "sendError": send_error,
+                },
+            )
             self.write_processing_log(
                 runtime,
                 "wechat-official",

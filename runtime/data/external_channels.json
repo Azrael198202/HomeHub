@@ -1200,6 +1200,11 @@
   },
   "recentActions": [
     {
+      "id": "external-2026-04-06T17:03",
+      "summary": "Synchronized 47 inbound email message(s).",
+      "createdAt": "2026-04-06T17:03"
+    },
+    {
       "id": "external-2026-04-06T16:37",
       "summary": "Synchronized 0 inbound email message(s).",
       "createdAt": "2026-04-06T16:37"
@@ -1268,12 +1273,7 @@
       "id": "external-2026-04-06T16:17",
       "summary": "Synchronized 0 inbound email message(s).",
       "createdAt": "2026-04-06T16:17"
-    },
-    {
-      "id": "external-2026-04-06T16:16",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:16"
     }
   ],
-  "lastRun": "2026-04-06T16:37"
+  "lastRun": "2026-04-06T17:03"
 }

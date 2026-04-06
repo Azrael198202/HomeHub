@@ -6,7 +6,7 @@
       "name": "家庭账单",
       "status": "complete",
       "createdAt": "2026-04-03T14:25",
-      "updatedAt": "2026-04-06T16:42",
+      "updatedAt": "2026-04-06T17:23",
       "profile": {
         "name": "家庭账单",
         "goal": "记录用户的消费并提供每周的消费总结和提醒",
@@ -33,6 +33,42 @@
       "generatedFeaturePath": "E:\\pw\\HomeHub\\runtime\\features\\u5bb6_u5ead_u8d26_u5355_feature.py",
       "generatedFeatureId": "u5bb6_u5ead_u8d26_u5355",
       "records": [
+        {
+          "id": "custom-agent-20260403142506-artifact_generation-20260406T1723",
+          "kind": "artifact_generation",
+          "message": "[image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+          "createdAt": "2026-04-06T17:23",
+          "payload": {
+            "message": "[image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+            "artifacts": [
+              {
+                "kind": "image",
+                "label": "imageGoogle作成futuredreamworkshopgmailcom image",
+                "fileName": "20260406-172322-imagegoogle-futuredreamworkshopgmailcom.svg",
+                "path": "generated/custom-agents/20260406-172322-imagegoogle-futuredreamworkshopgmailcom.svg",
+                "url": "/generated/custom-agents/20260406-172322-imagegoogle-futuredreamworkshopgmailcom.svg"
+              }
+            ]
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-artifact_generation-20260406T1658",
+          "kind": "artifact_generation",
+          "message": "[image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+          "createdAt": "2026-04-06T16:58",
+          "payload": {
+            "message": "[image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+            "artifacts": [
+              {
+                "kind": "image",
+                "label": "imageGoogle作成futuredreamworkshopgmailcom image",
+                "fileName": "20260406-165800-imagegoogle-futuredreamworkshopgmailcom.svg",
+                "path": "generated/custom-agents/20260406-165800-imagegoogle-futuredreamworkshopgmailcom.svg",
+                "url": "/generated/custom-agents/20260406-165800-imagegoogle-futuredreamworkshopgmailcom.svg"
+              }
+            ]
+          }
+        },
         {
           "id": "custom-agent-20260403142506-artifact_generation-20260406T1642",
           "kind": "artifact_generation",
@@ -193,6 +229,26 @@
   ],
   "recentActions": [
     {
+      "id": "custom-act-2026-04-06T17:23",
+      "summary": "Recorded artifact_generation payload for '家庭账单'.",
+      "createdAt": "2026-04-06T17:23"
+    },
+    {
+      "id": "custom-act-2026-04-06T17:22",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T17:22"
+    },
+    {
+      "id": "custom-act-2026-04-06T16:58",
+      "summary": "Recorded artifact_generation payload for '家庭账单'.",
+      "createdAt": "2026-04-06T16:58"
+    },
+    {
+      "id": "custom-act-2026-04-06T16:56",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T16:56"
+    },
+    {
       "id": "custom-act-2026-04-06T16:42",
       "summary": "Recorded artifact_generation payload for '家庭账单'.",
       "createdAt": "2026-04-06T16:42"
@@ -231,26 +287,6 @@
       "id": "custom-act-2026-04-06T08:16",
       "summary": "Recorded attachment_input payload for '家庭账单'.",
       "createdAt": "2026-04-06T08:16"
-    },
-    {
-      "id": "custom-act-2026-04-06T08:02",
-      "summary": "Recorded attachment_input payload for '家庭账单'.",
-      "createdAt": "2026-04-06T08:02"
-    },
-    {
-      "id": "custom-act-2026-04-06T07:14",
-      "summary": "Recorded attachment_input payload for '家庭账单'.",
-      "createdAt": "2026-04-06T07:14"
-    },
-    {
-      "id": "custom-act-2026-04-05T22:59",
-      "summary": "Recorded attachment_input payload for '家庭账单'.",
-      "createdAt": "2026-04-05T22:59"
-    },
-    {
-      "id": "custom-act-2026-04-05T22:50",
-      "summary": "Recorded attachment_input payload for '家庭账单'.",
-      "createdAt": "2026-04-05T22:50"
     }
   ]
 }

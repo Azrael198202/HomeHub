@@ -25,6 +25,32 @@
       "createdAt": "2026-04-05T22:53",
       "notes": "Original request: 麻烦记录今天消费la wso n486日元，",
       "linkedReminderIds": []
+    },
+    {
+      "id": "evt-20260406170301-513",
+      "title": "紀伊國屋書店ウェブストア/ポイントサービス登録確認",
+      "startAt": "2026-04-07T10:00",
+      "endAt": "2026-04-07T11:00",
+      "participants": [],
+      "location": "",
+      "source": "homehub-local",
+      "createdAt": "2026-04-06T17:03",
+      "notes": "Original request: 韓 鷹 様\r\n\r\nこのたびは紀伊國屋書店のウェブストア/ポイントサービスにご登録いただき、\r\n誠にありがとうございます。\r\n\r\n●ウェブストアのご利用方法\r\nhttps://www.kinokuniya.co.jp/ よりメールアドレスとパスワードを入力して\r\nログインしてください。\r\n\r\nサイトのご利用案内は以下よりご確認いただけます。\r\nhttps://store.kinokuniya.co.jp/user-guide/\r\n\r\n\r\n●新規会員特典クーポンのご案内\r\n以下のクーポンが付与されました。電子書籍のご注文でお使いいただけます。\r\n※iOS Kinoppyアプリでのご購入にはクーポンをご利用いただけません。ウェブストア、ウェブKinoppyにてご利用ください。\r\nクーポン名：500円×2回分電子書籍クーポン(05/31まで有効)\r\nクーポンID：20250517CFZU616\r\n金額：500円\r\n利用期間：2025-05-17〜2025-05-31\r\n\r\nクーポンのご利用方法は下記をご参照下さい。\r\nhttps://k-kinoppy.jp/kinokuniya/coupon/coupon2_top.html\r\n\r\n\r\n●電子書籍のご利用方法\r\nアプリ「Kinoppy」のログイン画面にメールアドレスとパスワードを入力して\r\nログインしてください。\r\nなお、「Kinoppy for iOS」ストアには、「ウェブ取扱商品」としてウェブストア\r\nでの取扱商品も掲載しております。\r\n「ウェブ取扱商品」に関しましては以下Q&Aをご参照ください。\r\nhttps://kinokuniya.tayori.com/q/webfaq/detail/567500/\r\n\r\n●ポイントアプリのご利用方法 \r\n「紀伊國屋ポイントアプリ」のログイン画面にメールアドレスとパスワードを入力して\r\nログインしてください。\r\n紀伊國屋書店のポイントサービスについては以下をご参照ください。\r\nhttps://store.kinokuniya.co.jp/point/\r\n\r\n●パスワード管理\r\n登録時にご指定いただいたパスワードは、お客様にて弊社ウェブサイト（https://www.kinokuniya.co.jp/）から変更できます。\r\n会員メニューから会員情報変更をご利用ください。\r\nセキュリティ面を考慮し、定期的な変更をおすすめいたします。\r\nご指定いただいたパスワードを万が一お忘れになった場合は、\r\n「パスワードを忘れてしまった方はこちら」から再発行をお願いいたします。\r\n\r\nその他にもご不明な点がございましたら、以下までご連絡ください。\r\n\r\n株式会社 紀伊國屋書店\r\n〒153-8504 東京都目黒区下目黒3-7-10\r\n\r\n【書籍・雑誌・DVD・CDご注文のお問い合わせ窓口】\r\nネットビジネス部\r\nお客様対応時間帯：10:00〜18:00（日曜/祝日・GW・年末年始休業日を除く）\r\nE-Mail: e-commerce@kinokuniya.co.jp\r\n\r\n【電子書籍お問い合わせ窓口】\r\n電子書籍事業部\r\nお客様対応時間帯：10:00〜17:00（土日祝日・GW・年末年始休業日を除く）\r\nE-Mail: ebook@kinokuniya.co.jp\r\n\r\n【ポイントお問い合わせ窓口】\r\nKinokuniya Point　お問い合せデスク\r\nお客様対応時間帯：10:00〜18:00（土日祝日・GW・年末年始休業日を除く）\r\nE-Mail: point@kinokuniya.co.jp\r\n-------------------------------------------------------------",
+      "linkedReminderIds": [
+        "rem-20260406170301-443"
+      ]
+    },
+    {
+      "id": "evt-20260406172522-908",
+      "title": "Google Cloud Observability Update: New OTel Ingestion API Enabled",
+      "startAt": "2026-03-04T17:25",
+      "endAt": "2026-03-04T18:25",
+      "participants": [],
+      "location": "None",
+      "source": "homehub-local",
+      "createdAt": "2026-04-06T17:25",
+      "notes": "Original request: Hello Dream,\r\n\r\nWe’re writing to let you know that Cloud Observability has launched a new  \r\nOpenTelemetry (OTel) ingestion API[1] that supports native OpenTelemetry  \r\nProtocol (OTLP) logs, trace spans, and metrics. Starting March 4, 2026,  \r\nthis API will be added as a dependency for the current Cloud Logging, Cloud  \r\nTrace, and Cloud Monitoring ingestion APIs. This change ensures a seamless  \r\ntransition as collection tools migrate to this new unified endpoint.\r\n\r\nWhat you need to know\r\n\r\nKey changes:\r\n\r\n    - The existing Cloud Observability ingestion APIs  \r\n(logging.googleapis.com, cloudtrace.googleapis.com, and  \r\nmonitoring.googleapis.com) are automatically activated when you create a  \r\nGoogle Cloud project using the Google Cloud console or gcloud CLI. The  \r\nbehavior remains unchanged for projects created via API, which do not have  \r\nthese ingestion APIs enabled by default. Starting March 4, 2026, the new  \r\nOTel ingestion endpoint telemetry.googleapis.com will automatically  \r\nactivate when any of these specified APIs are enabled.\r\n    - In addition, we will automatically enable this new endpoint for all  \r\nexisting projects that already have current ingestion APIs active.\r\n\r\nWhat you need to do\r\n\r\nNo action is required from you for this API enablement change, and there  \r\nwill be no disruption to your existing services. You may disable the API at  \r\nany time by following these instructions[2].\r\n\r\nRefer to the attachment for a list of the projects that will automatically  \r\nenable the new endpoint.\r\n\r\nWe’re here to help\r\n\r\nIf you have any questions or require assistance, please contact Google  \r\nCloud Support[3].\r\n\r\nThanks for choosing Google Cloud Observability.\r\n\r\n– The Google Cloud Team\r\n\r\n[1]  \r\nhttps://docs.cloud.google.com/stackdriver/docs/reference/telemetry/overview\r\n[2] https://docs.cloud.google.com/service-usage/docs/enable-disable\r\n[3] https://support.google.com/\r\n\r\n© 2026 Google LLC 1600 Amphitheatre Parkway, Mountain View, CA 94043\r\n\r\nYou’ve received this mandatory service announcement to update you about  \r\nimportant changes to Google Cloud or your account.",
+      "linkedReminderIds": []
     }
   ],
   "reminders": [
@@ -183,9 +209,34 @@
       ],
       "createdAt": "2026-04-05T21:29",
       "completedAt": "2026-04-05T21:30"
+    },
+    {
+      "id": "rem-20260406170301-443",
+      "title": "Reminder: 紀伊國屋書店ウェブストア/ポイントサービス登録確認",
+      "triggerAt": "2026-04-07T09:30",
+      "eventId": "evt-20260406170301-513",
+      "status": "pending",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-06T17:03"
     }
   ],
   "recentActions": [
+    {
+      "id": "act-20260406172522-513",
+      "kind": "create-event",
+      "summary": "Created schedule 'Google Cloud Observability Update: New OTel Ingestion API Enabled' for 2026-03-04T17:25.",
+      "createdAt": "2026-04-06T17:25"
+    },
+    {
+      "id": "act-20260406170301-664",
+      "kind": "create-event",
+      "summary": "Created schedule '紀伊國屋書店ウェブストア/ポイントサービス登録確認' for 2026-04-07T10:00.",
+      "createdAt": "2026-04-06T17:03"
+    },
     {
       "id": "act-20260405225337-783",
       "kind": "create-event",
@@ -245,18 +296,6 @@
       "kind": "complete-reminder",
       "summary": "Completed reminder '消费提醒'.",
       "createdAt": "2026-04-03T15:56"
-    },
-    {
-      "id": "act-20260403155344-400",
-      "kind": "create-reminder",
-      "summary": "Created reminder '消费提醒' for 2026-04-03T15:55.",
-      "createdAt": "2026-04-03T15:53"
-    },
-    {
-      "id": "act-20260403154759-708",
-      "kind": "complete-reminder",
-      "summary": "Completed reminder '到今天为止，我一共花了多少钱，有没有超过2000的预警金额'.",
-      "createdAt": "2026-04-03T15:47"
     }
   ]
 }
