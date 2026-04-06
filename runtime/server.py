@@ -3998,11 +3998,13 @@ class Handler(BaseHTTPRequestHandler):
         runtime = build_runtime_bridge()
         raw_body = self._read_request_body()
         preview_body = self._parse_request_body(raw_body)
+        raw_text = raw_body.decode("utf-8", errors="ignore") if raw_body else ""
         request_headers = {str(key).lower(): str(value) for key, value in self.headers.items()}
         if preview_body is None:
-            preview_body = {"_headers": request_headers}
+            preview_body = {"_headers": request_headers, "_raw": raw_text}
         elif isinstance(preview_body, dict):
             preview_body["_headers"] = request_headers
+            preview_body.setdefault("_raw", raw_text)
         feature_response = FEATURE_MANAGER.handle_api("POST", parsed.path, parse_qs(parsed.query), preview_body, runtime)
         if feature_response:
             self._send_feature_response(feature_response)
