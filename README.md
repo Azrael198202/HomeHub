@@ -84,7 +84,7 @@ python .\runtime\server.py
 For Railway GitHub deployments, use the dedicated API entrypoint directly:
 
 1. Deploy this repository from GitHub in Railway.
-2. This repo includes a root `nixpacks.toml` and `requirements.txt` so Railway treats it as a Python API deploy instead of a Node workspace deploy.
+2. This repo includes a root `nixpacks.toml` and a self-contained root `requirements.txt` so Railway treats it as a Python API deploy instead of a Node workspace deploy.
 3. Set the start command to:
 
 ```bash
