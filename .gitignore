@@ -14,3 +14,10 @@ runtime/usage-cost-log.jsonl
 runtime/google-cloud-service-account.json
 tools/codex-sync/codex-sync.config.json
 tools/codex-sync/__pycache__/
+logs/
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+.idea/
