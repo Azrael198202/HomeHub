@@ -31,6 +31,9 @@ def detect_text_locale(text: str, fallback: str = "en-US") -> str:
     if re.search(r"[\u4e00-\u9fff]", raw):
         if any(token in raw for token in ["消费", "账单", "金额", "提醒", "日程", "费用", "记录", "总额", "识别"]):
             return "zh-CN"
+        if any(token in raw for token in ["你好", "您好", "在吗", "收到", "能收到", "可以", "请", "帮我", "告诉我", "多少", "什么", "明细", "处理", "回复"]):
+            return "zh-CN"
+        return "zh-CN"
     return normalize_locale(fallback, "en-US")
 
 

@@ -28,7 +28,8 @@
           "homehubRoute": {}
         }
       ],
-      "outbox": []
+      "outbox": [],
+      "pending": []
     },
     "line": {
       "enabled": false,
@@ -36,7 +37,8 @@
       "summary": "Reserved integration surface for LINE. Webhook and sender interfaces are scaffolded but not wired yet.",
       "users": [],
       "inbox": [],
-      "outbox": []
+      "outbox": [],
+      "pending": []
     }
   },
   "mail": {
@@ -1182,84 +1184,84 @@
         "error": "EOF occurred in violation of protocol (_ssl.c:1129)"
       }
     ],
-    "lastSyncAt": "2026-04-06T15:18"
+    "lastSyncAt": "2026-04-06T16:09"
   },
   "recentActions": [
     {
-      "id": "external-2026-04-06T15:18",
+      "id": "external-2026-04-06T16:09",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:18"
+      "createdAt": "2026-04-06T16:09"
     },
     {
-      "id": "external-2026-04-06T15:16",
+      "id": "external-2026-04-06T16:07",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:16"
+      "createdAt": "2026-04-06T16:07"
     },
     {
-      "id": "external-2026-04-06T15:15",
+      "id": "external-2026-04-06T16:05",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:15"
+      "createdAt": "2026-04-06T16:05"
     },
     {
-      "id": "external-2026-04-06T15:13",
+      "id": "external-2026-04-06T16:03",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:13"
+      "createdAt": "2026-04-06T16:03"
     },
     {
-      "id": "external-2026-04-06T15:11",
+      "id": "external-2026-04-06T16:02",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:11"
+      "createdAt": "2026-04-06T16:02"
     },
     {
-      "id": "external-2026-04-06T15:10",
+      "id": "external-2026-04-06T16:00",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:10"
+      "createdAt": "2026-04-06T16:00"
     },
     {
-      "id": "external-2026-04-06T15:08",
+      "id": "external-2026-04-06T15:59",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:08"
+      "createdAt": "2026-04-06T15:59"
     },
     {
-      "id": "external-2026-04-06T15:06",
+      "id": "external-2026-04-06T15:57",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:06"
+      "createdAt": "2026-04-06T15:57"
     },
     {
-      "id": "external-2026-04-06T15:04",
+      "id": "external-2026-04-06T15:55",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:04"
+      "createdAt": "2026-04-06T15:55"
     },
     {
-      "id": "external-2026-04-06T15:03",
+      "id": "external-2026-04-06T15:54",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:03"
+      "createdAt": "2026-04-06T15:54"
     },
     {
-      "id": "external-2026-04-06T14:08",
+      "id": "external-2026-04-06T15:52",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T14:08"
+      "createdAt": "2026-04-06T15:52"
     },
     {
-      "id": "external-2026-04-06T14:07",
+      "id": "external-2026-04-06T15:50",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T14:07"
+      "createdAt": "2026-04-06T15:50"
     },
     {
-      "id": "external-2026-04-06T14:05",
+      "id": "external-2026-04-06T15:49",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T14:05"
+      "createdAt": "2026-04-06T15:49"
     },
     {
-      "id": "external-2026-04-06T14:03",
+      "id": "external-2026-04-06T15:47",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T14:03"
+      "createdAt": "2026-04-06T15:47"
     },
     {
-      "id": "external-2026-04-06T14:02",
+      "id": "external-2026-04-06T15:45",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T14:02"
+      "createdAt": "2026-04-06T15:45"
     }
   ],
-  "lastRun": "2026-04-06T15:18"
+  "lastRun": "2026-04-06T16:09"
 }

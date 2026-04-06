@@ -66,6 +66,16 @@
   ],
   "recentActions": [
     {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1547",
+      "summary": "Calculated today total: 4538 JPY.",
+      "createdAt": "2026-04-06T15:47"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1542",
+      "summary": "Calculated today total: 4538 JPY.",
+      "createdAt": "2026-04-06T15:42"
+    },
+    {
       "id": "u5bb6_u5ead_u8d26_u5355-20260406T1243",
       "summary": "Exported all expense table with 7 items.",
       "createdAt": "2026-04-06T12:43"
@@ -114,38 +124,16 @@
       "id": "u5bb6_u5ead_u8d26_u5355-20260406T1138",
       "summary": "Calculated all total: 17738 JPY.",
       "createdAt": "2026-04-06T11:38"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1128",
-      "summary": "Recorded 8 JPY for 账单.",
-      "createdAt": "2026-04-06T11:28"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1126",
-      "summary": "Calculated today total: 4538 JPY.",
-      "createdAt": "2026-04-06T11:26"
     }
   ],
-  "lastRun": "2026-04-06T12:43",
+  "lastRun": "2026-04-06T15:47",
   "lastSummary": {
-    "period": "all",
-    "total": 22300,
-    "count": 7,
+    "period": "today",
+    "total": 4538,
+    "count": 3,
     "threshold": 2000,
     "overThreshold": true,
     "items": [
-      {
-        "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T1238",
-        "amount": 4562,
-        "category": "其他",
-        "currency": "JPY",
-        "sourceText": "集。",
-        "createdAt": "2026-04-06T12:38",
-        "merchant": "集。",
-        "purchaseDate": "",
-        "paymentMethod": "",
-        "taxAmount": 0
-      },
       {
         "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T0823",
         "amount": 486,
@@ -181,32 +169,8 @@
         "purchaseDate": "T话：0123-22-3010 店1--:280382",
         "paymentMethod": "",
         "taxAmount": 0
-      },
-      {
-        "id": "u5bb6_u5ead_u8d26_u5355-item-20260405T2108",
-        "amount": 2000,
-        "category": "餐饮",
-        "currency": "JPY",
-        "sourceText": "好的，在追加昨天的账单，消费食材2000日元，外餐10000日元",
-        "createdAt": "2026-04-05T21:08"
-      },
-      {
-        "id": "u5bb6_u5ead_u8d26_u5355-item-20260405T2105",
-        "amount": 8000,
-        "category": "账单",
-        "currency": "JPY",
-        "sourceText": "给我记录账单，今天消费8000日元",
-        "createdAt": "2026-04-05T21:05"
-      },
-      {
-        "id": "u5bb6_u5ead_u8d26_u5355-item-20260403T1606",
-        "amount": 3200,
-        "category": "买菜",
-        "currency": "JPY",
-        "sourceText": "今天买菜花了3200日元，记到账单里",
-        "createdAt": "2026-04-03T16:06"
       }
     ],
-    "generatedAt": "2026-04-06T12:43"
+    "generatedAt": "2026-04-06T15:47"
   }
 }

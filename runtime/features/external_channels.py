@@ -757,7 +757,7 @@ class Feature(HomeHubFeature):
                     fallback["resolutionStrategy"] = "email_none"
                     fallback["resolutionAttempts"] = attempts
                     return fallback
-                payload = self.build_inbound_payload(channel, sender, content, locale, subject)
+                payload = str(content or "").strip() if channel.startswith("wechat") and str(content or "").strip() else self.build_inbound_payload(channel, sender, content, locale, subject)
                 resolution = runtime.resolve_message(payload, effective_locale) or {}
                 if isinstance(resolution, dict):
                     resolution["effectiveLocale"] = effective_locale

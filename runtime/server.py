@@ -2194,6 +2194,11 @@ def run_background_bridge_pull():
                     pull_body = json.loads(response.read().decode("utf-8", errors="replace"))
                 item = pull_body.get("item") if isinstance(pull_body, dict) else None
                 if isinstance(item, dict) and item:
+                    sender = item.get("sender", {}) if isinstance(item.get("sender"), dict) else {}
+                    sender_id = str(sender.get("displayName") or sender.get("id") or "unknown").strip()
+                    message_id = str(item.get("id", "")).strip() or "unknown"
+                    content_preview = str(item.get("content", "")).strip().replace("\n", " ")[:120]
+                    print(f"[bridge-pull] claimed {message_id} from {sender_id}: {content_preview}")
                     runtime = build_runtime_bridge()
                     bridge_response = FEATURE_MANAGER.invoke_feature(
                         "external-channels",
@@ -2217,6 +2222,8 @@ def run_background_bridge_pull():
                         runtime,
                     ) or {}
                     bridge_body = bridge_response.get("body", {}) if isinstance(bridge_response.get("body"), dict) else {}
+                    reply_preview = str(bridge_body.get("reply", "")).strip().replace("\n", " ")[:120]
+                    print(f"[bridge-pull] processed {message_id}, reply: {reply_preview}")
                     result_request = urllib.request.Request(
                         f"{bridge_url}/api/external-channels/bridge/result",
                         data=json.dumps(
@@ -2233,6 +2240,7 @@ def run_background_bridge_pull():
                     )
                     with urllib.request.urlopen(result_request, timeout=20) as response:
                         response.read()
+                    print(f"[bridge-pull] delivered {message_id} back to Railway")
         except Exception as exc:
             print(f"[bridge-pull] background pull failed: {exc}")
         time.sleep(max(3, BRIDGE_PULL_INTERVAL_SECONDS))
@@ -3317,18 +3325,6 @@ def route_voice_request(user_text, locale):
     )
     runtime_strategy = build_runtime_strategy(load_ollama_inventory())
     route = FEATURE_MANAGER.route_voice_intent(user_text, locale, runtime)
-    selected = route.get("selected") or {}
-    if selected.get("featureId") == "custom-agents" and float(selected.get("score", 0.0) or 0.0) >= 0.9:
-        direct_route = {
-            "kind": "feature",
-            "selected": selected,
-            "candidates": route.get("candidates", []),
-            "reasoning": "High-confidence custom agent builder intent matched locally.",
-        }
-        direct_route["taskSpec"] = task_spec
-        direct_route["toolPlan"] = build_tool_plan(task_spec, direct_route)
-        direct_route["modelRoute"] = select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])})
-        return direct_route
     heuristic_route = {
         "kind": "feature" if route.get("selected") else ("agent_factory" if is_generic_agent_request(user_text) or task_spec["taskType"] == "agent_creation" else "general"),
         "selected": route.get("selected")
