@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 import re
+from html import escape
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
 from .base import HomeHubFeature, RuntimeBridge
+
+try:
+    from cortex.core import AgentCortex
+except ModuleNotFoundError:
+    from runtime.cortex.core import AgentCortex
 
 
 ZH = {
@@ -44,6 +50,8 @@ ZH = {
     "review_confirm": "\u5982\u679c\u6ca1\u95ee\u9898\uff0c\u4f60\u53ef\u4ee5\u56de\u590d\u201c\u786e\u8ba4\u521b\u5efa\u201d\u3001\u201c\u53ef\u4ee5\u5f00\u59cb\u201d\u6216\u201cOK\u201d\u3002\u5982\u679c\u8981\u4fee\u6539\uff0c\u76f4\u63a5\u544a\u8bc9\u6211\u8981\u6539\u54ea\u91cc\u3002",
     "confirmed": "{name} \u5df2\u6b63\u5f0f\u521b\u5efa\u5b8c\u6210\u3002\u540e\u9762\u6211\u4f1a\u6309\u7167\u8fd9\u4e2a\u84dd\u56fe\u53bb\u63d0\u9192\u3001\u8bb0\u5f55\u548c\u5904\u7406\u65b0\u8f93\u5165\u3002",
     "updated_review": "\u597d\u7684\uff0c\u6211\u5df2\u7ecf\u6839\u636e\u4f60\u7684\u8865\u5145\u66f4\u65b0\u4e86\u84dd\u56fe\uff0c\u8bf7\u518d\u786e\u8ba4\u4e00\u6b21\uff1a",
+    "edit_started": "\u6211\u5df2\u7ecf\u57fa\u4e8e {name} \u5f00\u4e86\u4e00\u4e2a\u4fee\u6539\u7248\u8349\u7a3f\u3002\u4f60\u53ef\u4ee5\u7ee7\u7eed\u8bf4\u8981\u4fee\u6539\u54ea\u4e9b\u5185\u5bb9\uff0c\u6bd4\u5982\u540d\u5b57\u3001\u76ee\u6807\u3001\u8f93\u5165\u3001\u8f93\u51fa\u6216\u7ea6\u675f\u3002",
+    "edit_confirmed": "{name} \u7684\u4fee\u6539\u7248\u5df2\u786e\u8ba4\u5b8c\u6210\uff0c\u6211\u5df2\u7ecf\u6309\u7167\u65b0\u7684\u5185\u5bb9\u751f\u6210\u4e86\u4e00\u4e2a\u65b0\u667a\u80fd\u4f53\u7248\u672c\u3002",
     "module_summary_count": "\u5df2\u521b\u5efa {total} \u4e2a\u901a\u7528\u667a\u80fd\u4f53\uff0c\u5176\u4e2d {completed} \u4e2a\u5df2\u5b8c\u6210\u84dd\u56fe\u3002",
     "module_summary_empty": "\u8fd8\u6ca1\u6709\u901a\u7528\u667a\u80fd\u4f53\uff0c\u53ef\u4ee5\u5148\u7528\u8bed\u97f3\u6216\u6587\u5b57\u63cf\u8ff0\u4f60\u60f3\u521b\u5efa\u7684\u957f\u671f\u52a9\u624b\u3002",
     "module_generated_suffix": " \u5176\u4e2d {count} \u4e2a\u5df2\u751f\u6210 feature \u811a\u624b\u67b6\u3002",
@@ -92,7 +100,7 @@ class Feature(HomeHubFeature):
     def descriptor(self) -> dict:
         data = super().descriptor()
         data["summary"] = "Creates reusable custom household agents, asks follow-up questions, and generates feature scaffolds."
-        data["api"] = ["/api/custom-agents", "/api/custom-agents/generate-feature", "/api/custom-agents/intake", "/api/custom-agents/lookup"]
+        data["api"] = ["/api/custom-agents", "/api/custom-agents/cortex", "/api/custom-agents/generate-feature", "/api/custom-agents/intake", "/api/custom-agents/lookup"]
         data["voiceIntents"] = self.voice_intents()
         return data
 
@@ -113,6 +121,9 @@ class Feature(HomeHubFeature):
         agents_dir = runtime.root / "agents"
         agents_dir.mkdir(parents=True, exist_ok=True)
         return agents_dir / "custom_agents.json"
+
+    def cortex(self, runtime: RuntimeBridge) -> AgentCortex:
+        return AgentCortex(runtime.root)
 
     def default_store(self) -> dict:
         now = datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
@@ -139,6 +150,9 @@ class Feature(HomeHubFeature):
 
     def on_refresh(self, runtime: RuntimeBridge) -> None:
         runtime.state[self.feature_id] = self.load_store(runtime)
+        cortex = self.cortex(runtime)
+        for agent in self.sorted_agents(runtime):
+            cortex.sync_agent(agent, stage=str(agent.get("status", "")).strip() or "loaded")
 
     def reset(self, runtime: RuntimeBridge) -> None:
         store = self.default_store()
@@ -154,6 +168,19 @@ class Feature(HomeHubFeature):
 
     def sorted_agents(self, runtime: RuntimeBridge) -> list[dict]:
         return sorted(self.get_store(runtime).get("items", []), key=lambda item: item.get("updatedAt", ""), reverse=True)
+
+    def enrich_agent_runtime_stats(self, agent: dict, runtime: RuntimeBridge) -> dict:
+        enriched = deepcopy(agent)
+        generated_feature_id = str(agent.get("generatedFeatureId", "")).strip()
+        feature_store = runtime.state.get(generated_feature_id) if generated_feature_id else None
+        if isinstance(feature_store, dict):
+            items = feature_store.get("items", [])
+            if isinstance(items, list):
+                enriched["featureItemCount"] = len(items)
+            recent = feature_store.get("recentActions", [])
+            if isinstance(recent, list) and recent:
+                enriched["featureLatestAction"] = str(recent[0].get("summary", ""))
+        return enriched
 
     def append_action(self, runtime: RuntimeBridge, summary: str) -> None:
         store = self.get_store(runtime)
@@ -375,11 +402,15 @@ class Feature(HomeHubFeature):
         lowered = message.lower().strip()
         confirm_tokens = [
             "\u786e\u8ba4\u521b\u5efa",
+            "\u786e\u8ba4\u4fee\u6539",
             "\u53ef\u4ee5\u5f00\u59cb",
             "\u5f00\u59cb\u521b\u5efa",
             "\u6ca1\u95ee\u9898",
             "\u597d\u7684",
             "\u786e\u8ba4",
+            "\u5b8c\u6210\u4fee\u6539",
+            "\u4fee\u6539\u5b8c\u6210",
+            "\u5c31\u8fd9\u6837",
         ]
         return any(token in message for token in confirm_tokens) or lowered in {"ok", "okay", "confirm", "looks good", "go ahead"}
 
@@ -399,6 +430,39 @@ class Feature(HomeHubFeature):
         payload = runtime.openai_json(
             "You extract HomeHub custom-agent requirements from a natural-language request. Return JSON only with keys: shouldCreateAgent, name, goal, primaryUser, trigger, inputs, output, constraints, checkPrompt, noInputAction, hasInputAction, allowNetworkLookup, preferredSources, lookupPolicy, confidence. Use empty strings for unknown values.",
             json.dumps({"locale": locale, "message": message}, ensure_ascii=False),
+            "gpt-4o-mini",
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    def classify_agent_message(self, message: str, locale: str, runtime: RuntimeBridge) -> dict:
+        agents = [
+            {
+                "name": str(item.get("name", "")).strip(),
+                "status": str(item.get("status", "")).strip(),
+                "goal": str(item.get("profile", {}).get("goal", "")).strip(),
+                "trigger": str(item.get("profile", {}).get("trigger", "")).strip(),
+                "generatedFeatureId": str(item.get("generatedFeatureId", "")).strip(),
+            }
+            for item in self.sorted_agents(runtime)[:8]
+        ]
+        context = {
+            "locale": locale,
+            "message": message,
+            "collectingAgent": (self.get_collecting_agent(runtime) or {}).get("name", ""),
+            "reviewAgent": (self.get_review_agent(runtime) or {}).get("name", ""),
+            "latestOperationalAgent": (self.latest_operational_agent(runtime) or {}).get("name", ""),
+            "agents": agents,
+        }
+        payload = runtime.openai_json(
+            (
+                "You are the HomeHub custom-agent intent classifier. "
+                "Decide whether the user's message is about creating a custom agent, continuing blueprint collection, "
+                "reviewing a blueprint, editing an existing custom agent, operating an existing custom agent, showing an agent, or just asking for general help. "
+                "Return JSON only with keys: action, targetAgentName, confidence, reason. "
+                "Valid action values: create_agent, continue_collecting, review_blueprint, edit_agent, operational_agent, show_agent, general_agent_help, no_match. "
+                "Use no_match when this should be handled by another HomeHub system such as schedule, reminders, weather, or general chat."
+            ),
+            json.dumps(context, ensure_ascii=False),
             "gpt-4o-mini",
         )
         return payload if isinstance(payload, dict) else {}
@@ -473,22 +537,68 @@ class Feature(HomeHubFeature):
             return []
         return [item.strip() for item in re.split(r"[,，;\n]+", raw) if item.strip()]
 
-    def attachment_analysis_prompt(self, agent: dict, locale: str) -> str:
-        profile = agent.get("profile", {})
-        return (
-            "You are HomeHub's generic attachment interpreter. "
-            "Look at the uploaded image in the context of this specific custom agent and return JSON only with keys: "
-            "summary, contentType, relevantFacts, suggestedAction, followUpQuestion, confidence, requiresUserReview. "
-            "Use a short string for summary/contentType/suggestedAction/followUpQuestion, an array of strings for relevantFacts, "
-            "a number from 0 to 1 for confidence, and a boolean for requiresUserReview. If something is unknown, use an empty string or an empty array. "
-            f"Agent name: {profile.get('name') or agent.get('name', '')}. "
-            f"Agent goal: {profile.get('goal', '')}. "
-            f"Expected inputs: {profile.get('inputs', '')}. "
-            f"Expected output: {profile.get('output', '')}. "
-            f"When new input arrives, the agent should: {profile.get('hasInputAction', '')}. "
-            f"Constraints: {profile.get('constraints', '')}. "
-            f"Locale: {locale}."
-        )
+    def is_expense_or_bill_agent(self, agent: dict, message: str) -> bool:
+        haystacks = [
+            str(agent.get("name", "")),
+            str(agent.get("generatedFeatureId", "")),
+            str(agent.get("profile", {}).get("goal", "")),
+            str(agent.get("profile", {}).get("inputs", "")),
+            str(agent.get("profile", {}).get("output", "")),
+            message,
+        ]
+        combined = " ".join(haystacks).lower()
+        tokens = ["账单", "消费", "费用", "支出", "记账", "明细", "bill", "expense", "receipt", "receipt", "budget"]
+        return any(token in combined for token in tokens)
+
+    def extract_expenses_from_analysis(self, analysis: dict, message: str) -> list[dict]:
+        extracted: list[dict] = []
+        raw_items = analysis.get("detectedExpenses", [])
+        if isinstance(raw_items, list):
+            for item in raw_items:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    amount = int(float(item.get("amount", 0) or 0))
+                except (TypeError, ValueError):
+                    amount = 0
+                if amount <= 0:
+                    continue
+                extracted.append({
+                    "amount": amount,
+                    "category": str(item.get("category", "")).strip() or "其他",
+                    "content": str(item.get("content", "")).strip(),
+                    "note": str(item.get("note", "")).strip(),
+                    "merchant": str(item.get("merchant", "")).strip() or str(analysis.get("merchant", "")).strip(),
+                    "purchaseDate": str(item.get("purchaseDate", "")).strip() or str(analysis.get("detectedDate", "")).strip(),
+                    "paymentMethod": str(item.get("paymentMethod", "")).strip() or str(analysis.get("paymentMethod", "")).strip(),
+                    "taxAmount": int(float(item.get("taxAmount", analysis.get("taxAmount", 0)) or 0)),
+                })
+        if extracted:
+            return extracted
+        facts = analysis.get("relevantFacts", [])
+        joined = "\n".join(str(item) for item in facts if str(item).strip())
+        matches = re.findall(r"(\d+(?:\.\d+)?)\s*(?:日元|円|yen|jpy)", joined.lower())
+        if not matches:
+            return []
+        default_content = message.strip() or str(analysis.get("summary", "")).strip() or "Image-scanned expense"
+        for value in matches:
+            try:
+                amount = int(float(value))
+            except (TypeError, ValueError):
+                continue
+            if amount <= 0:
+                continue
+            extracted.append({
+                "amount": amount,
+                "category": "其他",
+                "content": default_content,
+                "note": "",
+                "merchant": str(analysis.get("merchant", "")).strip(),
+                "purchaseDate": str(analysis.get("detectedDate", "")).strip(),
+                "paymentMethod": str(analysis.get("paymentMethod", "")).strip(),
+                "taxAmount": int(float(analysis.get("taxAmount", 0) or 0)),
+            })
+        return extracted
 
     def create_agent(self, runtime: RuntimeBridge, message: str, locale: str) -> dict:
         profile = self.infer_initial_profile(message, locale, runtime)
@@ -499,6 +609,7 @@ class Feature(HomeHubFeature):
         store.setdefault("items", []).insert(0, agent)
         self.append_action(runtime, f"Created custom agent draft '{name}'.")
         self.save_store(store, runtime)
+        self.cortex(runtime).record_event(agent, "draft_created", {"message": message.strip()})
         return agent
 
     def now_iso(self) -> str:
@@ -557,21 +668,72 @@ class Feature(HomeHubFeature):
         agent["artifact"] = self.build_artifact(agent, locale)
         self.append_action(runtime, f"Completed custom agent '{agent['name']}'.")
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, "confirmed", {"message": agent.get("artifact", "")})
+
+    def is_edit_request(self, message: str) -> bool:
+        lowered = str(message or "").lower()
+        return (
+            any(token in message for token in ["\u4fee\u6539\u667a\u80fd\u4f53", "\u6539\u667a\u80fd\u4f53", "\u4fee\u6539\u8fd9\u4e2a\u667a\u80fd\u4f53", "\u8c03\u6574\u8fd9\u4e2a\u667a\u80fd\u4f53", "\u4fee\u6539\u540d\u5b57", "\u6539\u540d\u5b57"])
+            or any(token in lowered for token in ["edit agent", "modify agent", "rename agent", "update this agent"])
+        )
+
+    def start_editing_agent(self, base_agent: dict, message: str, runtime: RuntimeBridge, locale: str) -> dict:
+        profile = deepcopy(base_agent.get("profile", {}))
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        agent = {
+            "id": f"custom-agent-{stamp}",
+            "type": "custom-agent",
+            "name": str(base_agent.get("name") or profile.get("name") or self.default_name(profile.get("goal", ""), locale)).strip(),
+            "status": "review",
+            "createdAt": self.now_iso(),
+            "updatedAt": self.now_iso(),
+            "profile": profile,
+            "qaHistory": deepcopy(base_agent.get("qaHistory", [])),
+            "artifact": "",
+            "generatedFeaturePath": "",
+            "generatedFeatureId": "",
+            "records": [],
+            "editMode": True,
+            "sourceAgentId": str(base_agent.get("id", "")),
+            "sourceAgentName": str(base_agent.get("name", "")),
+        }
+        patch = self.extract_update_patch(message, locale, runtime)
+        for key, value in patch.items():
+            if value:
+                agent["profile"][key] = value
+                if key == "name":
+                    agent["name"] = value
+        agent["artifact"] = self.build_artifact(agent, locale)
+        store = self.get_store(runtime)
+        store.setdefault("items", []).insert(0, agent)
+        self.append_action(runtime, f"Started edit draft for '{base_agent.get('name', '')}' as '{agent['name']}'.")
+        self.save_store(store, runtime)
+        self.cortex(runtime).record_event(agent, "edit_started", {"message": message.strip(), "sourceAgentId": str(base_agent.get("id", ""))})
+        return agent
 
     def build_review_summary(self, agent: dict, locale: str) -> str:
         p = agent.get("profile", {})
+        mission_label = zh(locale, "长期任务", "Long-term mission")
+        user_label = zh(locale, "主要服务对象", "Primary user")
+        trigger_label = zh(locale, "触发时机", "Trigger")
+        inputs_label = zh(locale, "需要的输入", "Inputs")
+        output_label = zh(locale, "输出结果", "Output")
+        question_label = zh(locale, "主动询问用语", "Proactive question")
+        no_input_label = zh(locale, "没有新输入时的处理", "When there is no new input")
+        has_input_label = zh(locale, "有新输入时的处理", "When new input arrives")
+        constraints_label = zh(locale, "约束与原则", "Constraints")
         lines = [
             zh(locale, ZH["review_intro"].format(name=agent["name"]), f"{agent['name']} is ready for review:"),
             "",
-            f"1. {zh(locale, '\u957f\u671f\u4efb\u52a1', 'Long-term mission')}: {p.get('goal') or '-'}",
-            f"2. {zh(locale, '\u4e3b\u8981\u670d\u52a1\u5bf9\u8c61', 'Primary user')}: {p.get('primaryUser') or '-'}",
-            f"3. {zh(locale, '\u89e6\u53d1\u65f6\u673a', 'Trigger')}: {p.get('trigger') or '-'}",
-            f"4. {zh(locale, '\u9700\u8981\u7684\u8f93\u5165', 'Inputs')}: {p.get('inputs') or '-'}",
-            f"5. {zh(locale, '\u8f93\u51fa\u7ed3\u679c', 'Output')}: {p.get('output') or '-'}",
-            f"6. {zh(locale, '\u4e3b\u52a8\u8be2\u95ee\u7528\u8bed', 'Proactive question')}: {p.get('checkPrompt') or '-'}",
-            f"7. {zh(locale, '\u6ca1\u6709\u65b0\u8f93\u5165\u65f6\u7684\u5904\u7406', 'When there is no new input')}: {p.get('noInputAction') or '-'}",
-            f"8. {zh(locale, '\u6709\u65b0\u8f93\u5165\u65f6\u7684\u5904\u7406', 'When new input arrives')}: {p.get('hasInputAction') or '-'}",
-            f"9. {zh(locale, '\u7ea6\u675f\u4e0e\u539f\u5219', 'Constraints')}: {p.get('constraints') or '-'}",
+            f"1. {mission_label}: {p.get('goal') or '-'}",
+            f"2. {user_label}: {p.get('primaryUser') or '-'}",
+            f"3. {trigger_label}: {p.get('trigger') or '-'}",
+            f"4. {inputs_label}: {p.get('inputs') or '-'}",
+            f"5. {output_label}: {p.get('output') or '-'}",
+            f"6. {question_label}: {p.get('checkPrompt') or '-'}",
+            f"7. {no_input_label}: {p.get('noInputAction') or '-'}",
+            f"8. {has_input_label}: {p.get('hasInputAction') or '-'}",
+            f"9. {constraints_label}: {p.get('constraints') or '-'}",
             "",
             zh(locale, ZH["review_confirm"], "Reply with 'confirm' or 'OK' to create it, or tell me what to change."),
         ]
@@ -596,8 +758,25 @@ class Feature(HomeHubFeature):
                 changed = True
         agent["updatedAt"] = self.now_iso()
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, "review_updated", {"message": message.strip()})
         prefix = zh(locale, ZH["updated_review"], "I updated the draft. Please review it again:")
         return prefix + "\n\n" + self.build_review_summary(agent, locale)
+
+    def should_route_intake_to_builder(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
+        classified = self.classify_agent_message(message, locale, runtime)
+        action = str(classified.get("action", "")).strip()
+        try:
+            confidence = float(classified.get("confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        builder_actions = {"create_agent", "continue_collecting", "review_blueprint", "edit_agent", "show_agent", "general_agent_help"}
+        if action in builder_actions and confidence >= 0.6:
+            return True
+        if self.is_create_request(message) or self.is_edit_request(message):
+            return True
+        if self.get_collecting_agent(runtime) or self.get_review_agent(runtime):
+            return True
+        return self.matches_activation_phrase(message, locale) or self.looks_like_agent_topic(message)
 
     def looks_like_negative_report(self, message: str) -> bool:
         lowered = message.lower()
@@ -605,7 +784,15 @@ class Feature(HomeHubFeature):
 
     def looks_like_positive_report(self, message: str) -> bool:
         lowered = message.lower()
-        return any(token in message for token in ["\u8d26\u5355", "\u53d1\u7968", "\u6536\u636e", "\u622a\u56fe", "\u56fe\u7247", "\u4e0a\u4f20"]) or any(token in lowered for token in ["bill", "invoice", "charge", "screenshot", "image", "uploaded"])
+        if "?" in message or "？" in message:
+            return False
+        if any(token in message for token in ["告诉我", "请告诉我", "多少", "总额", "总的金额", "累计", "目前为止", "到目前为止", "统计", "汇总"]):
+            return False
+        if any(token in lowered for token in ["tell me", "how much", "total", "summary", "so far", "until now"]):
+            return False
+        zh_tokens = ["发票", "收据", "截图", "图片", "上传", "记录这笔", "记到账单", "记一笔", "新增消费"]
+        en_tokens = ["invoice", "receipt", "screenshot", "image", "uploaded", "record this", "add expense", "log expense"]
+        return any(token in message for token in zh_tokens) or any(token in lowered for token in en_tokens)
 
     def record_agent_event(self, agent: dict, kind: str, message: str, runtime: RuntimeBridge) -> dict:
         stamp = self.now_iso()
@@ -621,6 +808,7 @@ class Feature(HomeHubFeature):
         summary = f"Recorded {kind} update for '{agent['name']}'."
         self.append_action(runtime, summary)
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, kind, {"message": message.strip()})
         return item
 
     def record_agent_payload(self, agent: dict, kind: str, payload: dict, runtime: RuntimeBridge) -> dict:
@@ -637,38 +825,286 @@ class Feature(HomeHubFeature):
         agent["updatedAt"] = stamp
         self.append_action(runtime, f"Recorded {kind} payload for '{agent['name']}'.")
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, kind, payload)
         return item
 
+    def artifacts_root(self, runtime: RuntimeBridge) -> Path:
+        path = runtime.root / "generated" / "custom-agents"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def english_slug(self, value: str, fallback: str = "artifact") -> str:
+        text = str(value or "").strip().lower()
+        token_map = [
+            ("家庭", "family"),
+            ("账单", "bills"),
+            ("消费", "expenses"),
+            ("费用", "costs"),
+            ("表格", "table"),
+            ("文档", "document"),
+            ("文件", "file"),
+            ("图片", "image"),
+            ("海报", "poster"),
+            ("学习", "study"),
+            ("计划", "plan"),
+            ("提醒", "reminder"),
+            ("日程", "schedule"),
+            ("旅行", "travel"),
+            ("菜单", "menu"),
+            ("采购", "shopping"),
+            ("预算", "budget"),
+            ("报告", "report"),
+        ]
+        parts = [english for token, english in token_map if token in text]
+        ascii_tokens = re.findall(r"[a-z0-9]+", text)
+        parts.extend(ascii_tokens)
+        deduped = []
+        for part in parts:
+            if part and part not in deduped:
+                deduped.append(part)
+        slug = "-".join(deduped).strip("-")
+        return slug or fallback
+
+    def safe_artifact_slug(self, value: str) -> str:
+        return self.english_slug(value, "artifact")
+
+    def looks_like_artifact_request(self, message: str) -> bool:
+        lowered = str(message or "").lower()
+        nouns = [
+            "表格", "excel", "xlsx", "sheet", "spreadsheet", "工作表", "报表",
+            "文件", "文档", "word", "docx", "document", "report", "note",
+            "图片", "图像", "海报", "封面", "image", "png", "jpg", "poster",
+        ]
+        request_markers = [
+            "生成", "做", "创建", "制作", "导出", "输出", "整理成", "给我", "帮我", "来个", "做个", "做一",
+            "generate", "create", "make", "draft", "export", "please", "can you",
+        ]
+        return any(token in message or token in lowered for token in nouns) and any(
+            token in message or token in lowered for token in request_markers
+        )
+
+    def extract_artifact_plan(self, message: str) -> list[str]:
+        lowered = str(message or "").lower()
+        plan = []
+        spreadsheet_tokens = ["表格", "excel", "xlsx", "sheet", "spreadsheet", "工作表", "报表"]
+        document_tokens = ["文件", "文档", "word", "docx", "document", "report", "note", "说明"]
+        image_tokens = ["图片", "图像", "海报", "封面", "image", "png", "jpg", "poster", "配图"]
+        if any(token in message or token in lowered for token in spreadsheet_tokens):
+            plan.append("spreadsheet")
+        if any(token in message or token in lowered for token in document_tokens):
+            plan.append("document")
+        if any(token in message or token in lowered for token in image_tokens):
+            plan.append("image")
+        return plan
+
+    def build_artifact_label(self, agent: dict, message: str) -> str:
+        tokens = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]+", str(message or ""))
+        topic = "".join(tokens[:6]).strip()
+        if not topic:
+            topic = str(agent.get("name") or "homehub-artifact").strip()
+        return topic[:48]
+
+    def create_spreadsheet_artifact(self, agent: dict, message: str, runtime: RuntimeBridge, stamp: str, label: str) -> dict:
+        artifact_name = f"{stamp}-{self.safe_artifact_slug(label)}.xlsx"
+        path = self.artifacts_root(runtime) / artifact_name
+        try:
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Summary"
+            sheet.append(["Agent", "Generated At", "Request", "Goal"])
+            sheet.append([
+                str(agent.get("name") or "Custom Agent"),
+                self.now_iso(),
+                str(message or "").strip(),
+                str(agent.get("profile", {}).get("goal") or "").strip(),
+            ])
+            sheet.append([])
+            sheet.append(["Suggested Columns"])
+            sheet.append(["Task"])
+            sheet.append(["Owner"])
+            sheet.append(["Status"])
+            sheet.append(["Due Date"])
+            workbook.save(path)
+        except Exception:
+            fallback = path.with_suffix(".csv")
+            agent_name = str(agent.get("name") or "Custom Agent").replace('"', '""')
+            request_text = str(message or "").replace('"', '""')
+            goal_text = str(agent.get("profile", {}).get("goal") or "").replace('"', '""')
+            fallback.write_text(
+                "Agent,Generated At,Request,Goal\n"
+                f"\"{agent_name}\","
+                f"\"{self.now_iso()}\","
+                f"\"{request_text}\","
+                f"\"{goal_text}\"\n",
+                encoding="utf-8",
+            )
+            path = fallback
+        return {
+            "kind": "spreadsheet",
+            "label": f"{label} table",
+            "fileName": path.name,
+            "path": str(path.relative_to(runtime.root)),
+            "url": f"/generated/custom-agents/{path.name}",
+        }
+
+    def create_document_artifact(self, agent: dict, message: str, runtime: RuntimeBridge, stamp: str, label: str) -> dict:
+        artifact_name = f"{stamp}-{self.safe_artifact_slug(label)}.docx"
+        path = self.artifacts_root(runtime) / artifact_name
+        try:
+            from docx import Document
+
+            document = Document()
+            document.add_heading(label, 0)
+            document.add_paragraph(f"Agent: {agent.get('name') or 'Custom Agent'}")
+            document.add_paragraph(f"Generated at: {self.now_iso()}")
+            document.add_paragraph(f"Request: {str(message or '').strip()}")
+            goal = str(agent.get("profile", {}).get("goal") or "").strip()
+            if goal:
+                document.add_paragraph(f"Goal: {goal}")
+            document.add_paragraph("Draft outline")
+            document.add_paragraph("Context and purpose", style="List Bullet")
+            document.add_paragraph("Main points to cover", style="List Bullet")
+            document.add_paragraph("Next actions", style="List Bullet")
+            document.save(path)
+        except Exception:
+            fallback = path.with_suffix(".txt")
+            fallback.write_text(
+                f"{label}\n\n"
+                f"Agent: {agent.get('name') or 'Custom Agent'}\n"
+                f"Generated at: {self.now_iso()}\n"
+                f"Request: {str(message or '').strip()}\n"
+                f"Goal: {str(agent.get('profile', {}).get('goal') or '').strip()}\n",
+                encoding="utf-8",
+            )
+            path = fallback
+        return {
+            "kind": "document",
+            "label": f"{label} document",
+            "fileName": path.name,
+            "path": str(path.relative_to(runtime.root)),
+            "url": f"/generated/custom-agents/{path.name}",
+        }
+
+    def create_image_artifact(self, agent: dict, message: str, runtime: RuntimeBridge, stamp: str, label: str) -> dict:
+        artifact_name = f"{stamp}-{self.safe_artifact_slug(label)}.png"
+        path = self.artifacts_root(runtime) / artifact_name
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+
+            image = Image.new("RGB", (1280, 720), "#0f1724")
+            draw = ImageDraw.Draw(image)
+            draw.rounded_rectangle((48, 48, 1232, 672), radius=32, fill="#13263b", outline="#55d0b1", width=3)
+            font_title = ImageFont.load_default()
+            font_body = ImageFont.load_default()
+            draw.text((92, 110), label[:42], fill="#f6fbff", font=font_title)
+            draw.text((92, 190), f"Agent: {agent.get('name') or 'Custom Agent'}", fill="#b8f6e5", font=font_body)
+            draw.text((92, 240), f"Request: {str(message or '').strip()[:110]}", fill="#d7e7f5", font=font_body)
+            goal = str(agent.get("profile", {}).get("goal") or "").strip()
+            if goal:
+                draw.text((92, 290), f"Goal: {goal[:110]}", fill="#d7e7f5", font=font_body)
+            draw.text((92, 580), f"Generated by HomeHub at {self.now_iso()}", fill="#7fb6d9", font=font_body)
+            image.save(path)
+        except Exception:
+            fallback = path.with_suffix(".svg")
+            fallback.write_text(
+                (
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1280\" height=\"720\" viewBox=\"0 0 1280 720\">"
+                    "<rect width=\"1280\" height=\"720\" fill=\"#0f1724\"/>"
+                    "<rect x=\"48\" y=\"48\" width=\"1184\" height=\"624\" rx=\"32\" fill=\"#13263b\" stroke=\"#55d0b1\" stroke-width=\"3\"/>"
+                    f"<text x=\"92\" y=\"120\" fill=\"#f6fbff\" font-size=\"34\" font-family=\"sans-serif\">{escape(label[:42])}</text>"
+                    f"<text x=\"92\" y=\"200\" fill=\"#b8f6e5\" font-size=\"20\" font-family=\"sans-serif\">Agent: {escape(str(agent.get('name') or 'Custom Agent'))}</text>"
+                    f"<text x=\"92\" y=\"250\" fill=\"#d7e7f5\" font-size=\"18\" font-family=\"sans-serif\">Request: {escape(str(message or '').strip()[:110])}</text>"
+                    f"<text x=\"92\" y=\"300\" fill=\"#d7e7f5\" font-size=\"18\" font-family=\"sans-serif\">Goal: {escape(str(agent.get('profile', {}).get('goal') or '').strip()[:110])}</text>"
+                    f"<text x=\"92\" y=\"600\" fill=\"#7fb6d9\" font-size=\"16\" font-family=\"sans-serif\">Generated by HomeHub at {escape(self.now_iso())}</text>"
+                    "</svg>"
+                ),
+                encoding="utf-8",
+            )
+            path = fallback
+        return {
+            "kind": "image",
+            "label": f"{label} image",
+            "fileName": path.name,
+            "path": str(path.relative_to(runtime.root)),
+            "url": f"/generated/custom-agents/{path.name}",
+        }
+
+    def handle_artifact_generation(self, agent: dict, message: str, runtime: RuntimeBridge, locale: str) -> dict | None:
+        if not self.looks_like_artifact_request(message):
+            return None
+        if str(agent.get("generatedFeatureId", "")).strip() and any(
+            token in message for token in ["消费", "账单", "费用", "支出", "记录", "明细", "统计", "总额"]
+        ):
+            return None
+        plan = self.extract_artifact_plan(message)
+        if not plan:
+            return None
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        label = self.build_artifact_label(agent, message)
+        artifacts = []
+        for item in plan:
+            if item == "spreadsheet":
+                artifacts.append(self.create_spreadsheet_artifact(agent, message, runtime, stamp, label))
+            elif item == "document":
+                artifacts.append(self.create_document_artifact(agent, message, runtime, stamp, label))
+            elif item == "image":
+                artifacts.append(self.create_image_artifact(agent, message, runtime, stamp, label))
+        payload = {"message": message.strip(), "artifacts": artifacts}
+        self.record_agent_payload(agent, "artifact_generation", payload, runtime)
+        if locale == "zh-CN":
+            labels = "、".join(item["fileName"] for item in artifacts)
+            reply = f"我已经为 {agent['name']} 生成好了可下载的产物：{labels}。"
+        else:
+            labels = ", ".join(item["fileName"] for item in artifacts)
+            reply = f"I generated downloadable artifacts for {agent['name']}: {labels}."
+        return {"reply": reply, "uiAction": self.studio_ui_action(agent), "artifacts": artifacts}
+
     def handle_operational_report(self, agent: dict, message: str, runtime: RuntimeBridge, locale: str) -> dict | None:
+        generated_feature_id = str(agent.get("generatedFeatureId", "")).strip()
+        if generated_feature_id:
+            forwarded = runtime.call_feature(generated_feature_id, {"mode": "voice", "message": message}, locale)
+            if isinstance(forwarded, dict):
+                forwarded_reply = str(forwarded.get("reply") or forwarded.get("message") or "").strip()
+                artifacts = forwarded.get("artifacts", []) if isinstance(forwarded.get("artifacts"), list) else []
+                if forwarded_reply or artifacts:
+                    return {
+                        "reply": forwarded_reply or zh(locale, f"{agent['name']} 已经处理好了这次请求。", f"{agent['name']} handled that request."),
+                        "uiAction": self.studio_ui_action(agent),
+                        "featureResult": forwarded,
+                        "artifacts": artifacts,
+                    }
         if self.looks_like_negative_report(message):
             self.record_agent_event(agent, "no_input", message, runtime)
             reply = zh(locale, f"\u5df2\u7ecf\u8bb0\u5f55\uff1a{agent['name']}\u672c\u8f6e\u6ca1\u6709\u65b0\u8d26\u5355\uff0c\u6211\u5c31\u8df3\u8fc7\u8fd9\u4e00\u8f6e\u3002", f"I recorded that {agent['name']} has no new input this round.")
             return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
         if self.looks_like_positive_report(message):
             self.record_agent_event(agent, "has_input", message, runtime)
-            generated_feature_id = str(agent.get("generatedFeatureId", "")).strip()
-            if generated_feature_id:
-                forwarded = runtime.call_feature(generated_feature_id, {"mode": "voice", "message": message}, locale)
-                if isinstance(forwarded, dict):
-                    forwarded_reply = str(forwarded.get("reply") or forwarded.get("message") or "").strip()
-                    if forwarded_reply:
-                        return {"reply": forwarded_reply, "uiAction": self.studio_ui_action(agent), "featureResult": forwarded}
-                    body = forwarded.get("body") if isinstance(forwarded.get("body"), dict) else {}
-                    if body:
-                        body_reply = str(body.get("reply") or body.get("message") or "").strip()
-                        if body_reply:
-                            return {"reply": body_reply, "uiAction": self.studio_ui_action(agent), "featureResult": body}
             reply = zh(locale, f"\u5df2\u7ecf\u8bb0\u5f55\u8fd9\u6b21\u53d1\u6765\u7684\u5185\u5bb9\uff0c{agent['name']}\u540e\u7eed\u4f1a\u6309\u84dd\u56fe\u53bb\u5f52\u6863\u3001\u6c47\u603b\u548c\u63d0\u9192\u3002", f"I recorded this new input for {agent['name']} and will handle it according to the blueprint.")
             return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
         return None
 
     def handle_operational_payload(self, agent: dict, message: str, attachments: list[dict], runtime: RuntimeBridge, locale: str) -> dict:
-        prompt = self.attachment_analysis_prompt(agent, locale)
         attachment = attachments[0] if attachments else {}
-        analysis = None
-        if runtime.analyze_image and attachment.get("imageBase64"):
-            analysis = runtime.analyze_image(prompt, str(attachment.get("imageBase64", "")), str(attachment.get("mimeType", "image/png")), "qwen2.5vl:7b")
-        analysis = analysis if isinstance(analysis, dict) else {}
+        ocr_result = runtime.call_feature(
+            "document-ocr",
+            {
+                "mode": "voice",
+                "action": "analyze_attachment",
+                "message": message.strip(),
+                "attachment": attachment,
+                "agent": {
+                    "name": agent.get("name", ""),
+                    "profile": agent.get("profile", {}),
+                    "generatedFeatureId": agent.get("generatedFeatureId", ""),
+                },
+            },
+            locale,
+        )
+        analysis = {}
+        if isinstance(ocr_result, dict) and isinstance(ocr_result.get("analysis"), dict):
+            analysis = dict(ocr_result.get("analysis", {}))
         summary = str(analysis.get("summary", "")).strip() or (message.strip() if message.strip() else "Uploaded an image for the agent to review.")
         payload = {
             "message": message.strip(),
@@ -683,6 +1119,40 @@ class Feature(HomeHubFeature):
             "analysis": analysis,
         }
         self.record_agent_payload(agent, "attachment_input", payload, runtime)
+        generated_feature_id = str(agent.get("generatedFeatureId", "")).strip()
+        extracted_expenses = self.extract_expenses_from_analysis(analysis, message)
+        recommended_action = str(analysis.get("recommendedAction", "")).strip().lower()
+        should_record_expense = generated_feature_id and extracted_expenses and (
+            recommended_action == "record_expense" or self.is_expense_or_bill_agent(agent, message)
+        )
+        if should_record_expense:
+            forwarded = runtime.call_feature(
+                generated_feature_id,
+                {
+                    "mode": "voice",
+                    "action": "import_expenses",
+                    "message": message.strip(),
+                    "expenses": extracted_expenses,
+                    "analysis": analysis,
+                },
+                locale,
+            )
+            if isinstance(forwarded, dict) and forwarded.get("ok"):
+                forwarded_reply = str(forwarded.get("reply") or "").strip()
+                return {
+                    "reply": forwarded_reply or zh(locale, f"{agent['name']} 已经把图片中的金额记到账单里了。", f"{agent['name']} recorded the amounts from the image."),
+                    "uiAction": self.studio_ui_action(agent),
+                    "analysis": analysis,
+                    "featureResult": forwarded,
+                    "artifacts": forwarded.get("artifacts", []) if isinstance(forwarded.get("artifacts"), list) else [],
+                }
+        if self.is_expense_or_bill_agent(agent, message) and not extracted_expenses:
+            no_amount_reply = zh(
+                locale,
+                f"我看过这张图片了，但还没有从里面识别到可入账的金额，所以这次没有记到账单里。你可以换一张更清晰的图片，或者直接补一句金额。",
+                "I reviewed the image, but I could not detect a bill amount to record yet. Try a clearer image or add the amount in text.",
+            )
+            return {"reply": no_amount_reply, "uiAction": self.studio_ui_action(agent), "analysis": analysis}
         follow_up = str(analysis.get("followUpQuestion", "")).strip()
         suggested = str(analysis.get("suggestedAction", "")).strip()
         if locale == "zh-CN":
@@ -966,15 +1436,13 @@ def load_feature() -> HomeHubFeature:
 '''
 
     def sanitize_identifier(self, value: str, fallback: str = "custom_feature") -> str:
-        value = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+        value = self.english_slug(value, fallback).replace("-", "_")
         if not value:
             value = fallback
         return f"feature_{value}" if value[0].isdigit() else value
 
     def generated_feature_id(self, agent: dict) -> str:
         source = str(agent.get("profile", {}).get("name", "")).strip() or agent.get("id", "custom_feature")
-        if not re.search(r"[A-Za-z0-9]", source):
-            source = source.encode("unicode_escape").decode("ascii")
         slug = self.sanitize_identifier(source)
         return slug[:-8] if slug.endswith("_feature") else slug
 
@@ -994,6 +1462,7 @@ def load_feature() -> HomeHubFeature:
         agent["updatedAt"] = self.now_iso()
         self.append_action(runtime, f"Generated feature scaffold for '{agent['name']}' at {path.name}.")
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, "feature_generated", {"message": str(path)})
         return {"ok": True, "path": str(path)}
 
     def studio_ui_action(self, agent: dict | None = None, focus_input: bool = False) -> dict:
@@ -1027,6 +1496,7 @@ def load_feature() -> HomeHubFeature:
             agent["updatedAt"] = self.now_iso()
             self.append_action(runtime, f"Cancelled custom agent draft '{agent['name']}'.")
             self.save_store(self.get_store(runtime), runtime)
+            self.cortex(runtime).record_event(agent, "draft_cancelled", {"message": message.strip()})
             return zh(locale, ZH["cancel"].format(name=agent["name"]), f"Okay, I stopped working on {agent['name']}.")
         next_item = self.next_question(agent, locale)
         if not next_item:
@@ -1040,6 +1510,7 @@ def load_feature() -> HomeHubFeature:
         agent["updatedAt"] = self.now_iso()
         follow_up = self.next_question(agent, locale)
         self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, "question_answered", {"message": answer, "questionKey": key})
         if follow_up:
             return follow_up[1]
         return self.move_to_review(agent, runtime, locale)
@@ -1058,26 +1529,52 @@ def load_feature() -> HomeHubFeature:
         next_item = self.next_question(agent, locale)
         return zh(locale, ZH["collecting"].format(name=agent["name"], question=next_item[1] if next_item else "\u7ee7\u7eed\u8865\u5145\u8d44\u6599"), f"{agent['name']} is still collecting information.")
 
+    def is_general_time_or_weather_query(self, message: str) -> bool:
+        lowered = str(message or "").lower()
+        weather_tokens = ["天气", "weather"]
+        clock_tokens = ["几点", "现在几点", "当前时间", "what time", "current time"]
+        return any(token in message or token in lowered for token in weather_tokens + clock_tokens)
+
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         lowered = message.lower()
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
         operational = self.find_matching_operational_agent(message, runtime)
-        blockers = ["\u5929\u6c14", "\u51e0\u70b9", "\u65f6\u95f4", "weather", "time"]
         activation = self.matches_activation_phrase(message, locale)
+        classified = self.classify_agent_message(message, locale, runtime)
+        classified_action = str(classified.get("action", "")).strip()
+        classified_confidence = float(classified.get("confidence", 0.0) or 0.0)
+        if classified_action in {
+            "create_agent",
+            "continue_collecting",
+            "review_blueprint",
+            "edit_agent",
+            "operational_agent",
+            "show_agent",
+            "general_agent_help",
+        } and classified_confidence >= 0.6:
+            return {
+                "intent": "custom-agent-builder",
+                "action": classified_action,
+                "score": min(0.99, max(0.72, classified_confidence)),
+                "reason": str(classified.get("reason", "")).strip(),
+                "targetAgentName": str(classified.get("targetAgentName", "")).strip(),
+            }
         if self.should_generate_feature(message):
             return {"intent": "custom-agent-builder", "action": "generate_feature", "score": 0.98}
+        if self.is_edit_request(message):
+            return {"intent": "custom-agent-builder", "action": "edit_agent", "score": 0.98}
         if self.is_create_request(message):
             return {"intent": "custom-agent-builder", "action": "create_agent", "score": 0.99}
         if activation:
             if self.is_list_request(message):
                 return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.93}
             return {"intent": "custom-agent-builder", "action": "general_agent_help", "score": 0.9}
-        if collecting and not any(token in lowered or token in message for token in blockers):
+        if collecting and not self.is_general_time_or_weather_query(message):
             return {"intent": "custom-agent-builder", "action": "continue_collecting", "score": 0.95}
-        if review and not any(token in lowered or token in message for token in blockers):
+        if review and not self.is_general_time_or_weather_query(message):
             return {"intent": "custom-agent-builder", "action": "review_blueprint", "score": 0.96}
-        if operational and not self.looks_like_agent_topic(message) and not any(token in lowered or token in message for token in blockers):
+        if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
             return {"intent": "custom-agent-builder", "action": "operational_agent", "score": 0.91}
         if self.looks_like_agent_topic(message) and self.is_list_request(message):
             return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.9}
@@ -1088,8 +1585,10 @@ def load_feature() -> HomeHubFeature:
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
-        lowered = message.lower()
-        blockers = ["\u5929\u6c14", "\u51e0\u70b9", "\u65f6\u95f4", "weather", "time"]
+        classified = self.classify_agent_message(message, locale, runtime)
+        classified_action = str(classified.get("action", "")).strip()
+        classified_confidence = float(classified.get("confidence", 0.0) or 0.0)
+        classified_target = self.find_agent_by_hint(str(classified.get("targetAgentName", "")).strip(), runtime) if str(classified.get("targetAgentName", "")).strip() else None
         if self.should_generate_feature(message):
             agent = self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
             if not agent:
@@ -1100,6 +1599,13 @@ def load_feature() -> HomeHubFeature:
                     return {"reply": zh(locale, ZH["not_ready"].format(name=agent["name"]), f"{agent['name']} is not ready to generate a feature scaffold yet."), "uiAction": self.studio_ui_action(agent)}
                 return {"reply": zh(locale, ZH["exists"].format(name=agent["name"], path=result["path"]), f"The feature scaffold already exists at {result['path']}."), "uiAction": self.studio_ui_action(agent)}
             return {"reply": zh(locale, ZH["generated"].format(name=agent["name"], path=result["path"]), f"I generated the feature scaffold for {agent['name']} at {result['path']}."), "uiAction": self.studio_ui_action(agent)}
+        if self.is_edit_request(message) or (classified_action == "edit_agent" and classified_confidence >= 0.6):
+            target = classified_target or self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
+            if not target:
+                return {"reply": zh(locale, ZH["empty"], "No custom agents yet."), "uiAction": self.studio_ui_action()}
+            agent = self.start_editing_agent(target, message, runtime, locale)
+            intro = zh(locale, ZH["edit_started"].format(name=target["name"]), f"I started an editable draft based on {target['name']}.")
+            return {"reply": intro + "\n\n" + self.build_review_summary(agent, locale), "uiAction": self.studio_ui_action(agent)}
         if self.is_create_request(message):
             draft_profile = self.infer_initial_profile(message, locale, runtime)
             if not self.should_force_create(message):
@@ -1109,11 +1615,19 @@ def load_feature() -> HomeHubFeature:
             agent = self.create_agent(runtime, message, locale)
             q = self.next_question(agent, locale)
             return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
-        if collecting and not any(token in lowered or token in message for token in blockers):
+        if classified_action == "create_agent" and classified_confidence >= 0.6:
+            draft_profile = self.infer_initial_profile(message, locale, runtime)
+            similar = self.find_similar_agents(draft_profile, runtime)
+            if similar and not self.should_force_create(message):
+                return {"reply": self.similar_agents_message(draft_profile, similar, locale), "uiAction": self.studio_ui_action(similar[0])}
+            agent = self.create_agent(runtime, message, locale)
+            q = self.next_question(agent, locale)
+            return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
+        if collecting and not self.is_general_time_or_weather_query(message):
             reply = self.answer_collecting_agent(collecting, message, runtime, locale)
             target_agent = self.get_collecting_agent(runtime) or self.find_agent_by_hint(collecting.get("name", ""), runtime) or collecting
             return {"reply": reply, "uiAction": self.studio_ui_action(target_agent)}
-        if review and not any(token in lowered or token in message for token in blockers):
+        if review and not self.is_general_time_or_weather_query(message):
             if self.is_cancel_request(message):
                 review["status"] = "cancelled"
                 review["updatedAt"] = self.now_iso()
@@ -1121,14 +1635,27 @@ def load_feature() -> HomeHubFeature:
                 return {"reply": zh(locale, ZH["cancel"].format(name=review["name"]), f"Okay, I stopped working on {review['name']}."), "uiAction": self.studio_ui_action(review)}
             if self.is_confirmation_message(message):
                 self.complete_agent(review, runtime, locale)
-                return {"reply": zh(locale, ZH["confirmed"].format(name=review["name"]), f"{review['name']} has been created and confirmed."), "uiAction": self.studio_ui_action(review)}
+                confirmed = zh(
+                    locale,
+                    ZH["edit_confirmed"].format(name=review["name"]) if review.get("editMode") else ZH["confirmed"].format(name=review["name"]),
+                    f"{review['name']} has been created and confirmed.",
+                )
+                return {"reply": confirmed, "uiAction": self.studio_ui_action(review)}
             if self.is_revision_message(message) or message.strip():
                 return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
-        operational = self.find_matching_operational_agent(message, runtime) or self.latest_operational_agent(runtime)
-        if operational and not self.looks_like_agent_topic(message) and not any(token in lowered or token in message for token in blockers):
+        operational = classified_target or self.find_matching_operational_agent(message, runtime) or self.latest_operational_agent(runtime)
+        if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
+            artifact_result = self.handle_artifact_generation(operational, message, runtime, locale)
+            if artifact_result:
+                return artifact_result
             result = self.handle_operational_report(operational, message, runtime, locale)
             if result:
                 return result
+        if classified_action == "show_agent" and classified_confidence >= 0.6:
+            agent = classified_target or self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
+            return {"reply": self.agent_detail_message(agent, locale), "uiAction": self.studio_ui_action(agent)} if agent else {"reply": zh(locale, ZH["empty"], "No custom agents yet."), "uiAction": self.studio_ui_action()}
+        if classified_action == "general_agent_help" and classified_confidence >= 0.6:
+            return {"reply": zh(locale, ZH["help"], "Describe the ongoing job you want this agent to own, and I will ask for whatever information is still missing."), "uiAction": self.studio_ui_action(focus_input=True)}
         if self.matches_activation_phrase(message, locale):
             if self.is_list_request(message):
                 agent = self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
@@ -1163,11 +1690,24 @@ def load_feature() -> HomeHubFeature:
         return current
 
     def dashboard_payload(self, locale: str, runtime: RuntimeBridge) -> dict:
-        return {"customAgents": self.sorted_agents(runtime)[:8], "customAgentRecentActions": self.get_store(runtime).get("recentActions", [])[:6]}
+        agents = self.sorted_agents(runtime)[:8]
+        return {
+            "customAgents": agents,
+            "customAgentRecentActions": self.get_store(runtime).get("recentActions", [])[:6],
+            "customAgentCortex": self.cortex(runtime).summaries_for(agents),
+        }
 
     def handle_api(self, method: str, path: str, query: dict, body: dict | None, runtime: RuntimeBridge) -> dict | None:
         if method == "GET" and path == "/api/custom-agents":
-            return {"status": 200, "body": {"items": self.sorted_agents(runtime), "recentActions": self.get_store(runtime).get("recentActions", [])[:10]}}
+            agents = [self.enrich_agent_runtime_stats(agent, runtime) for agent in self.sorted_agents(runtime)]
+            return {
+                "status": 200,
+                "body": {
+                    "items": agents,
+                    "recentActions": self.get_store(runtime).get("recentActions", [])[:10],
+                    "cortex": self.cortex(runtime).summaries_for(agents),
+                },
+            }
         if method == "POST" and path == "/api/custom-agents/generate-feature":
             payload = body or {}
             agent = None
@@ -1185,9 +1725,39 @@ def load_feature() -> HomeHubFeature:
             result = self.generate_feature_template(agent, runtime, overwrite=bool(payload.get("overwrite")))
             if not result["ok"]:
                 return {"status": 409 if result["error"] == "exists" else 400, "body": {"error": result["error"], "path": result["path"], "agentId": agent.get("id")}}
-            return {"status": 200, "body": {"ok": True, "agentId": agent.get("id"), "featureId": agent.get("generatedFeatureId"), "path": result["path"], "item": agent}}
+            return {
+                "status": 200,
+                "body": {
+                    "ok": True,
+                    "agentId": agent.get("id"),
+                    "featureId": agent.get("generatedFeatureId"),
+                    "path": result["path"],
+                    "item": agent,
+                    "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),
+                },
+            }
+        if method == "GET" and path == "/api/custom-agents/cortex":
+            agent_id = str(query.get("id", [""])[0] if isinstance(query.get("id"), list) else query.get("id", "")).strip()
+            if not agent_id:
+                return {"status": 400, "body": {"error": "id is required"}}
+            return {"status": 200, "body": {"item": self.cortex(runtime).get_summary(agent_id)}}
         if method == "POST" and path == "/api/custom-agents/intake":
             payload = body or {}
+            message = str(payload.get("message", "")).strip()
+            locale = str(payload.get("locale", "zh-CN")).strip() or "zh-CN"
+            attachments = payload.get("attachments", []) if isinstance(payload.get("attachments", []), list) else []
+            if message and not attachments and self.should_route_intake_to_builder(message, locale, runtime):
+                result = self.handle_voice_chat(message, locale, runtime) or {}
+                if result:
+                    return {
+                        "status": 200,
+                        "body": {
+                            "ok": True,
+                            "reply": result.get("reply"),
+                            "artifacts": result.get("artifacts", []),
+                            "uiAction": result.get("uiAction"),
+                        },
+                    }
             agent = None
             if payload.get("id"):
                 for item in self.sorted_agents(runtime):
@@ -1200,15 +1770,46 @@ def load_feature() -> HomeHubFeature:
                 agent = self.latest_operational_agent(runtime) or self.latest_completed_agent(runtime)
             if agent is None:
                 return {"status": 404, "body": {"error": "No active custom agent found for intake."}}
-            message = str(payload.get("message", "")).strip()
-            attachments = payload.get("attachments", []) if isinstance(payload.get("attachments", []), list) else []
-            locale = str(payload.get("locale", "zh-CN")).strip() or "zh-CN"
             if attachments:
                 result = self.handle_operational_payload(agent, message, attachments, runtime, locale)
-                return {"status": 200, "body": {"ok": True, "agentId": agent.get("id"), "reply": result.get("reply"), "analysis": result.get("analysis", {}), "item": agent}}
+                return {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "agentId": agent.get("id"),
+                        "reply": result.get("reply"),
+                        "analysis": result.get("analysis", {}),
+                        "artifacts": result.get("artifacts", []),
+                        "item": agent,
+                        "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),
+                    },
+                }
+            artifact_result = self.handle_artifact_generation(agent, message, runtime, locale)
+            if artifact_result:
+                return {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "agentId": agent.get("id"),
+                        "reply": artifact_result.get("reply"),
+                        "artifacts": artifact_result.get("artifacts", []),
+                        "item": agent,
+                        "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),
+                    },
+                }
             result = self.handle_operational_report(agent, message, runtime, locale)
             if result:
-                return {"status": 200, "body": {"ok": True, "agentId": agent.get("id"), "reply": result.get("reply"), "item": agent}}
+                return {
+                    "status": 200,
+                    "body": {
+                        "ok": True,
+                        "agentId": agent.get("id"),
+                        "reply": result.get("reply"),
+                        "artifacts": result.get("artifacts", []),
+                        "item": agent,
+                        "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),
+                    },
+                }
             return {"status": 400, "body": {"error": "No usable intake payload was detected."}}
         if method == "POST" and path == "/api/custom-agents/lookup":
             payload = body or {}
@@ -1229,10 +1830,19 @@ def load_feature() -> HomeHubFeature:
             if not query_text:
                 return {"status": 400, "body": {"error": "query is required"}}
             result = self.handle_network_lookup(agent, query_text, runtime, locale)
-            return {"status": 200, "body": {"ok": result.get("lookup", {}).get("ok", False), "agentId": agent.get("id"), "reply": result.get("reply"), "lookup": result.get("lookup", {}), "item": agent}}
+            return {
+                "status": 200,
+                "body": {
+                    "ok": result.get("lookup", {}).get("ok", False),
+                    "agentId": agent.get("id"),
+                    "reply": result.get("reply"),
+                    "lookup": result.get("lookup", {}),
+                    "item": agent,
+                    "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),
+                },
+            }
         return None
 
 
 def load_feature() -> HomeHubFeature:
     return Feature()
-

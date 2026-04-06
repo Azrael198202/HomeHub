@@ -1,5 +1,32 @@
 {
-  "events": [],
+  "events": [
+    {
+      "id": "evt-20260405212959-186",
+      "title": "费用请款记录表",
+      "startAt": "2026-04-05T21:30",
+      "endAt": "2026-04-05T21:30",
+      "participants": [],
+      "location": "",
+      "source": "homehub-local",
+      "createdAt": "2026-04-05T21:29",
+      "notes": "Original request: 能给我制作一个表格吗，将目前花费请款，记录时间，金额，都给我列举出来",
+      "linkedReminderIds": [
+        "rem-20260405212959-181"
+      ]
+    },
+    {
+      "id": "evt-20260405225337-171",
+      "title": "消费记录",
+      "startAt": "2026-04-05T23:53",
+      "endAt": "2026-04-05T23:53",
+      "participants": [],
+      "location": "None",
+      "source": "homehub-local",
+      "createdAt": "2026-04-05T22:53",
+      "notes": "Original request: 麻烦记录今天消费la wso n486日元，",
+      "linkedReminderIds": []
+    }
+  ],
   "reminders": [
     {
       "id": "rem-20260403144431-975",
@@ -35,42 +62,45 @@
       "title": "本周消费总额预警",
       "triggerAt": "2026-04-03T15:00+00:00",
       "eventId": "",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
       "createdAt": "2026-04-03T14:53",
-      "notes": "Original request: 请在今天15点提醒我一下，我本周的总的消费金额是多少。如果超出2000，就发生预警提醒我注意。花费超额了。"
+      "notes": "Original request: 请在今天15点提醒我一下，我本周的总的消费金额是多少。如果超出2000，就发生预警提醒我注意。花费超额了。",
+      "completedAt": "2026-04-05T21:00"
     },
     {
       "id": "rem-20260403152120-814",
       "title": "本周消费总额提醒",
       "triggerAt": "2026-04-04T00:20",
       "eventId": "",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
       "createdAt": "2026-04-03T15:21",
-      "notes": "Original request: 请在今天的15点20分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额"
+      "notes": "Original request: 请在今天的15点20分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额",
+      "completedAt": "2026-04-05T21:00"
     },
     {
       "id": "rem-20260403152304-383",
       "title": "本周消费总额检查",
       "triggerAt": "2026-04-04T00:25",
       "eventId": "",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
       "createdAt": "2026-04-03T15:23",
-      "notes": "Original request: 请在今天的15点25分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额"
+      "notes": "Original request: 请在今天的15点25分，提醒我本周的消费总的金额是多少，如果超出2000日元，就发出警告，消费超额",
+      "completedAt": "2026-04-05T21:00"
     },
     {
       "id": "rem-20260403154541-214",
@@ -139,9 +169,59 @@
       },
       "executedAt": "2026-04-03T15:56",
       "completedAt": "2026-04-03T16:07"
+    },
+    {
+      "id": "rem-20260405212959-181",
+      "title": "Reminder: 费用请款记录表",
+      "triggerAt": "2026-04-05T21:20",
+      "eventId": "evt-20260405212959-186",
+      "status": "done",
+      "channels": [
+        "voice",
+        "tv",
+        "mobile"
+      ],
+      "createdAt": "2026-04-05T21:29",
+      "completedAt": "2026-04-05T21:30"
     }
   ],
   "recentActions": [
+    {
+      "id": "act-20260405225337-783",
+      "kind": "create-event",
+      "summary": "Created schedule '消费记录' for 2026-04-05T23:53.",
+      "createdAt": "2026-04-05T22:53"
+    },
+    {
+      "id": "act-20260405213003-126",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 费用请款记录表'.",
+      "createdAt": "2026-04-05T21:30"
+    },
+    {
+      "id": "act-20260405212959-129",
+      "kind": "create-event",
+      "summary": "Created schedule '费用请款记录表' for 2026-04-05T21:30.",
+      "createdAt": "2026-04-05T21:29"
+    },
+    {
+      "id": "act-20260405210018-750",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder '本周消费总额检查'.",
+      "createdAt": "2026-04-05T21:00"
+    },
+    {
+      "id": "act-20260405210018-794",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder '本周消费总额提醒'.",
+      "createdAt": "2026-04-05T21:00"
+    },
+    {
+      "id": "act-20260405210016-897",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder '本周消费总额预警'.",
+      "createdAt": "2026-04-05T21:00"
+    },
     {
       "id": "act-20260403160710-205",
       "kind": "complete-reminder",
@@ -177,42 +257,6 @@
       "kind": "complete-reminder",
       "summary": "Completed reminder '到今天为止，我一共花了多少钱，有没有超过2000的预警金额'.",
       "createdAt": "2026-04-03T15:47"
-    },
-    {
-      "id": "act-20260403154541-358",
-      "kind": "create-reminder",
-      "summary": "Created reminder '到今天为止，我一共花了多少钱，有没有超过2000的预警金额' for 2026-04-03T15:47.",
-      "createdAt": "2026-04-03T15:45"
-    },
-    {
-      "id": "act-20260403152304-417",
-      "kind": "create-reminder",
-      "summary": "Created reminder '本周消费总额检查' for 2026-04-04T00:25.",
-      "createdAt": "2026-04-03T15:23"
-    },
-    {
-      "id": "act-20260403152120-452",
-      "kind": "create-reminder",
-      "summary": "Created reminder '本周消费总额提醒' for 2026-04-04T00:20.",
-      "createdAt": "2026-04-03T15:21"
-    },
-    {
-      "id": "act-20260403145307-277",
-      "kind": "create-reminder",
-      "summary": "Created reminder '本周消费总额预警' for 2026-04-03T15:00+00:00.",
-      "createdAt": "2026-04-03T14:53"
-    },
-    {
-      "id": "act-20260403144906-685",
-      "kind": "create-reminder",
-      "summary": "Created reminder '本周消费总额提醒' for 2026-04-10T14:50+00:00.",
-      "createdAt": "2026-04-03T14:49"
-    },
-    {
-      "id": "act-20260403144522-502",
-      "kind": "complete-reminder",
-      "summary": "Completed reminder '查看总消费金额'.",
-      "createdAt": "2026-04-03T14:45"
     }
   ]
 }

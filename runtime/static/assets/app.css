@@ -56,6 +56,83 @@ button:focus-visible,
   overflow: hidden;
 }
 
+.installer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    radial-gradient(circle at top left, rgba(85, 208, 177, 0.16), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(101, 182, 255, 0.2), transparent 28%),
+    rgba(4, 10, 16, 0.88);
+  backdrop-filter: blur(18px);
+}
+
+.installer-overlay[hidden] {
+  display: none;
+}
+
+.installer-modal {
+  width: min(720px, calc(100vw - 64px));
+  padding: 38px 40px;
+  border-radius: 32px;
+  border: 1px solid rgba(140, 199, 255, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(101, 182, 255, 0.16), transparent 36%),
+    radial-gradient(circle at bottom left, rgba(85, 208, 177, 0.14), transparent 34%),
+    rgba(9, 18, 29, 0.98);
+  box-shadow: 0 34px 80px rgba(0, 0, 0, 0.44);
+}
+
+.installer-spinner {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+  border-radius: 50%;
+  border: 4px solid rgba(140, 199, 255, 0.16);
+  border-top-color: var(--accent);
+  animation: installerSpin 1.1s linear infinite;
+}
+
+.installer-modal h2 {
+  margin: 8px 0 14px;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.08;
+}
+
+.installer-text,
+.installer-status {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.installer-action {
+  min-width: 220px;
+  margin-top: 14px;
+  padding: 14px 22px;
+  border: 1px solid rgba(85, 208, 177, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(85, 208, 177, 0.92), rgba(101, 182, 255, 0.92));
+  color: #08111a;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 16px 28px rgba(85, 208, 177, 0.22);
+}
+
+.installer-action[hidden] {
+  display: none;
+}
+
+@keyframes installerSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .reminder-overlay {
   position: fixed;
   inset: 0;
@@ -493,6 +570,13 @@ small,
 
 .stage-grid.two-col {
   grid-template-columns: 1fr 1fr;
+}
+
+.settings-left-stack {
+  display: grid;
+  grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+  min-height: 0;
 }
 
 .section-card {
@@ -1007,6 +1091,42 @@ button {
   color: #122508;
 }
 
+.conversation-item.is-thinking .conversation-bubble {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.conversation-artifacts {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.artifact-chip {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(85, 208, 177, 0.24);
+  background: rgba(12, 24, 37, 0.68);
+  color: #e8f5ff;
+  text-decoration: none;
+}
+
+.artifact-chip strong,
+.artifact-chip span,
+.artifact-chip em {
+  color: inherit;
+  font-style: normal;
+}
+
+.artifact-chip em {
+  color: #8ef4d0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .test-conversation-list {
   flex: 1 1 auto;
   overflow: auto;
@@ -1299,6 +1419,38 @@ button {
   gap: 10px;
 }
 
+.mail-tester-card {
+  display: grid;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.mail-tester-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mail-tester-grid .full-span {
+  grid-column: 1 / -1;
+}
+
+.mail-tester-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mail-tester-actions button {
+  min-width: 148px;
+}
+
+.mail-tester-status {
+  min-height: 24px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .settings-input {
   width: 100%;
   min-height: 46px;
@@ -1481,6 +1633,7 @@ button {
 #studio-blueprints:hover,
 #studio-actions-log:hover,
 #model-stack-scroll:hover,
+.settings-scroll-area:hover,
 #modules:focus-within,
 #timeline:focus-within,
 #agents:focus-within,
@@ -1509,6 +1662,7 @@ button {
 #studio-blueprints:hover::-webkit-scrollbar,
 #studio-actions-log:hover::-webkit-scrollbar,
 #model-stack-scroll:hover::-webkit-scrollbar,
+.settings-scroll-area:hover::-webkit-scrollbar,
 #modules:focus-within::-webkit-scrollbar,
 #timeline:focus-within::-webkit-scrollbar,
 #agents:focus-within::-webkit-scrollbar,
@@ -1537,6 +1691,7 @@ button {
 #studio-blueprints:hover::-webkit-scrollbar-thumb,
 #studio-actions-log:hover::-webkit-scrollbar-thumb,
 #model-stack-scroll:hover::-webkit-scrollbar-thumb,
+.settings-scroll-area:hover::-webkit-scrollbar-thumb,
 #modules:focus-within::-webkit-scrollbar-thumb,
 #timeline:focus-within::-webkit-scrollbar-thumb,
 #agents:focus-within::-webkit-scrollbar-thumb,

@@ -1,0 +1,1208 @@
+from __future__ import annotations
+
+import base64
+import hashlib
+import imaplib
+import json
+import mimetypes
+import smtplib
+from copy import deepcopy
+from datetime import datetime
+from email import message_from_bytes
+from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+from .base import HomeHubFeature, RuntimeBridge
+
+
+API_ROOT = "/api/external-channels"
+API_WECHAT_WEBHOOK = "/api/external-channels/wechat/webhook"
+API_WECHAT_SEND = "/api/external-channels/wechat/send"
+API_LINE_WEBHOOK = "/api/external-channels/line/webhook"
+API_LINE_SEND = "/api/external-channels/line/send"
+API_EMAIL_INTAKE = "/api/external-channels/email/intake"
+API_EMAIL_SEND = "/api/external-channels/email/send"
+API_EMAIL_SYNC = "/api/external-channels/email/sync"
+
+
+class Feature(HomeHubFeature):
+    feature_id = "external-channels"
+    feature_name = "External Channels Hub"
+    version = "1.0.0"
+
+    def descriptor(self) -> dict:
+        data = super().descriptor()
+        data["summary"] = "Connects external apps and email so HomeHub can receive inbound messages and route them for processing."
+        data["api"] = [
+            API_ROOT,
+            API_WECHAT_WEBHOOK,
+            API_WECHAT_SEND,
+            API_LINE_WEBHOOK,
+            API_LINE_SEND,
+            API_EMAIL_INTAKE,
+            API_EMAIL_SEND,
+            API_EMAIL_SYNC,
+        ]
+        return data
+
+    def storage_path(self, runtime: RuntimeBridge) -> Path:
+        data_dir = runtime.root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir / "external_channels.json"
+
+    def debug_log_path(self, runtime: RuntimeBridge) -> Path:
+        logs_dir = runtime.root / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir / "external_channels_debug.jsonl"
+
+    def processing_log_path(self, runtime: RuntimeBridge) -> Path:
+        logs_dir = runtime.root / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir / "external_channels_processing.jsonl"
+
+    def now_iso(self) -> str:
+        return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
+
+    def default_store(self) -> dict:
+        now = self.now_iso()
+        return {
+            "apps": {
+                "wechatOfficial": {
+                    "enabled": True,
+                    "status": "ready-for-webhook",
+                    "summary": "Supports WeChat Official Account developer mode with signature verification and passive XML replies.",
+                    "users": [],
+                    "inbox": [],
+                    "outbox": [],
+                },
+                "line": {
+                    "enabled": False,
+                    "status": "placeholder",
+                    "summary": "Reserved integration surface for LINE. Webhook and sender interfaces are scaffolded but not wired yet.",
+                    "users": [],
+                    "inbox": [],
+                    "outbox": [],
+                },
+            },
+            "mail": {
+                "enabled": True,
+                "status": "ready-for-smtp-imap",
+                "summary": "Send mail through SMTP, pull inbound mail through IMAP, and route both directions through HomeHub.",
+                "inbox": [],
+                "outbox": [],
+                "lastSyncAt": "",
+            },
+            "recentActions": [
+                {
+                    "id": "external-channels-ready",
+                    "summary": "External channels hub is ready.",
+                    "createdAt": now,
+                }
+            ],
+            "lastRun": "",
+        }
+
+    def load_store(self, runtime: RuntimeBridge) -> dict:
+        path = self.storage_path(runtime)
+        if not path.exists():
+            store = self.default_store()
+            self.save_store(store, runtime)
+            return store
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            store = self.default_store()
+            self.save_store(store, runtime)
+            return store
+        if not isinstance(data, dict):
+            return self.default_store()
+        default = self.default_store()
+        apps = data.get("apps", {}) if isinstance(data.get("apps"), dict) else {}
+        mail = data.get("mail", {}) if isinstance(data.get("mail"), dict) else {}
+        recent = data.get("recentActions", []) if isinstance(data.get("recentActions"), list) else []
+        return {
+            "apps": {
+                "wechatOfficial": {**default["apps"]["wechatOfficial"], **(apps.get("wechatOfficial", {}) if isinstance(apps.get("wechatOfficial"), dict) else {})},
+                "line": {**default["apps"]["line"], **(apps.get("line", {}) if isinstance(apps.get("line"), dict) else {})},
+            },
+            "mail": {**default["mail"], **mail},
+            "recentActions": recent,
+            "lastRun": str(data.get("lastRun", "")),
+        }
+
+    def save_store(self, store: dict, runtime: RuntimeBridge) -> None:
+        self.storage_path(runtime).write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def write_debug_log(self, runtime: RuntimeBridge, event_type: str, payload: dict) -> None:
+        entry = {
+            "timestamp": self.now_iso(),
+            "eventType": event_type,
+            **payload,
+        }
+        try:
+            with self.debug_log_path(runtime).open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            return
+
+    def write_processing_log(self, runtime: RuntimeBridge, channel: str, payload: dict) -> None:
+        entry = {
+            "timestamp": self.now_iso(),
+            "channel": channel,
+            **payload,
+        }
+        try:
+            with self.processing_log_path(runtime).open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            return
+
+    def on_refresh(self, runtime: RuntimeBridge) -> None:
+        runtime.state[self.feature_id] = self.load_store(runtime)
+
+    def reset(self, runtime: RuntimeBridge) -> None:
+        store = self.default_store()
+        runtime.state[self.feature_id] = store
+        self.save_store(store, runtime)
+
+    def get_store(self, runtime: RuntimeBridge) -> dict:
+        store = runtime.state.get(self.feature_id)
+        if not isinstance(store, dict):
+            store = self.load_store(runtime)
+            runtime.state[self.feature_id] = store
+        return store
+
+    def append_action(self, runtime: RuntimeBridge, summary: str) -> None:
+        store = self.get_store(runtime)
+        store.setdefault("recentActions", []).insert(0, {"id": f"external-{self.now_iso()}", "summary": summary, "createdAt": self.now_iso()})
+        del store["recentActions"][15:]
+        store["lastRun"] = self.now_iso()
+        self.save_store(store, runtime)
+
+    def build_inbound_payload(self, channel: str, sender: dict, content: str, locale: str, subject: str = "") -> str:
+        if channel == "email":
+            return f"[email]\nfrom: {sender.get('address') or sender.get('id')}\nsubject: {subject}\ncontent: {content}"
+        return f"[{channel}]\nuser: {sender.get('displayName') or sender.get('id')}\ncontent: {content}"
+
+    def looks_like_generic_resolution(self, resolution: dict | None) -> bool:
+        if not isinstance(resolution, dict) or not resolution:
+            return True
+        route = resolution.get("route")
+        if not isinstance(route, dict):
+            return True
+        selected = route.get("selected")
+        if not isinstance(selected, dict):
+            return True
+        kind = str(route.get("kind", "")).strip()
+        feature_id = str(selected.get("featureId", "")).strip()
+        action = str(selected.get("action", "")).strip()
+        if kind == "general":
+            return True
+        return feature_id == "homehub-core" and action == "reply_directly"
+
+    def build_email_resolution_candidates(self, sender: dict, content: str, subject: str, attachments: list[dict] | None = None) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        body = str(content or "").strip()
+        title = str(subject or "").strip()
+        attachment_lines: list[str] = []
+        for item in attachments or []:
+            name = str(item.get("name", "")).strip()
+            mime_type = str(item.get("mimeType", "")).strip()
+            preview = str(item.get("preview", "")).strip()
+            line = f"- {name or 'unnamed'}"
+            if mime_type:
+                line += f" ({mime_type})"
+            if preview:
+                line += f": {preview[:200]}"
+            attachment_lines.append(line)
+        attachment_summary = "\n".join(attachment_lines).strip()
+        if body:
+            candidates.append(("email_body_only", body))
+        if body and attachment_summary:
+            candidates.append(("email_body_plus_attachments", f"{body}\n\n附件：\n{attachment_summary}"))
+        elif attachment_summary:
+            candidates.append(("email_attachments_only", f"附件：\n{attachment_summary}"))
+        metadata_payload = self.build_inbound_payload("email", sender, body, "", "").strip()
+        if metadata_payload and all(item[1] != metadata_payload for item in candidates):
+            candidates.append(("email_metadata_fallback", metadata_payload))
+        if title and body:
+            candidates.append(("email_subject_plus_body_fallback", f"{title}\n{body}"))
+        elif title:
+            candidates.append(("email_subject_only_fallback", title))
+        return candidates
+
+    def email_attachment_record_view(self, attachments: list[dict] | None) -> list[dict]:
+        visible: list[dict] = []
+        for item in attachments or []:
+            if not isinstance(item, dict):
+                continue
+            visible.append(
+                {
+                    "name": str(item.get("name", "")).strip(),
+                    "mimeType": str(item.get("mimeType", "")).strip(),
+                    "extension": str(item.get("extension", "")).strip(),
+                    "routeKind": str(item.get("routeKind", "")).strip(),
+                    "sizeBytes": int(item.get("sizeBytes", 0) or 0),
+                    "preview": str(item.get("preview", "")).strip(),
+                }
+            )
+        return visible
+
+    def classify_email_attachment(self, attachment: dict) -> dict:
+        name = str(attachment.get("name", "")).strip()
+        mime_type = str(attachment.get("mimeType", "")).strip().lower()
+        extension = Path(name).suffix.lower()
+        image_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".heic"}
+        text_exts = {".txt", ".md", ".csv", ".json", ".log"}
+        document_exts = {".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}
+        route_kind = "metadata"
+        if mime_type.startswith("image/") or extension in image_exts:
+            route_kind = "image_ocr"
+        elif mime_type.startswith("text/") or extension in text_exts:
+            route_kind = "text_context"
+        elif extension in document_exts:
+            route_kind = "document_context"
+        return {
+            "name": name,
+            "mimeType": mime_type,
+            "extension": extension,
+            "routeKind": route_kind,
+            "sizeBytes": int(attachment.get("sizeBytes", 0) or 0),
+            "preview": str(attachment.get("preview", "")).strip(),
+            "imageBase64": str(attachment.get("imageBase64", "")).strip(),
+        }
+
+    def classify_email_attachments(self, attachments: list[dict] | None) -> list[dict]:
+        return [self.classify_email_attachment(item) for item in (attachments or []) if isinstance(item, dict)]
+
+    def should_route_email_attachments_to_agent(self, content: str, attachments: list[dict] | None, resolution: dict | None) -> bool:
+        classified = self.classify_email_attachments(attachments)
+        if not classified:
+            return False
+        if not any(item.get("routeKind") == "image_ocr" for item in classified):
+            return False
+        lowered = str(content or "").lower()
+        text = str(content or "")
+        image_bill_tokens = ["附件", "照片", "图片", "收据", "账单", "金额", "ocr", "电费", "发票"]
+        if any(token in text for token in image_bill_tokens):
+            return True
+        if any(token in lowered for token in ["attachment", "photo", "image", "receipt", "bill", "amount", "invoice", "ocr"]):
+            return True
+        route = resolution.get("route", {}) if isinstance(resolution, dict) else {}
+        task_spec = route.get("taskSpec", {}) if isinstance(route, dict) else {}
+        if bool(task_spec.get("requiresImage")):
+            return True
+        selected = route.get("selected", {}) if isinstance(route, dict) else {}
+        return str(selected.get("featureId", "")).strip() == "custom-agents"
+
+    def resolve_email_with_attachments(
+        self,
+        runtime: RuntimeBridge,
+        sender: dict,
+        content: str,
+        locale: str,
+        subject: str,
+        attachments: list[dict],
+        initial_resolution: dict,
+    ) -> dict:
+        classified_attachments = self.classify_email_attachments(attachments)
+        if not self.should_route_email_attachments_to_agent(content, classified_attachments, initial_resolution):
+            return initial_resolution
+        forwarded_attachments = [
+            {
+                "name": str(item.get("name", "")).strip(),
+                "mimeType": str(item.get("mimeType", "")).strip(),
+                "extension": str(item.get("extension", "")).strip(),
+                "routeKind": str(item.get("routeKind", "")).strip(),
+                "sizeBytes": int(item.get("sizeBytes", 0) or 0),
+                "imageBase64": str(item.get("imageBase64", "")).strip(),
+            }
+            for item in classified_attachments
+            if item.get("routeKind") == "image_ocr" and str(item.get("imageBase64", "")).strip()
+        ]
+        if not forwarded_attachments:
+            return initial_resolution
+        agent_result = runtime.call_feature(
+            "custom-agents",
+            {
+                "mode": "api",
+                "method": "POST",
+                "path": "/api/custom-agents/intake",
+                "body": {
+                    "message": content,
+                    "locale": locale,
+                    "attachments": forwarded_attachments,
+                },
+            },
+            locale,
+        )
+        if not isinstance(agent_result, dict):
+            return initial_resolution
+        body = agent_result.get("body", {}) if isinstance(agent_result.get("body"), dict) else {}
+        if not bool(body.get("ok")):
+            return initial_resolution
+        merged = {
+            "reply": str(body.get("reply", "")).strip() or str(initial_resolution.get("reply", "")).strip(),
+            "artifacts": body.get("artifacts", []) if isinstance(body.get("artifacts"), list) else [],
+            "route": {
+                "kind": "feature",
+                "selected": {
+                    "featureId": "custom-agents",
+                    "featureName": "Custom Agents Studio",
+                    "action": "operational_agent",
+                    "score": 0.99,
+                },
+                "candidates": [initial_resolution.get("route", {}).get("selected", {})] if isinstance(initial_resolution.get("route", {}), dict) and initial_resolution.get("route", {}).get("selected") else [],
+                "reasoning": "Email attachments were forwarded into the custom agent intake path for OCR and operational handling.",
+                "taskSpec": {
+                    "taskType": "bill_intake",
+                    "intent": "attachment-bill-intake",
+                    "requiresImage": True,
+                    "inputModes": ["image", "text"],
+                },
+            },
+            "resolutionStrategy": "email_body_plus_attachment_agent",
+            "attachmentAgentResult": body,
+            "attachmentRouting": classified_attachments,
+        }
+        return merged
+
+    def get_wechat_official_config(self, runtime: RuntimeBridge) -> dict:
+        token = str(runtime.get_secret("wechatOfficialToken", "")).strip()
+        app_id = str(runtime.get_secret("wechatOfficialAppId", "")).strip()
+        app_secret = str(runtime.get_secret("wechatOfficialAppSecret", "")).strip()
+        encoding_aes_key = str(runtime.get_secret("wechatOfficialEncodingAesKey", "")).strip()
+        return {
+            "token": token,
+            "appId": app_id,
+            "appSecret": app_secret,
+            "encodingAesKey": encoding_aes_key,
+            "configured": bool(token and app_id),
+        }
+
+    def verify_wechat_signature(self, token: str, query: dict) -> bool:
+        signature = str((query.get("signature") or [""])[0]).strip()
+        timestamp = str((query.get("timestamp") or [""])[0]).strip()
+        nonce = str((query.get("nonce") or [""])[0]).strip()
+        if not token or not signature or not timestamp or not nonce:
+            return False
+        joined = "".join(sorted([token, timestamp, nonce]))
+        expected = hashlib.sha1(joined.encode("utf-8")).hexdigest()
+        return expected == signature
+
+    def parse_wechat_xml(self, raw_text: str) -> dict:
+        root = ET.fromstring(raw_text)
+        payload: dict[str, str] = {}
+        for child in list(root):
+            payload[child.tag] = (child.text or "").strip()
+        return payload
+
+    def build_wechat_passive_reply(self, incoming: dict, reply_text: str) -> str:
+        to_user = incoming.get("FromUserName", "")
+        from_user = incoming.get("ToUserName", "")
+        timestamp = str(int(datetime.now().timestamp()))
+        safe_reply = (reply_text or "HomeHub received your message.").strip()
+        return (
+            "<xml>"
+            f"<ToUserName><![CDATA[{to_user}]]></ToUserName>"
+            f"<FromUserName><![CDATA[{from_user}]]></FromUserName>"
+            f"<CreateTime>{timestamp}</CreateTime>"
+            "<MsgType><![CDATA[text]]></MsgType>"
+            f"<Content><![CDATA[{safe_reply}]]></Content>"
+            "</xml>"
+        )
+
+    def normalize_wechat_message(self, payload: dict) -> tuple[str, str]:
+        message_type = str(payload.get("MsgType", "text")).strip().lower() or "text"
+        event = str(payload.get("Event", "")).strip().lower()
+        if message_type == "text":
+            return message_type, str(payload.get("Content", "")).strip()
+        if message_type == "image":
+            pic_url = str(payload.get("PicUrl", "")).strip()
+            media_id = str(payload.get("MediaId", "")).strip()
+            return message_type, f"[wechat image]\npicUrl: {pic_url}\nmediaId: {media_id}".strip()
+        if message_type == "voice":
+            recognition = str(payload.get("Recognition", "")).strip()
+            media_id = str(payload.get("MediaId", "")).strip()
+            if recognition:
+                return message_type, recognition
+            return message_type, f"[wechat voice]\nmediaId: {media_id}".strip()
+        if message_type == "event":
+            if event == "subscribe":
+                return "event", "用户刚刚关注了公众号，希望开始与 HomeHub 对话。"
+            if event == "click":
+                return "event", f"[wechat event click] {str(payload.get('EventKey', '')).strip()}".strip()
+            if event == "view":
+                return "event", f"[wechat event view] {str(payload.get('EventKey', '')).strip()}".strip()
+            return "event", f"[wechat event] {event}".strip()
+        return message_type, str(payload.get("Content", "")).strip()
+
+    def resolve_inbound(self, runtime: RuntimeBridge, channel: str, sender: dict, content: str, locale: str, subject: str = "", attachments: list[dict] | None = None) -> dict:
+        if runtime.resolve_message:
+            try:
+                if channel == "email":
+                    attempts: list[dict] = []
+                    for strategy, candidate in self.build_email_resolution_candidates(sender, content, subject, attachments):
+                        resolution = runtime.resolve_message(candidate, locale) or {}
+                        attempts.append(
+                            {
+                                "strategy": strategy,
+                                "inputPreview": candidate[:240],
+                                "route": resolution.get("route"),
+                                "replyPreview": str(resolution.get("reply", ""))[:240],
+                            }
+                        )
+                        if strategy == "email_metadata_fallback" or not self.looks_like_generic_resolution(resolution):
+                            resolution["resolutionStrategy"] = strategy
+                            resolution["resolutionAttempts"] = attempts
+                            return resolution
+                    fallback = {"reply": ""}
+                    fallback["resolutionStrategy"] = "email_none"
+                    fallback["resolutionAttempts"] = attempts
+                    return fallback
+                payload = self.build_inbound_payload(channel, sender, content, locale, subject)
+                return runtime.resolve_message(payload, locale) or {}
+            except Exception as exc:
+                return {"reply": f"HomeHub could not process the inbound {channel} message: {exc}"}
+        return {"reply": f"HomeHub received the inbound {channel} message, but the message resolver is not available."}
+
+    def upsert_channel_user(self, users: list[dict], user: dict) -> None:
+        user_id = str(user.get("id", "")).strip()
+        if not user_id:
+            return
+        for current in users:
+            if str(current.get("id", "")).strip() == user_id:
+                current.update(user)
+                return
+        users.insert(0, user)
+
+    def record_inbound_message(
+        self,
+        bucket: dict,
+        sender: dict,
+        content: str,
+        locale: str,
+        *,
+        message_type: str = "text",
+        subject: str = "",
+        homehub_result: dict | None = None,
+    ) -> dict:
+        item = {
+            "id": f"inbound-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "sender": sender,
+            "subject": subject,
+            "content": content.strip(),
+            "messageType": message_type,
+            "locale": locale,
+            "createdAt": self.now_iso(),
+            "homehubReply": str((homehub_result or {}).get("reply", "")).strip(),
+            "homehubRoute": (homehub_result or {}).get("route", {}),
+            "homehubResolutionStrategy": str((homehub_result or {}).get("resolutionStrategy", "")).strip(),
+        }
+        bucket.setdefault("inbox", []).insert(0, item)
+        del bucket["inbox"][50:]
+        return item
+
+    def queue_outbound(self, bucket: dict, target: dict, content: str, kind: str, subject: str = "") -> dict:
+        item = {
+            "id": f"outbound-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "target": target,
+            "subject": subject,
+            "content": content.strip(),
+            "kind": kind,
+            "status": "queued",
+            "createdAt": self.now_iso(),
+        }
+        bucket.setdefault("outbox", []).insert(0, item)
+        del bucket["outbox"][50:]
+        return item
+
+    def get_mail_config(self, runtime: RuntimeBridge) -> dict:
+        address = str(runtime.get_secret("mailAddress", "")).strip()
+        password = str(runtime.get_secret("mailPassword", "")).strip()
+        smtp_host = str(runtime.get_secret("mailSmtpHost", "")).strip() or "smtp.gmail.com"
+        smtp_port = int(str(runtime.get_secret("mailSmtpPort", "")).strip() or "587")
+        imap_host = str(runtime.get_secret("mailImapHost", "")).strip() or "imap.gmail.com"
+        imap_port = int(str(runtime.get_secret("mailImapPort", "")).strip() or "993")
+        return {
+            "address": address,
+            "password": password,
+            "smtpHost": smtp_host,
+            "smtpPort": smtp_port,
+            "imapHost": imap_host,
+            "imapPort": imap_port,
+            "configured": bool(address and password),
+        }
+
+    def resolve_artifact_attachments(self, runtime: RuntimeBridge, artifacts: list[dict] | None) -> list[dict]:
+        resolved: list[dict] = []
+        for artifact in artifacts or []:
+            if not isinstance(artifact, dict):
+                continue
+            relative_path = str(artifact.get("path", "")).strip()
+            if not relative_path:
+                continue
+            path = runtime.root / relative_path
+            if not path.exists() or not path.is_file():
+                continue
+            mime_type, _encoding = mimetypes.guess_type(path.name)
+            maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+            resolved.append(
+                {
+                    "path": path,
+                    "fileName": str(artifact.get("fileName", "")).strip() or path.name,
+                    "maintype": maintype,
+                    "subtype": subtype,
+                    "kind": str(artifact.get("kind", "")).strip(),
+                    "label": str(artifact.get("label", "")).strip(),
+                }
+            )
+        return resolved
+
+    def send_email_via_smtp(
+        self,
+        runtime: RuntimeBridge,
+        to_address: str,
+        subject: str,
+        content: str,
+        artifacts: list[dict] | None = None,
+    ) -> tuple[bool, str]:
+        config = self.get_mail_config(runtime)
+        if not config["configured"]:
+            self.write_debug_log(
+                runtime,
+                "email_send_skipped",
+                {
+                    "reason": "mail_not_configured",
+                    "target": to_address,
+                    "subject": subject,
+                },
+            )
+            return False, "Mail channel is not configured."
+        message = EmailMessage()
+        message["From"] = config["address"]
+        message["To"] = to_address
+        message["Subject"] = subject or "HomeHub"
+        message.set_content(content)
+        attachment_files = self.resolve_artifact_attachments(runtime, artifacts)
+        for item in attachment_files:
+            message.add_attachment(
+                item["path"].read_bytes(),
+                maintype=item["maintype"],
+                subtype=item["subtype"],
+                filename=item["fileName"],
+            )
+        self.write_debug_log(
+            runtime,
+            "email_send_attempt",
+            {
+                "target": to_address,
+                "subject": subject,
+                "smtpHost": config["smtpHost"],
+                "smtpPort": config["smtpPort"],
+                "from": config["address"],
+                "bodyPreview": content[:240],
+                "attachments": [item["fileName"] for item in attachment_files],
+            },
+        )
+        try:
+            with smtplib.SMTP(config["smtpHost"], config["smtpPort"], timeout=30) as client:
+                client.starttls()
+                client.login(config["address"], config["password"])
+                client.send_message(message)
+            self.write_debug_log(
+                runtime,
+                "email_send_success",
+                {
+                    "target": to_address,
+                    "subject": subject,
+                    "smtpHost": config["smtpHost"],
+                    "smtpPort": config["smtpPort"],
+                    "attachments": [item["fileName"] for item in attachment_files],
+                },
+            )
+            return True, ""
+        except Exception as exc:
+            self.write_debug_log(
+                runtime,
+                "email_send_failed",
+                {
+                    "target": to_address,
+                    "subject": subject,
+                    "smtpHost": config["smtpHost"],
+                    "smtpPort": config["smtpPort"],
+                    "error": str(exc),
+                    "errorType": exc.__class__.__name__,
+                    "attachments": [item["fileName"] for item in attachment_files],
+                },
+            )
+            return False, str(exc)
+
+    def build_reply_subject(self, subject: str) -> str:
+        clean = str(subject or "").strip()
+        if not clean:
+            return "Re: HomeHub"
+        lowered = clean.lower()
+        if lowered.startswith("re:"):
+            return clean
+        return f"Re: {clean}"
+
+    def should_auto_reply_email(self, content: str, attachments: list[dict] | None = None) -> bool:
+        attachment_text = "\n".join(
+            filter(
+                None,
+                [
+                    str(item.get("name", "")).strip() + ("\n" + str(item.get("preview", "")).strip() if str(item.get("preview", "")).strip() else "")
+                    for item in (attachments or [])
+                ],
+            )
+        ).strip()
+        combined = f"{content}\n{attachment_text}".strip()
+        lowered = combined.lower()
+        return ("小栖" in combined) or ("homehub" in lowered)
+
+    def send_inbound_email_reply(
+        self,
+        runtime: RuntimeBridge,
+        sender: dict,
+        subject: str,
+        reply_text: str,
+        artifacts: list[dict] | None = None,
+    ) -> tuple[bool, str]:
+        config = self.get_mail_config(runtime)
+        target = str(sender.get("address") or sender.get("id") or "").strip()
+        if not target:
+            return False, "Missing sender address."
+        if target.lower() == str(config.get("address", "")).strip().lower():
+            self.write_debug_log(
+                runtime,
+                "email_auto_reply_skipped",
+                {
+                    "reason": "same_as_sender_account",
+                    "target": target,
+                    "subject": subject,
+                },
+            )
+            return False, "Skipped self-reply."
+        reply_subject = self.build_reply_subject(subject)
+        self.write_debug_log(
+            runtime,
+            "email_auto_reply_attempt",
+            {
+                "target": target,
+                "subject": reply_subject,
+                "bodyPreview": str(reply_text or "")[:240],
+                "attachments": [str(item.get("fileName", "")).strip() for item in (artifacts or []) if isinstance(item, dict)],
+            },
+        )
+        ok, error = self.send_email_via_smtp(runtime, target, reply_subject, reply_text, artifacts)
+        self.write_debug_log(
+            runtime,
+            "email_auto_reply_success" if ok else "email_auto_reply_failed",
+            {
+                "target": target,
+                "subject": reply_subject,
+                "error": error,
+                "attachments": [str(item.get("fileName", "")).strip() for item in (artifacts or []) if isinstance(item, dict)],
+            },
+        )
+        return ok, error
+
+    def extract_email_text(self, message) -> str:
+        if message.is_multipart():
+            for part in message.walk():
+                content_type = str(part.get_content_type() or "").lower()
+                disposition = str(part.get("Content-Disposition", "")).lower()
+                if "attachment" in disposition:
+                    continue
+                if content_type == "text/plain":
+                    payload = part.get_payload(decode=True) or b""
+                    charset = part.get_content_charset() or "utf-8"
+                    return payload.decode(charset, errors="ignore").strip()
+            return ""
+        payload = message.get_payload(decode=True) or b""
+        charset = message.get_content_charset() or "utf-8"
+        return payload.decode(charset, errors="ignore").strip()
+
+    def extract_email_attachments(self, message) -> list[dict]:
+        attachments: list[dict] = []
+        if not message.is_multipart():
+            return attachments
+        for part in message.walk():
+            disposition = str(part.get("Content-Disposition", "")).lower()
+            name = str(part.get_filename() or "").strip()
+            mime_type = str(part.get_content_type() or "").strip().lower()
+            is_attachment = "attachment" in disposition or bool(name)
+            if not is_attachment:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            preview = ""
+            if mime_type.startswith("text/"):
+                charset = part.get_content_charset() or "utf-8"
+                preview = payload.decode(charset, errors="ignore").strip()[:500]
+            attachments.append(
+                {
+                    "name": name,
+                    "mimeType": mime_type,
+                    "sizeBytes": len(payload),
+                    "preview": preview,
+                    "imageBase64": base64.b64encode(payload).decode("utf-8") if mime_type.startswith("image/") and payload else "",
+                }
+            )
+        return attachments
+
+    def sync_mailbox(self, runtime: RuntimeBridge, limit: int = 10) -> dict:
+        config = self.get_mail_config(runtime)
+        if not config["configured"]:
+            self.write_debug_log(runtime, "email_sync_skipped", {"reason": "mail_not_configured"})
+            return {"ok": False, "error": "Mail channel is not configured."}
+        store = self.get_store(runtime)
+        mail = store.setdefault("mail", self.default_store()["mail"])
+        known_ids = {str(item.get("id", "")).strip() for item in mail.get("inbox", []) if isinstance(item, dict)}
+        imported = 0
+        self.write_debug_log(
+            runtime,
+            "email_sync_attempt",
+            {
+                "imapHost": config["imapHost"],
+                "imapPort": config["imapPort"],
+                "address": config["address"],
+                "limit": limit,
+                "knownInboxCount": len(known_ids),
+            },
+        )
+        try:
+            with imaplib.IMAP4_SSL(config["imapHost"], config["imapPort"]) as client:
+                client.login(config["address"], config["password"])
+                client.select("INBOX")
+                status, payload = client.search(None, "ALL")
+                if status != "OK":
+                    self.write_debug_log(
+                        runtime,
+                        "email_sync_failed",
+                        {
+                            "imapHost": config["imapHost"],
+                            "imapPort": config["imapPort"],
+                            "error": "Failed to search inbox.",
+                        },
+                    )
+                    return {"ok": False, "error": "Failed to search inbox."}
+                message_ids = [item for item in payload[0].split() if item][-limit:]
+                for message_id in reversed(message_ids):
+                    fetch_status, fetched = client.fetch(message_id, "(RFC822)")
+                    if fetch_status != "OK" or not fetched:
+                        continue
+                    raw_message = fetched[0][1]
+                    email_message = message_from_bytes(raw_message)
+                    inbox_id = f"imap-{message_id.decode('utf-8', errors='ignore')}"
+                    if inbox_id in known_ids:
+                        continue
+                    from_address = str(email_message.get("From", "")).strip()
+                    subject = str(email_message.get("Subject", "")).strip()
+                    content = self.extract_email_text(email_message)
+                    attachments = self.extract_email_attachments(email_message)
+                    if not from_address or (not content and not attachments):
+                        continue
+                    sender = {
+                        "id": from_address,
+                        "address": from_address,
+                        "displayName": from_address,
+                    }
+                    locale = str(runtime.get_setting("language", "zh-CN")).strip() or "zh-CN"
+                    resolution = self.resolve_inbound(runtime, "email", sender, content, locale, subject, attachments)
+                    resolution = self.resolve_email_with_attachments(runtime, sender, content, locale, subject, attachments, resolution)
+                    item = self.record_inbound_message(mail, sender, content, locale, message_type="email", subject=subject, homehub_result=resolution)
+                    item["id"] = inbox_id
+                    if attachments:
+                        item["attachments"] = self.email_attachment_record_view(self.classify_email_attachments(attachments))
+                    reply_text = str(resolution.get("reply", "")).strip()
+                    reply_artifacts = resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else []
+                    if reply_text and self.should_auto_reply_email(content, attachments):
+                        reply_ok, reply_error = self.send_inbound_email_reply(runtime, sender, subject, reply_text, reply_artifacts)
+                        item["autoReply"] = {
+                            "ok": reply_ok,
+                            "error": reply_error,
+                            "subject": self.build_reply_subject(subject),
+                            "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                        }
+                    elif reply_text:
+                        item["autoReply"] = {
+                            "ok": False,
+                            "error": "Skipped because the email did not mention 小栖 or homehub.",
+                            "subject": self.build_reply_subject(subject),
+                            "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                        }
+                        self.write_debug_log(
+                            runtime,
+                            "email_auto_reply_skipped",
+                            {
+                                "reason": "missing_reply_keyword",
+                                "target": sender["address"],
+                                "subject": subject,
+                                "contentPreview": content[:240],
+                                "attachmentNames": [str(item.get("name", "")).strip() for item in attachments],
+                            },
+                        )
+                    date_header = str(email_message.get("Date", "")).strip()
+                    if date_header:
+                        try:
+                            item["sourceDate"] = parsedate_to_datetime(date_header).isoformat()
+                        except Exception:
+                            item["sourceDate"] = date_header
+                    self.write_processing_log(
+                        runtime,
+                        "email",
+                        {
+                            "eventType": "inbound_processed",
+                            "messageId": inbox_id,
+                            "sender": sender,
+                            "subject": subject,
+                            "content": content[:4000],
+                            "attachments": item.get("attachments", []),
+                            "route": resolution.get("route", {}),
+                            "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                            "attachmentRouting": resolution.get("attachmentRouting", []),
+                            "reply": reply_text,
+                            "artifacts": reply_artifacts,
+                            "autoReply": item.get("autoReply", {}),
+                        },
+                    )
+                    known_ids.add(inbox_id)
+                    imported += 1
+                mail["lastSyncAt"] = self.now_iso()
+                self.save_store(store, runtime)
+                self.append_action(runtime, f"Synchronized {imported} inbound email message(s).")
+                self.write_debug_log(
+                    runtime,
+                    "email_sync_success",
+                    {
+                        "imapHost": config["imapHost"],
+                        "imapPort": config["imapPort"],
+                        "address": config["address"],
+                        "imported": imported,
+                        "lastSyncAt": mail["lastSyncAt"],
+                    },
+                )
+                return {"ok": True, "imported": imported, "lastSyncAt": mail["lastSyncAt"]}
+        except Exception as exc:
+            self.write_debug_log(
+                runtime,
+                "email_sync_failed",
+                {
+                    "imapHost": config["imapHost"],
+                    "imapPort": config["imapPort"],
+                    "address": config["address"],
+                    "error": str(exc),
+                    "errorType": exc.__class__.__name__,
+                },
+            )
+            return {"ok": False, "error": str(exc)}
+
+    def enhance_household_modules(self, modules: list[dict], locale: str, runtime: RuntimeBridge) -> list[dict]:
+        current = deepcopy(modules)
+        store = self.get_store(runtime)
+        apps = store.get("apps", {})
+        wechat = apps.get("wechatOfficial", {}) if isinstance(apps.get("wechatOfficial"), dict) else {}
+        mail = store.get("mail", {}) if isinstance(store.get("mail"), dict) else {}
+        if locale == "zh-CN":
+            apps_summary = f"外接应用已准备好，公众号收件 {len(wechat.get('inbox', []))} 条，LINE 接口已留占位。"
+            mail_summary = f"邮件模块已准备好，当前收件 {len(mail.get('inbox', []))} 条，发件队列 {len(mail.get('outbox', []))} 条。"
+            apps_name = "外部应用连接"
+            mail_name = "邮件收发"
+        else:
+            apps_summary = f"External app bridge ready. WeChat inbox: {len(wechat.get('inbox', []))}, LINE scaffold reserved."
+            mail_summary = f"Mail bridge ready. Inbox: {len(mail.get('inbox', []))}, outbox: {len(mail.get('outbox', []))}."
+            apps_name = "External Apps"
+            mail_name = "Mail Hub"
+        current.append({"id": "external-apps", "name": apps_name, "summary": apps_summary, "state": "active", "actionLabel": "Open"})
+        current.append({"id": "external-mail", "name": mail_name, "summary": mail_summary, "state": "active", "actionLabel": "Open"})
+        return current
+
+    def dashboard_payload(self, locale: str, runtime: RuntimeBridge) -> dict:
+        store = self.get_store(runtime)
+        wechat_config = self.get_wechat_official_config(runtime)
+        mail_config = self.get_mail_config(runtime)
+        return {
+            "externalChannels": {
+                "apps": store.get("apps", {}),
+                "mail": store.get("mail", {}),
+                "recentActions": store.get("recentActions", [])[:8],
+                "wechatOfficialConfig": {
+                    "configured": wechat_config["configured"],
+                    "appId": wechat_config["appId"],
+                    "tokenConfigured": bool(wechat_config["token"]),
+                    "appSecretConfigured": bool(wechat_config["appSecret"]),
+                    "encodingAesKeyConfigured": bool(wechat_config["encodingAesKey"]),
+                    "webhookUrl": API_WECHAT_WEBHOOK,
+                },
+                "mailConfig": {
+                    "configured": mail_config["configured"],
+                    "address": mail_config["address"],
+                    "smtpHost": mail_config["smtpHost"],
+                    "smtpPort": mail_config["smtpPort"],
+                    "imapHost": mail_config["imapHost"],
+                    "imapPort": mail_config["imapPort"],
+                },
+            }
+        }
+
+    def handle_api(self, method: str, path: str, query: dict, body: dict | None, runtime: RuntimeBridge) -> dict | None:
+        store = self.get_store(runtime)
+        apps = store.setdefault("apps", {})
+        wechat = apps.setdefault("wechatOfficial", self.default_store()["apps"]["wechatOfficial"])
+        line = apps.setdefault("line", self.default_store()["apps"]["line"])
+        mail = store.setdefault("mail", self.default_store()["mail"])
+
+        if method == "GET" and path == API_ROOT:
+            return {
+                "status": 200,
+                "body": {
+                    "apps": apps,
+                    "mail": mail,
+                    "recentActions": store.get("recentActions", [])[:10],
+                    "wechatOfficialConfig": self.get_wechat_official_config(runtime),
+                    "mailConfig": self.get_mail_config(runtime),
+                },
+            }
+
+        if method == "GET" and path == API_WECHAT_WEBHOOK:
+            config = self.get_wechat_official_config(runtime)
+            if not config["configured"]:
+                self.write_debug_log(runtime, "wechat_verify_failed", {"reason": "wechat_not_configured"})
+                return {
+                    "status": 503,
+                    "rawBody": "wechat official account is not configured",
+                    "contentType": "text/plain; charset=utf-8",
+                }
+            if not self.verify_wechat_signature(config["token"], query):
+                self.write_debug_log(
+                    runtime,
+                    "wechat_verify_failed",
+                    {
+                        "reason": "invalid_signature",
+                        "timestamp": str((query.get("timestamp") or [""])[0]),
+                        "nonce": str((query.get("nonce") or [""])[0]),
+                    },
+                )
+                return {
+                    "status": 403,
+                    "rawBody": "invalid signature",
+                    "contentType": "text/plain; charset=utf-8",
+                }
+            echostr = str((query.get("echostr") or [""])[0])
+            self.write_debug_log(runtime, "wechat_verify_success", {"echostr": echostr})
+            self.append_action(runtime, "Verified WeChat Official Account webhook challenge.")
+            return {
+                "status": 200,
+                "rawBody": echostr,
+                "contentType": "text/plain; charset=utf-8",
+            }
+
+        if method == "POST" and path == API_WECHAT_WEBHOOK:
+            config = self.get_wechat_official_config(runtime)
+            if not config["configured"]:
+                self.write_debug_log(runtime, "wechat_inbound_failed", {"reason": "wechat_not_configured"})
+                return {"status": 503, "body": {"error": "WeChat Official Account is not configured."}}
+            if not self.verify_wechat_signature(config["token"], query):
+                self.write_debug_log(runtime, "wechat_inbound_failed", {"reason": "invalid_signature"})
+                return {
+                    "status": 403,
+                    "rawBody": "invalid signature",
+                    "contentType": "text/plain; charset=utf-8",
+                }
+            payload = body or {}
+            raw_text = str(payload.get("_raw", "")).strip()
+            if not raw_text:
+                self.write_debug_log(runtime, "wechat_inbound_failed", {"reason": "missing_xml_body"})
+                return {"status": 400, "body": {"error": "WeChat webhook requires XML body."}}
+            try:
+                xml_payload = self.parse_wechat_xml(raw_text)
+            except ET.ParseError:
+                self.write_debug_log(runtime, "wechat_inbound_failed", {"reason": "invalid_xml", "rawPreview": raw_text[:240]})
+                return {"status": 400, "body": {"error": "Invalid WeChat XML payload."}}
+
+            message_type, content = self.normalize_wechat_message(xml_payload)
+            event = str(xml_payload.get("Event", "")).strip().lower()
+            locale = str(runtime.get_setting("language", "zh-CN")).strip() or "zh-CN"
+            sender = {
+                "id": str(xml_payload.get("FromUserName", "")).strip(),
+                "displayName": str(xml_payload.get("FromUserName", "")).strip(),
+                "remark": "",
+            }
+            self.write_debug_log(
+                runtime,
+                "wechat_inbound_received",
+                {
+                    "senderId": sender["id"],
+                    "messageType": message_type,
+                    "event": event,
+                    "contentPreview": content[:240],
+                },
+            )
+            if not sender["id"] or not content:
+                return {
+                    "status": 200,
+                    "rawBody": "success",
+                    "contentType": "text/plain; charset=utf-8",
+                }
+            self.upsert_channel_user(wechat.setdefault("users", []), sender)
+            resolution = self.resolve_inbound(runtime, "wechat-official", sender, content, locale)
+            item = self.record_inbound_message(wechat, sender, content, locale, message_type=message_type, homehub_result=resolution)
+            reply_text = str(resolution.get("reply", "")).strip() or "HomeHub 已收到你的消息。"
+            if message_type == "event" and event == "unsubscribe":
+                self.append_action(runtime, f"WeChat follower {sender['id']} unsubscribed.")
+                return {
+                    "status": 200,
+                    "rawBody": "success",
+                    "contentType": "text/plain; charset=utf-8",
+                }
+            self.append_action(runtime, f"Processed inbound WeChat Official Account message from {sender.get('displayName') or sender['id']}.")
+            self.write_debug_log(
+                runtime,
+                "wechat_inbound_replied",
+                {
+                    "senderId": sender["id"],
+                    "messageType": message_type,
+                    "replyPreview": reply_text[:240],
+                },
+            )
+            self.write_processing_log(
+                runtime,
+                "wechat-official",
+                {
+                    "eventType": "inbound_processed",
+                    "sender": sender,
+                    "messageType": message_type,
+                    "event": event,
+                    "content": content[:4000],
+                    "route": resolution.get("route", {}),
+                    "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                    "reply": reply_text,
+                    "artifacts": resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
+                },
+            )
+            return {
+                "status": 200,
+                "rawBody": self.build_wechat_passive_reply(xml_payload, reply_text),
+                "contentType": "application/xml; charset=utf-8",
+            }
+
+        if method == "POST" and path == API_WECHAT_SEND:
+            payload = body or {}
+            target = {"id": str(payload.get("userId", "")).strip(), "displayName": str(payload.get("displayName", "")).strip()}
+            content = str(payload.get("content", "")).strip()
+            if not target["id"] or not content:
+                return {"status": 400, "body": {"error": "userId and content are required"}}
+            item = self.queue_outbound(wechat, target, content, "wechat-official")
+            self.append_action(runtime, f"Queued outbound WeChat message for {target.get('displayName') or target['id']}.")
+            return {"status": 200, "body": {"ok": True, "item": item}}
+
+        if method == "POST" and path == API_LINE_WEBHOOK:
+            self.append_action(runtime, "LINE inbound webhook placeholder was called.")
+            return {"status": 202, "body": {"ok": False, "status": "placeholder", "message": "LINE webhook scaffold is reserved but not implemented yet.", "line": line}}
+
+        if method == "POST" and path == API_LINE_SEND:
+            self.append_action(runtime, "LINE outbound placeholder was called.")
+            return {"status": 202, "body": {"ok": False, "status": "placeholder", "message": "LINE sender scaffold is reserved but not implemented yet.", "line": line}}
+
+        if method == "POST" and path == API_EMAIL_INTAKE:
+            payload = body or {}
+            locale = str(payload.get("locale", runtime.get_setting("language", "zh-CN"))).strip() or "zh-CN"
+            sender = {
+                "id": str(payload.get("from", "")).strip() or str(payload.get("sender", "")).strip(),
+                "address": str(payload.get("from", "")).strip() or str(payload.get("sender", "")).strip(),
+                "displayName": str(payload.get("displayName", "")).strip(),
+            }
+            subject = str(payload.get("subject", "")).strip()
+            content = str(payload.get("content", "")).strip() or str(payload.get("body", "")).strip()
+            attachments = payload.get("attachments", []) if isinstance(payload.get("attachments", []), list) else []
+            if not sender["id"] or (not content and not attachments):
+                return {"status": 400, "body": {"error": "from and content or attachments are required"}}
+            resolution = self.resolve_inbound(runtime, "email", sender, content, locale, subject, attachments)
+            resolution = self.resolve_email_with_attachments(runtime, sender, content, locale, subject, attachments, resolution)
+            item = self.record_inbound_message(mail, sender, content, locale, message_type="email", subject=subject, homehub_result=resolution)
+            if attachments:
+                item["attachments"] = self.email_attachment_record_view(self.classify_email_attachments(attachments))
+            reply_text = str(resolution.get("reply", "")).strip()
+            reply_artifacts = resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else []
+            if reply_text and self.should_auto_reply_email(content, attachments):
+                reply_ok, reply_error = self.send_inbound_email_reply(runtime, sender, subject, reply_text, reply_artifacts)
+                item["autoReply"] = {
+                    "ok": reply_ok,
+                    "error": reply_error,
+                    "subject": self.build_reply_subject(subject),
+                    "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                }
+                self.save_store(store, runtime)
+            elif reply_text:
+                item["autoReply"] = {
+                    "ok": False,
+                    "error": "Skipped because the email did not mention 小栖 or homehub.",
+                    "subject": self.build_reply_subject(subject),
+                    "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                }
+                self.write_debug_log(
+                    runtime,
+                    "email_auto_reply_skipped",
+                    {
+                        "reason": "missing_reply_keyword",
+                        "target": sender["address"],
+                        "subject": subject,
+                        "contentPreview": content[:240],
+                        "attachmentNames": [str(item.get("name", "")).strip() for item in attachments],
+                    },
+                )
+                self.save_store(store, runtime)
+            self.write_processing_log(
+                runtime,
+                "email",
+                {
+                    "eventType": "manual_intake_processed",
+                    "sender": sender,
+                    "subject": subject,
+                    "content": content[:4000],
+                    "attachments": item.get("attachments", []),
+                    "route": resolution.get("route", {}),
+                    "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                    "attachmentRouting": resolution.get("attachmentRouting", []),
+                    "reply": reply_text,
+                    "artifacts": reply_artifacts,
+                    "autoReply": item.get("autoReply", {}),
+                },
+            )
+            self.append_action(runtime, f"Processed inbound email from {sender['address']}.")
+            return {"status": 200, "body": {"ok": True, "item": item, "reply": resolution.get("reply", ""), "route": resolution.get("route", {})}}
+
+        if method == "POST" and path == API_EMAIL_SEND:
+            payload = body or {}
+            target = {"address": str(payload.get("to", "")).strip(), "displayName": str(payload.get("displayName", "")).strip()}
+            subject = str(payload.get("subject", "")).strip()
+            content = str(payload.get("content", "")).strip() or str(payload.get("body", "")).strip()
+            outbound_artifacts = payload.get("artifacts", []) if isinstance(payload.get("artifacts", []), list) else []
+            if not target["address"] or not content:
+                return {"status": 400, "body": {"error": "to and content are required"}}
+            item = self.queue_outbound(mail, target, content, "email", subject=subject)
+            if outbound_artifacts:
+                item["attachments"] = [str(artifact.get("fileName", "")).strip() for artifact in outbound_artifacts if isinstance(artifact, dict)]
+            ok, error = self.send_email_via_smtp(runtime, target["address"], subject, content, outbound_artifacts)
+            item["status"] = "sent" if ok else "failed"
+            if error:
+                item["error"] = error
+            self.save_store(store, runtime)
+            self.append_action(runtime, f"{'Sent' if ok else 'Failed to send'} outbound email for {target['address']}.")
+            return {"status": 200 if ok else 502, "body": {"ok": ok, "item": item, "error": error}}
+
+        if method == "POST" and path == API_EMAIL_SYNC:
+            payload = body or {}
+            limit = int(payload.get("limit", 10) or 10)
+            result = self.sync_mailbox(runtime, limit=max(1, min(limit, 50)))
+            status = 200 if result.get("ok") else 502
+            return {"status": status, "body": result}
+
+        return None
+
+
+def load_feature() -> HomeHubFeature:
+    return Feature()

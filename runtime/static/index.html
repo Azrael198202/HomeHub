@@ -7,6 +7,16 @@
     <link rel="stylesheet" href="/assets/app.css" />
   </head>
   <body>
+    <div class="installer-overlay" id="installer-overlay" hidden>
+      <div class="installer-modal">
+        <div class="installer-spinner" id="installer-spinner"></div>
+        <p class="eyebrow" id="installer-eyebrow">First Run</p>
+        <h2 id="installer-title">Preparing HomeHub</h2>
+        <p class="installer-text" id="installer-text">HomeHub is checking local tools, models, and document support.</p>
+        <p class="installer-status" id="installer-status"></p>
+        <button class="installer-action remote-target" id="installer-approve" type="button">Approve One-Time Setup</button>
+      </div>
+    </div>
     <main class="screen">
       <header class="topbar panel">
         <div class="brand-block">
@@ -115,12 +125,11 @@
                 <h2 id="test-title">Text Test Lab</h2>
                 <span class="pill" id="test-pill">Agent Factory</span>
               </div>
-              <div class="voice-guidance" id="test-guidance">Use text instead of voice to test HomeHub routing, follow-up questions, and replies.</div>
               <div class="conversation-list test-conversation-list" id="test-conversation"></div>
               <div class="test-input-row">
                 <textarea id="test-input" class="settings-input test-input" rows="3" placeholder="Type a request such as: create an agent that reviews our family bills every Sunday."></textarea>
                 <div class="test-action-stack">
-                  <label for="test-image-input" id="test-image-pick" class="test-action remote-target test-action-secondary" tabindex="0">Attach Image</label>
+                  <button id="test-image-pick" class="test-action remote-target test-action-secondary" type="button">Attach Image</button>
                   <input id="test-image-input" type="file" accept="image/*" hidden>
                   <button id="test-send" class="test-action remote-target" type="button">Send Test Message</button>
                 </div>
@@ -174,13 +183,23 @@
 
         <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
           <div class="stage-grid two-col">
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="language-title">Language Mode</h2>
-                <span class="pill" id="language-pill">ZH / EN / JA</span>
-              </div>
-              <div class="language-list" id="languages"></div>
-            </article>
+            <div class="settings-left-stack">
+              <article class="panel section-card">
+                <div class="panel-header">
+                  <h2 id="language-title">Language Mode</h2>
+                  <span class="pill" id="language-pill">ZH / EN / JA</span>
+                </div>
+                <div class="settings-scroll-area" id="settings-language-scroll">
+                  <div class="language-list" id="languages"></div>
+                </div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="settings-scroll-area" id="mail-tester-scroll">
+                  <div id="mail-tester-card"></div>
+                </div>
+              </article>
+            </div>
 
               <article class="panel section-card">
                 <div class="panel-header">

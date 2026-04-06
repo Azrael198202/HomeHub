@@ -64,16 +64,56 @@ $env:HOMEHUB_GOOGLE_API_KEY = "your-google-api-key"
 ## Quick Start
 
 1. Run `python runtime/server.py`
-2. Open `http://127.0.0.1:8787`
-3. Or double-click `start_homehub.bat`
-4. If port `8787` is occupied, run:
+2. Or use a startup script:
+   - `start_homehub.bat`
+   - `start_homehub.ps1`
+   - `start_homehub.sh`
+3. The startup script now runs first-run bootstrap automatically and fills missing local tools, document libraries, and Ollama models when possible.
+4. Open `http://127.0.0.1:8787`
+5. If port `8787` is occupied, run:
 
 ```powershell
 $env:HOMEHUB_PORT = "8788"
 python .\runtime\server.py
 ```
 
-5. If the page looks older than the current code, hard refresh with `Ctrl + F5`.
+6. If the page looks older than the current code, hard refresh with `Ctrl + F5`.
+
+## Railway Deploy
+
+For Railway GitHub deployments, use the dedicated API entrypoint directly:
+
+1. Deploy this repository from GitHub in Railway.
+2. Set the start command to:
+
+```bash
+python3 runtime/api_server.py
+```
+
+3. Add these environment variables in Railway:
+
+```bash
+HOMEHUB_ENV=prod
+HOMEHUB_WECHAT_OFFICIAL_APP_ID=your_app_id
+HOMEHUB_WECHAT_OFFICIAL_APP_SECRET=your_app_secret
+HOMEHUB_WECHAT_OFFICIAL_TOKEN=your_token
+HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY=
+```
+
+4. Railway provides `PORT` automatically. HomeHub now reads `PORT` first and binds to `0.0.0.0` by default, so the WeChat webhook can be reached publicly.
+5. `runtime/api_server.py` exposes API routes only, which is better for webhook and external channel deployments than serving the full TV shell runtime in the same Railway service.
+6. Use this webhook URL in the WeChat platform:
+
+```text
+https://your-railway-domain/api/external-channels/wechat/webhook
+```
+
+## First Run
+
+- Bootstrap script: `tools/bootstrap_homehub.py`
+- Bootstrap requirements: `runtime/requirements.bootstrap.txt`
+- Added first-run document support for OCR, PowerPoint, Excel, and Word workflows
+- Details: [docs/first-run-bootstrap.md](/Users/home/workspace/HomeHub/docs/first-run-bootstrap.md)
 
 ## What Starts
 

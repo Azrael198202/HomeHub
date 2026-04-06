@@ -17,6 +17,7 @@ class RuntimeBridge:
     analyze_image: Callable[[str, str, str, str], dict[str, Any] | None] | None = None
     network_lookup: Callable[[str, str, str, list[str] | None, list[str] | None], dict[str, Any]] | None = None
     invoke_feature: Callable[[str, dict[str, Any], str], dict[str, Any] | None] | None = None
+    resolve_message: Callable[[str, str], dict[str, Any]] | None = None
     log: Callable[[str], None] | None = None
     state: dict[str, Any] = field(default_factory=dict)
 
@@ -57,6 +58,14 @@ class HomeHubFeature:
         return None
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict[str, Any] | None:
+        return None
+
+    def run_feature(
+        self,
+        runtime: RuntimeBridge,
+        source: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         return None
 
     def enhance_household_modules(

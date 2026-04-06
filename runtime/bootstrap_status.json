@@ -1,0 +1,16 @@
+{
+  "stage": "completed",
+  "message": "Bootstrap finished.",
+  "completed": true,
+  "ok": true,
+  "installedCommands": [],
+  "installedPythonModules": [],
+  "installedOllamaModels": [
+    "qwen2.5vl:7b"
+  ],
+  "platform": "Darwin",
+  "missingCommands": [],
+  "missingPythonModules": [],
+  "missingOllamaModels": [],
+  "requirementsFile": "/Users/home/workspace/HomeHub/runtime/requirements.bootstrap.txt"
+}

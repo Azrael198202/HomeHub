@@ -137,8 +137,21 @@ class FeatureManager:
             )
             return response or {"ok": False, "error": f"Feature '{feature_id}' did not handle the API request."}
         message = str(request.get("message", "")).strip()
-        result = feature.handle_voice_chat(message, locale, runtime)
-        return result or {"ok": False, "error": f"Feature '{feature_id}' did not return a voice result."}
+        explicit_action = str(request.get("action", "")).strip()
+        if mode == "voice" and not explicit_action:
+            result = feature.handle_voice_chat(message, locale, runtime)
+            if result:
+                return result
+        runner = getattr(feature, "run_feature", None)
+        if callable(runner):
+            result = runner(runtime, mode, {**request, "locale": locale})
+            if result:
+                return result
+        if mode == "voice":
+            result = feature.handle_voice_chat(message, locale, runtime)
+            if result:
+                return result
+        return {"ok": False, "error": f"Feature '{feature_id}' did not return a {mode} result."}
 
     def enhance_household_modules(
         self,

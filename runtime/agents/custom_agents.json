@@ -6,7 +6,7 @@
       "name": "家庭账单",
       "status": "complete",
       "createdAt": "2026-04-03T14:25",
-      "updatedAt": "2026-04-03T16:06",
+      "updatedAt": "2026-04-06T11:24",
       "profile": {
         "name": "家庭账单",
         "goal": "记录用户的消费并提供每周的消费总结和提醒",
@@ -34,6 +34,131 @@
       "generatedFeatureId": "u5bb6_u5ead_u8d26_u5355",
       "records": [
         {
+          "id": "custom-agent-20260403142506-artifact_generation-20260406T1124",
+          "kind": "artifact_generation",
+          "message": "[email]\nfrom: Google <no-reply@accounts.google.com>\nsubject: =?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=\ncontent: [image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+          "createdAt": "2026-04-06T11:24",
+          "payload": {
+            "message": "[email]\nfrom: Google <no-reply@accounts.google.com>\nsubject: =?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=\ncontent: [image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+            "artifacts": [
+              {
+                "kind": "image",
+                "label": "emailfromGooglenoreplyaccounts image",
+                "fileName": "20260406-112424-emailfromgooglenoreplyaccounts.png",
+                "path": "generated/custom-agents/20260406-112424-emailfromgooglenoreplyaccounts.png",
+                "url": "/generated/custom-agents/20260406-112424-emailfromgooglenoreplyaccounts.png"
+              }
+            ]
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-artifact_generation-20260406T1121",
+          "kind": "artifact_generation",
+          "message": "[email]\nfrom: Google <no-reply@accounts.google.com>\nsubject: =?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=\ncontent: [image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+          "createdAt": "2026-04-06T11:21",
+          "payload": {
+            "message": "[email]\nfrom: Google <no-reply@accounts.google.com>\nsubject: =?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=\ncontent: [image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nfuturedreamworkshop@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=futuredreamworkshop@gmail.com&continue=https://myaccount.google.com/alert/nt/1775441245716?rfn%3D20%26rfnc%3D1%26eid%3D4126484005972369738%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+            "artifacts": [
+              {
+                "kind": "image",
+                "label": "emailfromGooglenoreplyaccounts image",
+                "fileName": "20260406-112132-emailfromgooglenoreplyaccounts.png",
+                "path": "generated/custom-agents/20260406-112132-emailfromgooglenoreplyaccounts.png",
+                "url": "/generated/custom-agents/20260406-112132-emailfromgooglenoreplyaccounts.png"
+              }
+            ]
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-attachment_input-20260405T2220",
+          "kind": "attachment_input",
+          "message": "将图片中的消费金额记录到家庭账单中",
+          "createdAt": "2026-04-05T22:20",
+          "payload": {
+            "message": "将图片中的消费金额记录到家庭账单中",
+            "attachments": [
+              {
+                "name": "Screenshot 2026-04-05 at 21.44.09.png",
+                "mimeType": "image/png",
+                "sizeBytes": 382595
+              }
+            ],
+            "analysis": {}
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-attachment_input-20260405T2147",
+          "kind": "attachment_input",
+          "message": "记录一下账单信息到家庭账单中",
+          "createdAt": "2026-04-05T21:47",
+          "payload": {
+            "message": "记录一下账单信息到家庭账单中",
+            "attachments": [
+              {
+                "name": "Screenshot 2026-04-05 at 21.44.09.png",
+                "mimeType": "image/png",
+                "sizeBytes": 382595
+              }
+            ],
+            "analysis": {}
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-artifact_generation-20260405T2130",
+          "kind": "artifact_generation",
+          "message": "我要的是文件，制作成表格，而不是提醒",
+          "createdAt": "2026-04-05T21:30",
+          "payload": {
+            "message": "我要的是文件，制作成表格，而不是提醒",
+            "artifacts": [
+              {
+                "kind": "spreadsheet",
+                "label": "我要的是文件制作成表格而不是提醒 table",
+                "fileName": "20260405-213051-artifact.xlsx",
+                "path": "generated/custom-agents/20260405-213051-artifact.xlsx",
+                "url": "/generated/custom-agents/20260405-213051-artifact.xlsx"
+              },
+              {
+                "kind": "document",
+                "label": "我要的是文件制作成表格而不是提醒 document",
+                "fileName": "20260405-213051-artifact.docx",
+                "path": "generated/custom-agents/20260405-213051-artifact.docx",
+                "url": "/generated/custom-agents/20260405-213051-artifact.docx"
+              }
+            ]
+          }
+        },
+        {
+          "id": "custom-agent-20260403142506-has_input-20260405T2126",
+          "kind": "has_input",
+          "message": "现在家庭账单中，总共的花销是多少",
+          "createdAt": "2026-04-05T21:26"
+        },
+        {
+          "id": "custom-agent-20260403142506-has_input-20260405T2122",
+          "kind": "has_input",
+          "message": "现在家庭账单中，总共的花销是多少",
+          "createdAt": "2026-04-05T21:22"
+        },
+        {
+          "id": "custom-agent-20260403142506-has_input-20260405T2108",
+          "kind": "has_input",
+          "message": "好的，在追加昨天的账单，消费食材2000日元，外餐10000日元",
+          "createdAt": "2026-04-05T21:08"
+        },
+        {
+          "id": "custom-agent-20260403142506-no_input-20260405T2107",
+          "kind": "no_input",
+          "message": "以前没有记录了吗",
+          "createdAt": "2026-04-05T21:07"
+        },
+        {
+          "id": "custom-agent-20260403142506-has_input-20260405T2105",
+          "kind": "has_input",
+          "message": "给我记录账单，今天消费8000日元",
+          "createdAt": "2026-04-05T21:05"
+        },
+        {
           "id": "custom-agent-20260403142506-has_input-20260403T1606",
           "kind": "has_input",
           "message": "今天买菜花了3200日元，记到账单里",
@@ -50,39 +175,64 @@
   ],
   "recentActions": [
     {
-      "id": "custom-act-2026-04-03T16:06",
-      "summary": "Recorded has_input update for '家庭账单'.",
-      "createdAt": "2026-04-03T16:06"
+      "id": "custom-act-2026-04-06T12:51",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T12:51"
     },
     {
-      "id": "custom-act-2026-04-03T15:45",
-      "summary": "Recorded has_input update for '家庭账单'.",
-      "createdAt": "2026-04-03T15:45"
+      "id": "custom-act-2026-04-06T12:38",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T12:38"
     },
     {
-      "id": "custom-act-2026-04-03T14:26",
-      "summary": "Generated feature scaffold for '家庭账单' at u5bb6_u5ead_u8d26_u5355_feature.py.",
-      "createdAt": "2026-04-03T14:26"
+      "id": "custom-act-2026-04-06T11:24",
+      "summary": "Recorded artifact_generation payload for '家庭账单'.",
+      "createdAt": "2026-04-06T11:24"
     },
     {
-      "id": "custom-act-2026-04-03T14:26",
-      "summary": "Completed custom agent '家庭账单'.",
-      "createdAt": "2026-04-03T14:26"
+      "id": "custom-act-2026-04-06T11:21",
+      "summary": "Recorded artifact_generation payload for '家庭账单'.",
+      "createdAt": "2026-04-06T11:21"
     },
     {
-      "id": "custom-act-2026-04-03T14:25",
-      "summary": "Prepared review summary for '家庭账单'.",
-      "createdAt": "2026-04-03T14:25"
+      "id": "custom-act-2026-04-06T08:23",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T08:23"
     },
     {
-      "id": "custom-act-2026-04-03T14:25",
-      "summary": "Created custom agent draft '家庭账单'.",
-      "createdAt": "2026-04-03T14:25"
+      "id": "custom-act-2026-04-06T08:16",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T08:16"
     },
     {
-      "id": "custom-agents-ready",
-      "summary": "Custom agent studio is ready.",
-      "createdAt": "2026-04-03T14:16"
+      "id": "custom-act-2026-04-06T08:02",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T08:02"
+    },
+    {
+      "id": "custom-act-2026-04-06T07:14",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-06T07:14"
+    },
+    {
+      "id": "custom-act-2026-04-05T22:59",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-05T22:59"
+    },
+    {
+      "id": "custom-act-2026-04-05T22:50",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-05T22:50"
+    },
+    {
+      "id": "custom-act-2026-04-05T22:40",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-05T22:40"
+    },
+    {
+      "id": "custom-act-2026-04-05T22:37",
+      "summary": "Recorded attachment_input payload for '家庭账单'.",
+      "createdAt": "2026-04-05T22:37"
     }
   ]
 }

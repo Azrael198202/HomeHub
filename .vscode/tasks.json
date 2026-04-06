@@ -28,13 +28,142 @@
       "label": "Import Codex Records On Folder Open",
       "type": "shell",
       "windows": {
-        "command": "${workspaceFolder}\\tools\\codex-sync\\pull_codex_records.bat"
+        "command": "cmd",
+        "args": [
+          "/c",
+          ".\\tools\\codex-sync\\pull_codex_records.bat"
+        ]
       },
       "linux": {
-        "command": "${workspaceFolder}/tools/codex-sync/pull_codex_records.sh"
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/pull_codex_records.sh"
+        ]
       },
       "osx": {
-        "command": "${workspaceFolder}/tools/codex-sync/pull_codex_records.sh"
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/pull_codex_records.sh"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Open Synced Codex Folder",
+      "type": "shell",
+      "windows": {
+        "command": "powershell",
+        "args": [
+          "-NoProfile",
+          "-Command",
+          "Start-Process \"$env:USERPROFILE\\.codex\""
+        ]
+      },
+      "linux": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "xdg-open \"$HOME/.codex\""
+        ]
+      },
+      "osx": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "open \"$HOME/.codex\""
+        ]
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Codex Handoff",
+      "type": "shell",
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/c",
+          ".\\tools\\codex-sync\\generate_handoff.bat"
+        ]
+      },
+      "linux": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/generate_handoff.sh"
+        ]
+      },
+      "osx": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/generate_handoff.sh"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate And Sync Codex Handoff",
+      "type": "shell",
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/c",
+          ".\\tools\\codex-sync\\generate_handoff.bat && .\\tools\\codex-sync\\sync_codex_records.bat"
+        ]
+      },
+      "linux": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/generate_handoff.sh && ./tools/codex-sync/sync_codex_records.sh"
+        ]
+      },
+      "osx": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/generate_handoff.sh && ./tools/codex-sync/sync_codex_records.sh"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Resume From Synced Handoff",
+      "type": "shell",
+      "windows": {
+        "command": "cmd",
+        "args": [
+          "/c",
+          ".\\tools\\codex-sync\\resume_from_handoff.bat"
+        ]
+      },
+      "linux": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/resume_from_handoff.sh"
+        ]
+      },
+      "osx": {
+        "command": "sh",
+        "args": [
+          "-lc",
+          "./tools/codex-sync/resume_from_handoff.sh"
+        ]
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
       },
       "runOptions": {
         "runOn": "folderOpen"

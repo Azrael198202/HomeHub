@@ -26,8 +26,11 @@ let activeReminderId = null;
 let announcedReminderId = null;
 let isCompletingReminder = false;
 let testConversation = [];
-let customAgentStudio = { items: [], recentActions: [], selectedAgentId: "", isLoading: false, isGenerating: false };
+let customAgentStudio = { items: [], recentActions: [], selectedAgentId: "", isLoading: false, isGenerating: false, isThinking: false };
 let testUploadAttachment = null;
+let bootstrapPollTimer = null;
+let dashboardRefreshPromise = null;
+let mailTesterState = { to: "", subject: "", body: "", status: "", isSending: false, isSyncing: false };
 
 const UI_TEXT = {
   "en-US": {
@@ -152,6 +155,20 @@ const UI_TEXT = {
       configured: "Configured",
       missing: "Missing"
     },
+    mail: {
+      title: "Mail Bridge Test",
+      badge: "SMTP / IMAP",
+      address: "Configured account",
+      recipient: "Recipient",
+      subject: "Subject",
+      body: "Message body",
+      send: "Send Mail",
+      sync: "Sync Mail",
+      statusIdle: "Use the configured mailbox to send a test email or pull inbox messages.",
+      sendSuccess: "HomeHub: Mail sent successfully.",
+      syncSuccess: "HomeHub: Mail sync finished. Imported {count} message(s).",
+      failed: "HomeHub: Mail action failed. {error}"
+    },
     test: {
       guidance: "Use text instead of voice to test HomeHub routing, follow-up questions, and replies.",
       send: "Send Test Message",
@@ -166,7 +183,9 @@ const UI_TEXT = {
       noBlueprintSelected: "HomeHub: Select a completed blueprint first.",
       generatedTag: "Feature ready",
       storageTag: "Storage scaffold",
-      recentActionsTitle: "Recent Actions"
+      recentActionsTitle: "Recent Actions",
+      thinking: "HomeHub is thinking...",
+      openArtifact: "Open"
     },
     prompts: {
       switchedTab: "HomeHub: Switched to {tab}.",
@@ -253,6 +272,7 @@ const UI_TEXT = {
       micRecording: "录音中",
       browserNoMic: "当前浏览器不支持麦克风录音。",
       transcribing: "正在识别语音...",
+      thinking: "HomeHub：正在思考...",
       sendFailure: "发送消息失败。",
       sttFailure: "语音识别失败。",
       route: "路由器",
@@ -308,6 +328,20 @@ const UI_TEXT = {
       configured: "已配置",
       missing: "未配置"
     },
+    mail: {
+      title: "邮件桥接测试",
+      badge: "SMTP / IMAP",
+      address: "当前邮箱",
+      recipient: "收件人",
+      subject: "邮件主题",
+      body: "邮件正文",
+      send: "发送邮件",
+      sync: "同步邮件",
+      statusIdle: "使用当前已配置邮箱来发送测试邮件，或拉取收件箱中的新邮件。",
+      sendSuccess: "HomeHub：邮件已发送成功。",
+      syncSuccess: "HomeHub：邮件同步完成，本次导入 {count} 封。",
+      failed: "HomeHub：邮件操作失败。{error}"
+    },
     test: {
       guidance: "这里用文字来测试 HomeHub 的路由、追问补全和回复，不必打开语音。",
       send: "发送测试消息",
@@ -322,7 +356,9 @@ const UI_TEXT = {
       noBlueprintSelected: "HomeHub：请先选中一个已完成的蓝图。",
       generatedTag: "已生成 feature",
       storageTag: "带存储脚手架",
-      recentActionsTitle: "最近动作"
+      recentActionsTitle: "最近动作",
+      thinking: "HomeHub 正在思考...",
+      openArtifact: "打开"
     },
     prompts: {
       switchedTab: "HomeHub：已切换到 {tab}。",
@@ -409,6 +445,7 @@ const UI_TEXT = {
       micRecording: "録音中",
       browserNoMic: "このブラウザはマイク録音に対応していません。",
       transcribing: "音声を認識しています...",
+      thinking: "HomeHub: 考えています...",
       sendFailure: "メッセージ送信に失敗しました。",
       sttFailure: "音声認識に失敗しました。",
       route: "ルーター",
@@ -464,6 +501,20 @@ const UI_TEXT = {
       configured: "設定済み",
       missing: "未設定"
     },
+    mail: {
+      title: "メール接続テスト",
+      badge: "SMTP / IMAP",
+      address: "設定済みアカウント",
+      recipient: "宛先",
+      subject: "件名",
+      body: "本文",
+      send: "メール送信",
+      sync: "メール同期",
+      statusIdle: "設定済みメールアカウントで送信テスト、または受信箱の同期を行います。",
+      sendSuccess: "HomeHub: メール送信に成功しました。",
+      syncSuccess: "HomeHub: メール同期が完了しました。{count} 件を取り込みました。",
+      failed: "HomeHub: メール操作に失敗しました。{error}"
+    },
     test: {
       guidance: "音声の代わりにテキストで、HomeHub のルーティング、追質問、返答をテストします。",
       send: "テストメッセージを送信",
@@ -478,7 +529,9 @@ const UI_TEXT = {
       noBlueprintSelected: "HomeHub: 先に完成済みブループリントを選択してください。",
       generatedTag: "生成済み",
       storageTag: "保存雛形あり",
-      recentActionsTitle: "最近の操作"
+      recentActionsTitle: "最近の操作",
+      thinking: "HomeHub が考えています...",
+      openArtifact: "開く"
     },
     prompts: {
       switchedTab: "HomeHub: {tab} タブに切り替えました。",
@@ -893,7 +946,6 @@ function applyStaticTranslations() {
   document.getElementById("conversation-pill").textContent = t("top.transcript");
   document.getElementById("test-title").textContent = t("top.testLab");
   document.getElementById("test-pill").textContent = "Agent Factory";
-  document.getElementById("test-guidance").textContent = t("test.guidance");
   document.getElementById("test-blueprints-title").textContent = t("top.blueprintStudio");
   document.getElementById("test-blueprints-pill").textContent = t("test.storageTag");
   document.getElementById("test-blueprints-guidance").textContent = t("test.blueprintsGuidance");
@@ -1140,12 +1192,22 @@ function renderPairing(pairing, relayMessages) {
 function renderConversationItems(containerId, items, emptyText = t("voice.noConversation")) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  if (!Array.isArray(items) || !items.length) {
+  const list = Array.isArray(items) ? [...items] : [];
+  if (containerId === "test-conversation" && customAgentStudio.isThinking) {
+    list.push({
+      speaker: "HomeHub",
+      text: t("test.thinking"),
+      time: "",
+      isThinking: true,
+      artifacts: [],
+    });
+  }
+  if (!list.length) {
     container.innerHTML = `<div class="settings-card"><p>${emptyText}</p></div>`;
     return;
   }
-  container.innerHTML = items.map((item, index, list) => `
-    <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === list.length - 1 ? "is-latest" : ""}">
+  container.innerHTML = list.map((item, index, renderedItems) => `
+    <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === renderedItems.length - 1 ? "is-latest" : ""} ${item.isThinking ? "is-thinking" : ""}">
       <div class="conversation-avatar">${item.speaker === "You" ? "ME" : "HH"}</div>
       <div class="conversation-bubble">
         <div class="conversation-head">
@@ -1153,6 +1215,17 @@ function renderConversationItems(containerId, items, emptyText = t("voice.noConv
           <span>${item.time || ""}</span>
         </div>
         <p>${escapeHtml(item.text || "")}</p>
+        ${Array.isArray(item.artifacts) && item.artifacts.length ? `
+          <div class="conversation-artifacts">
+            ${item.artifacts.map((artifact) => `
+              <a class="artifact-chip" href="${escapeHtml(artifact.url || "#")}" target="_blank" rel="noreferrer">
+                <strong>${escapeHtml(artifact.label || artifact.fileName || "Artifact")}</strong>
+                <span>${escapeHtml(artifact.fileName || "")}</span>
+                <em>${t("test.openArtifact")}</em>
+              </a>
+            `).join("")}
+          </div>
+        ` : ""}
       </div>
     </div>
   `).join("");
@@ -1250,7 +1323,13 @@ function renderTestLab() {
         const output = item.profile?.output || "-";
         const trigger = item.profile?.trigger || "-";
         const recordCount = Array.isArray(item.records) ? item.records.length : 0;
-        const latestRecord = recordCount ? item.records[0]?.message || "" : "";
+        const featureItemCount = Number.isFinite(Number(item.featureItemCount)) ? Number(item.featureItemCount) : null;
+        const countLabel = featureItemCount !== null
+          ? `${featureItemCount} items`
+          : `${recordCount} records`;
+        const latestRecord = featureItemCount !== null
+          ? (item.featureLatestAction || "")
+          : (recordCount ? item.records[0]?.message || "" : "");
         return `
           <div
             class="studio-card remote-target focusable-card ${isSelected ? "is-selected" : ""}"
@@ -1266,7 +1345,7 @@ function renderTestLab() {
             <div class="studio-meta">
               <span class="mini-pill">${escapeHtml(trigger)}</span>
               <span class="mini-pill capability">${escapeHtml(tag)}</span>
-              <span class="mini-pill">${recordCount} records</span>
+              <span class="mini-pill">${countLabel}</span>
             </div>
             <small>${escapeHtml(output)}</small>
             ${latestRecord ? `<small>${escapeHtml(latestRecord)}</small>` : ""}
@@ -1345,14 +1424,34 @@ function renderSettings(data) {
   const modelCatalog = data.modelCatalog || [];
   const counts = data.audioProviders?.counts || { total: modelCatalog.length, editable: 0 };
   const runtimeProfile = data.runtimeProfile || null;
+  const mailConfig = data.externalChannels?.mailConfig || {};
+  const mailData = data.externalChannels?.mail || {};
+  const defaultRecipient = mailTesterState.to || "ying.hahn@gmail.com";
+  const defaultSubject = mailTesterState.subject || "HomeHub mail test";
+  const defaultBody = mailTesterState.body || "Hello from HomeHub.";
 
-  document.getElementById("languages").innerHTML = (data.languageSettings?.supported || []).map((item) => `
-    <div class="language-card remote-target focusable-card ${item.code === language?.code ? "is-selected-language" : ""}" tabindex="0" data-language-code="${item.code}" data-title="${escapeHtml(item.label)}">
-      <strong>${item.label}</strong>
-      <span>${item.code}</span>
-      <p>${item.sample}</p>
+  document.getElementById("languages").innerHTML = `
+    <div class="settings-card">
+      <strong>${escapeHtml(language?.label || currentLocale)}</strong>
+      <select id="language-select" class="settings-input remote-target" data-title="${escapeHtml(language?.label || currentLocale)}">
+        ${(data.languageSettings?.supported || []).map((item) => `
+          <option value="${escapeHtml(item.code)}" ${item.code === language?.code ? "selected" : ""}>
+            ${escapeHtml(item.label)} · ${escapeHtml(item.code)}
+          </option>
+        `).join("")}
+      </select>
+      <p>${escapeHtml(language?.sample || "")}</p>
     </div>
-  `).join("");
+  `;
+  const languageSelect = document.getElementById("language-select");
+  if (languageSelect) {
+    languageSelect.onchange = async (event) => {
+      const nextCode = String(event.target?.value || "").trim();
+      if (nextCode) {
+        await persistLanguage(nextCode);
+      }
+    };
+  }
 
   document.getElementById("model-stack-cards").innerHTML = modelCatalog.map((item) => `
     <div class="provider-card focusable-card ${item.editable ? "is-selected-provider" : ""}" tabindex="0" data-title="${escapeHtml(item.label)}">
@@ -1426,6 +1525,114 @@ function renderSettings(data) {
       </div>
     ` : ""}
   `;
+
+  const mailCard = document.getElementById("mail-tester-card");
+  if (mailCard) {
+    mailCard.innerHTML = `
+      <div class="settings-card mail-tester-card">
+        <div class="panel-header compact">
+          <h3>${t("mail.title")}</h3>
+          <span class="pill">${t("mail.badge")}</span>
+        </div>
+        <p><strong>${t("mail.address")}:</strong> ${escapeHtml(mailConfig.address || "-")}</p>
+        <p>Inbox: ${Array.isArray(mailData.inbox) ? mailData.inbox.length : 0} · Outbox: ${Array.isArray(mailData.outbox) ? mailData.outbox.length : 0} · Last sync: ${escapeHtml(mailData.lastSyncAt || "-")}</p>
+        <div class="mail-tester-grid">
+          <input id="mail-test-to" class="settings-input full-span" type="email" placeholder="${escapeHtml(t("mail.recipient"))}" value="${escapeHtml(defaultRecipient)}" />
+          <input id="mail-test-subject" class="settings-input full-span" type="text" placeholder="${escapeHtml(t("mail.subject"))}" value="${escapeHtml(defaultSubject)}" />
+          <textarea id="mail-test-body" class="settings-input full-span custom-summary" placeholder="${escapeHtml(t("mail.body"))}">${escapeHtml(defaultBody)}</textarea>
+        </div>
+        <div class="mail-tester-actions">
+          <button id="mail-sync-button" class="remote-target" type="button">${mailTesterState.isSyncing ? `${t("mail.sync")}...` : t("mail.sync")}</button>
+          <button id="mail-send-button" class="remote-target" type="button">${mailTesterState.isSending ? `${t("mail.send")}...` : t("mail.send")}</button>
+        </div>
+        <div class="mail-tester-status" id="mail-tester-status">${escapeHtml(mailTesterState.status || t("mail.statusIdle"))}</div>
+      </div>
+    `;
+    const syncButton = document.getElementById("mail-sync-button");
+    const sendButton = document.getElementById("mail-send-button");
+    if (syncButton) {
+      syncButton.disabled = mailTesterState.isSyncing;
+      syncButton.onclick = async () => {
+        await syncMailTester();
+      };
+    }
+    if (sendButton) {
+      sendButton.disabled = mailTesterState.isSending;
+      sendButton.onclick = async () => {
+        await sendMailTester();
+      };
+    }
+  }
+}
+
+function readMailTesterForm() {
+  mailTesterState.to = document.getElementById("mail-test-to")?.value?.trim() || "";
+  mailTesterState.subject = document.getElementById("mail-test-subject")?.value?.trim() || "";
+  mailTesterState.body = document.getElementById("mail-test-body")?.value?.trim() || "";
+}
+
+async function syncMailTester() {
+  mailTesterState.isSyncing = true;
+  mailTesterState.status = t("mail.statusIdle");
+  renderSettings(latestDashboard);
+  try {
+    const response = await fetch("/api/external-channels/email/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit: 10 })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Mail sync failed.");
+    }
+    mailTesterState.status = t("mail.syncSuccess", { count: payload.imported || 0 });
+    updateSpokenLine(mailTesterState.status);
+    await loadDashboard();
+  } catch (error) {
+    mailTesterState.status = t("mail.failed", { error: String(error.message || error) });
+    updateSpokenLine(mailTesterState.status);
+    renderSettings(latestDashboard);
+  } finally {
+    mailTesterState.isSyncing = false;
+    renderSettings(latestDashboard);
+  }
+}
+
+async function sendMailTester() {
+  readMailTesterForm();
+  if (!mailTesterState.to || !mailTesterState.body) {
+    mailTesterState.status = t("mail.failed", { error: "Recipient and message body are required." });
+    updateSpokenLine(mailTesterState.status);
+    renderSettings(latestDashboard);
+    return;
+  }
+  mailTesterState.isSending = true;
+  renderSettings(latestDashboard);
+  try {
+    const response = await fetch("/api/external-channels/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: mailTesterState.to,
+        subject: mailTesterState.subject,
+        content: mailTesterState.body
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Mail send failed.");
+    }
+    mailTesterState.status = t("mail.sendSuccess");
+    updateSpokenLine(mailTesterState.status);
+    await loadDashboard();
+  } catch (error) {
+    mailTesterState.status = t("mail.failed", { error: String(error.message || error) });
+    updateSpokenLine(mailTesterState.status);
+    renderSettings(latestDashboard);
+  } finally {
+    mailTesterState.isSending = false;
+    renderSettings(latestDashboard);
+  }
 }
 
 function updateSpokenLine(text) {
@@ -1436,7 +1643,6 @@ function updateSpokenLine(text) {
 function updateConversation(conversation) {
   if (!latestDashboard) return;
   latestDashboard.conversation = conversation;
-  testConversation = Array.isArray(conversation) ? conversation : testConversation;
   renderVoice(latestDashboard);
   renderTestLab();
 }
@@ -1530,13 +1736,81 @@ async function sendTestMessage() {
   const message = input?.value?.trim() || "";
   if (!message && !testUploadAttachment) return;
   if (input) input.value = "";
-  if (testUploadAttachment) {
-    await sendTestAttachmentMessage(message);
-    testUploadAttachment = null;
-  } else {
-    await sendVoiceMessage(message, { speakReply: false });
+  if (message && !testUploadAttachment) {
+    testConversation.push({
+      speaker: "You",
+      text: message,
+      time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+    });
   }
+  customAgentStudio.isThinking = true;
   renderTestLab();
+  try {
+    if (testUploadAttachment) {
+      await sendTestAttachmentMessage(message);
+      testUploadAttachment = null;
+    } else {
+      const selected = getSelectedStudioAgent();
+      if (selected && selected.status === "complete") {
+        await sendTestAgentMessage(message, selected);
+      } else {
+        const payload = await sendVoiceMessage(message, { speakReply: false });
+        const replyText = String(payload?.reply || "").trim();
+        if (replyText) {
+          testConversation.push({
+            speaker: "HomeHub",
+            text: replyText,
+            time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" }),
+            artifacts: Array.isArray(payload?.artifacts) ? payload.artifacts : []
+          });
+          renderTestLab();
+        }
+      }
+    }
+  } finally {
+    customAgentStudio.isThinking = false;
+    renderTestLab();
+  }
+}
+
+async function sendTestAgentMessage(message, selected = null) {
+  const agent = selected || getSelectedStudioAgent();
+  if (!agent || agent.status !== "complete") {
+    updateSpokenLine("HomeHub: Select a completed blueprint before sending a test message.");
+    return;
+  }
+  const response = await fetch("/api/custom-agents/intake", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: agent.id,
+      locale: currentLocale,
+      message
+    })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    const errorText = payload.error || "Failed to process the test message.";
+    testConversation.push({
+      speaker: "HomeHub",
+      text: errorText,
+      time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+    });
+    renderTestLab();
+    updateSpokenLine(`HomeHub: ${errorText}`);
+    return;
+  }
+  const replyText = payload.reply || "Message received.";
+  testConversation.push({
+    speaker: "HomeHub",
+    text: replyText,
+    time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" }),
+    artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : []
+  });
+  renderTestLab();
+  updateSpokenLine(`HomeHub: ${replyText}`);
+  await refreshCustomAgentStudio();
+  refreshDashboardInBackground();
 }
 
 async function sendTestAttachmentMessage(message) {
@@ -1570,11 +1844,13 @@ async function sendTestAttachmentMessage(message) {
   testConversation.push({
     speaker: "HomeHub",
     text: payload.reply || "Image received.",
-    time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+    time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" }),
+    artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : []
   });
+  renderTestLab();
   updateSpokenLine(`HomeHub: ${payload.reply || "Image received."}`);
   await refreshCustomAgentStudio();
-  await loadDashboard();
+  refreshDashboardInBackground();
 }
 
 async function generateSelectedFeature() {
@@ -1672,6 +1948,14 @@ async function triggerRemoteAction(target) {
     await sendTestMessage();
     return;
   }
+  if (target.id === "test-image-pick") {
+    const imageInput = document.getElementById("test-image-input");
+    if (imageInput) {
+      imageInput.value = "";
+      imageInput.click();
+    }
+    return;
+  }
   if (target.id === "test-generate-feature") {
     await generateSelectedFeature();
     return;
@@ -1752,6 +2036,20 @@ function setupRemoteNavigation() {
 
   document.addEventListener("keydown", async (event) => {
     const activeElement = document.activeElement;
+    const editingText =
+      activeElement instanceof HTMLElement
+      && (
+        activeElement.tagName === "TEXTAREA"
+        || (activeElement.tagName === "INPUT" && !["button", "checkbox", "radio", "range", "submit"].includes(String(activeElement.getAttribute("type") || "").toLowerCase()))
+        || activeElement.isContentEditable
+      );
+    if (editingText) {
+      if (event.key === "Enter" && activeElement.id === "test-input" && !event.shiftKey) {
+        event.preventDefault();
+        await sendTestMessage();
+      }
+      return;
+    }
     const keyToDirection = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down" };
     if (keyToDirection[event.key]) {
       const next = pickDirectionalTarget(activeElement, keyToDirection[event.key]);
@@ -1777,15 +2075,6 @@ function setupRemoteNavigation() {
 }
 
 function setupTestControls() {
-  const input = document.getElementById("test-input");
-  if (input) {
-    input.addEventListener("keydown", async (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        await sendTestMessage();
-      }
-    });
-  }
   const imageInput = document.getElementById("test-image-input");
   if (imageInput) {
     imageInput.addEventListener("change", (event) => {
@@ -1805,11 +2094,121 @@ function setupTestControls() {
           sizeBytes: file.size || 0,
           imageBase64: base64
         };
+        updateSpokenLine(`HomeHub: Attached image ${file.name}.`);
         renderTestLab();
+        imageInput.value = "";
       };
       reader.readAsDataURL(file);
     });
   }
+}
+
+function bootstrapCopy(snapshot) {
+  const approved = Boolean(snapshot?.approved);
+  const inProgress = Boolean(snapshot?.inProgress);
+  const blocking = Boolean(snapshot?.blocking);
+  const completed = Boolean(snapshot?.completed);
+  if (currentLocale === "zh-CN") {
+    if (!approved) {
+      return {
+        title: "首次安装准备",
+        text: "HomeHub 第一次运行时需要一次性确认安装权限。确认后，后续启动将自动检查，不会重复要求你再次承认。",
+        button: "确认并开始安装"
+      };
+    }
+    if (inProgress) {
+      return {
+        title: blocking ? "正在安装中" : "正在后台准备模型",
+        text: blocking
+          ? "HomeHub 正在补齐本机需要的开发环境、文档能力和本地模型，请先稍等。"
+          : "HomeHub 已经可以使用，剩余本地模型正在后台继续下载。",
+        button: ""
+      };
+    }
+    if (completed) {
+      return {
+        title: "安装完成",
+        text: "HomeHub 首次运行准备已经完成。",
+        button: ""
+      };
+    }
+    return {
+      title: "准备继续安装",
+      text: "HomeHub 已记录过你的授权，本次会自动继续补齐剩余项目。",
+      button: ""
+    };
+  }
+  return {
+    title: !approved ? "First-Run Setup" : inProgress ? "Installing HomeHub" : completed ? "Setup Complete" : "Preparing HomeHub",
+    text: !approved
+      ? "Approve one-time setup once, and HomeHub will reuse that decision on future launches."
+      : inProgress
+        ? "HomeHub is installing local tools, document support, and models."
+        : completed
+          ? "HomeHub first-run setup is complete."
+          : "HomeHub is preparing the remaining local dependencies.",
+    button: !approved ? "Approve One-Time Setup" : ""
+  };
+}
+
+function renderBootstrapOverlay(snapshot) {
+  const overlay = document.getElementById("installer-overlay");
+  const title = document.getElementById("installer-title");
+  const text = document.getElementById("installer-text");
+  const status = document.getElementById("installer-status");
+  const button = document.getElementById("installer-approve");
+  if (!overlay || !title || !text || !status || !button) return;
+  const approved = Boolean(snapshot?.approved);
+  const inProgress = Boolean(snapshot?.inProgress);
+  const blocking = Boolean(snapshot?.blocking);
+  const completed = Boolean(snapshot?.completed);
+  const shouldShow = !completed && (!approved || blocking);
+  overlay.hidden = !shouldShow;
+  if (!shouldShow) {
+    if (bootstrapPollTimer) {
+      clearInterval(bootstrapPollTimer);
+      bootstrapPollTimer = null;
+    }
+    return;
+  }
+  const copy = bootstrapCopy(snapshot || {});
+  title.textContent = copy.title;
+  text.textContent = copy.text;
+  status.textContent = snapshot?.message || "";
+  button.textContent = copy.button;
+  button.hidden = approved;
+  if ((inProgress || approved) && !bootstrapPollTimer) {
+    bootstrapPollTimer = setInterval(async () => {
+      const response = await fetch("/api/bootstrap/status");
+      const payload = await response.json();
+      if (latestDashboard) {
+        latestDashboard.bootstrap = payload;
+      }
+      renderBootstrapOverlay(payload);
+      if (payload?.inProgress && !payload?.blocking) {
+        updateSpokenLine(currentLocale === "zh-CN" ? "HomeHub：本地模型仍在后台下载中。" : "HomeHub: Local models are still downloading in the background.");
+      }
+      if (payload?.completed) {
+        await loadDashboard();
+      }
+    }, 3000);
+  }
+}
+
+async function approveBootstrapSetup() {
+  const response = await fetch("/api/bootstrap/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approve: true })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    return;
+  }
+  if (latestDashboard) {
+    latestDashboard.bootstrap = payload.bootstrap;
+  }
+  renderBootstrapOverlay(payload.bootstrap);
 }
 
 async function loadDashboard() {
@@ -1817,7 +2216,9 @@ async function loadDashboard() {
   const data = await response.json();
   latestDashboard = data;
   currentLocale = data.languageSettings?.current || currentLocale;
-  testConversation = Array.isArray(data.conversation) ? data.conversation : testConversation;
+  if (!testConversation.length && Array.isArray(data.conversation)) {
+    testConversation = data.conversation;
+  }
   await refreshCustomAgentStudio();
   applyStaticTranslations();
   renderClock();
@@ -1834,6 +2235,19 @@ async function loadDashboard() {
   renderReminderOverlay(data);
   renderSettings(data);
   renderFloatingBuddy();
+  renderBootstrapOverlay(data.bootstrap || {});
+}
+
+function refreshDashboardInBackground() {
+  if (dashboardRefreshPromise) {
+    return dashboardRefreshPromise;
+  }
+  dashboardRefreshPromise = loadDashboard().catch((error) => {
+    console.warn("Background dashboard refresh failed.", error);
+  }).finally(() => {
+    dashboardRefreshPromise = null;
+  });
+  return dashboardRefreshPromise;
 }
 
 async function persistLanguage(languageCode) {
@@ -1912,23 +2326,23 @@ async function saveCustomProvider() {
   updateSpokenLine(t("prompts.customProviderSaved", { label: body.label || body.id }));
 }
 async function sendVoiceMessage(message, options = {}) {
-  const { speakReply = true } = options;
+  const { speakReply = true, localeOverride = "" } = options;
   const clean = String(message || "").trim();
   if (!clean) return;
   updateSpokenLine(`${t("speakers.you")}: ${clean}`);
   isBuddyThinking = true;
   renderFloatingBuddy();
+  updateSpokenLine(t("voice.thinking"));
   const response = await fetch("/api/voice/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: clean, locale: currentLocale, speakReply: false })
+    body: JSON.stringify({ message: clean, locale: localeOverride || currentLocale, speakReply: false })
   });
   const payload = await response.json();
-  await new Promise((resolve) => setTimeout(resolve, 380));
   isBuddyThinking = false;
   if (!response.ok) {
     updateSpokenLine(`HomeHub: ${payload.error || t("voice.sendFailure")}`);
-    return;
+    return payload;
   }
   if (payload.uiAction) {
     executeUiAction(payload.uiAction);
@@ -1945,9 +2359,10 @@ async function sendVoiceMessage(message, options = {}) {
     renderVoice(latestDashboard);
     renderReminderOverlay(latestDashboard);
   }
-  await loadDashboard();
   updateSpokenLine(`${localizeSpeaker("HomeHub")}: ${payload.reply}`);
   if (speakReply) speakWithHomeHub(payload.reply);
+  refreshDashboardInBackground();
+  return payload;
 }
 
 async function transcribeBlob(blob) {
@@ -1977,14 +2392,17 @@ async function transcribeBlob(blob) {
   if (!response.ok) {
     throw new Error(payload.error || t("voice.sttFailure"));
   }
-  return String(payload.transcript || "").trim();
+  return {
+    transcript: String(payload.transcript || "").trim(),
+    detectedLocale: String(payload.detectedLocale || currentLocale).trim()
+  };
 }
 
 async function transcribeAudioFile(file) {
   updateSpokenLine(t("voice.transcribing"));
   try {
-    const transcript = await transcribeBlob(file);
-    await sendVoiceMessage(transcript);
+    const result = await transcribeBlob(file);
+    await sendVoiceMessage(result.transcript, { localeOverride: result.detectedLocale });
   } catch (error) {
     updateSpokenLine(`HomeHub: ${error.message || t("voice.sttFailure")}`);
   }
@@ -2025,8 +2443,8 @@ async function toggleMicrophoneRecording() {
       const blob = new Blob(mediaChunks, { type: activeMimeType });
       updateSpokenLine(t("voice.transcribing"));
       try {
-        const transcript = await transcribeBlob(blob);
-        await sendVoiceMessage(transcript);
+        const result = await transcribeBlob(blob);
+        await sendVoiceMessage(result.transcript, { localeOverride: result.detectedLocale });
       } catch (error) {
         updateSpokenLine(`HomeHub: ${error.message || t("voice.sttFailure")}`);
       }
@@ -2109,6 +2527,14 @@ function setupCustomProviderControls() {
   });
 }
 
+function setupBootstrapControls() {
+  const button = document.getElementById("installer-approve");
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    await approveBootstrapSetup();
+  });
+}
+
 function setupReminderOverlayControls() {
   const completeButton = document.getElementById("reminder-complete");
   if (!completeButton) return;
@@ -2133,6 +2559,7 @@ setupRemoteNavigation();
 setupVoiceControls();
 setupTestControls();
 setupCustomProviderControls();
+setupBootstrapControls();
 setupReminderOverlayControls();
 loadBuddyPosition();
 setupFloatingBuddyControls();

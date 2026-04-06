@@ -1,10 +1,14 @@
 ﻿import base64
 import io
 import json
+import mimetypes
 import os
 import random
 import re
 import subprocess
+import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -17,21 +21,36 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 try:
     from features.base import RuntimeBridge
     from features.loader import FeatureManager
+    from server_components.greetings import build_initial_conversation, build_welcome_message
+    from server_components.language_detector import detect_text_locale, normalize_locale
+    from server_components.task_router import build_task_spec, infer_task_spec_with_openai
 except ModuleNotFoundError:
     from runtime.features.base import RuntimeBridge
     from runtime.features.loader import FeatureManager
+    from runtime.server_components.greetings import build_initial_conversation, build_welcome_message
+    from runtime.server_components.language_detector import detect_text_locale, normalize_locale
+    from runtime.server_components.task_router import build_task_spec, infer_task_spec_with_openai
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
+GENERATED_DIR = ROOT / "generated"
 SETTINGS_FILE = ROOT / "settings.json"
 CUSTOM_AUDIO_PROVIDERS_FILE = ROOT / "custom_audio_providers.json"
+BOOTSTRAP_STATUS_FILE = ROOT / "bootstrap_status.json"
 SECRETS_LOCAL_FILE = ROOT / "secrets.local.json"
 SECRETS_PROD_FILE = ROOT / "secrets.prod.json"
 USAGE_LOG_FILE = ROOT / "usage-cost-log.jsonl"
 GOOGLE_SERVICE_ACCOUNT_FILE = ROOT / "google-cloud-service-account.json"
 RUNTIME_ENV = os.environ.get("HOMEHUB_ENV", "local").lower()
-RUNTIME_PORT = int(os.environ.get("HOMEHUB_PORT", "8787"))
+RUNTIME_HOST = os.environ.get("HOMEHUB_HOST", "0.0.0.0")
+RUNTIME_PORT = int(os.environ.get("PORT") or os.environ.get("HOMEHUB_PORT", "8787"))
 FEATURES_DIR = ROOT / "features"
+PROJECT_ROOT = ROOT.parent
+BOOTSTRAP_SCRIPT = PROJECT_ROOT / "tools" / "bootstrap_homehub.py"
+BOOTSTRAP_PROCESS = None
+OLLAMA_INVENTORY_CACHE = {"value": None, "updated_at": 0.0}
+OLLAMA_INVENTORY_TTL_SECONDS = 15.0
+EMAIL_SYNC_INTERVAL_SECONDS = int(os.environ.get("HOMEHUB_EMAIL_SYNC_INTERVAL", "90"))
 
 
 def get_secrets_file():
@@ -45,35 +64,35 @@ MODEL_PROVIDERS = [
         "id": "openai",
         "name": "OpenAI",
         "type": "cloud",
-        "capabilities": ["chat", "vision", "voice", "tool-use", "reasoning"],
+        "capabilities": ["chat", "vision", "voice", "tool-use", "reasoning", "ocr", "office-docs"],
         "endpointHint": "https://api.openai.com/v1",
     },
     {
         "id": "anthropic",
         "name": "Anthropic",
         "type": "cloud",
-        "capabilities": ["chat", "vision", "reasoning"],
+        "capabilities": ["chat", "vision", "reasoning", "document-drafting"],
         "endpointHint": "https://api.anthropic.com",
     },
     {
         "id": "gemini",
         "name": "Google Gemini",
         "type": "cloud",
-        "capabilities": ["chat", "vision", "tool-use"],
+        "capabilities": ["chat", "vision", "tool-use", "ocr", "office-docs"],
         "endpointHint": "https://generativelanguage.googleapis.com",
     },
     {
         "id": "huggingface",
         "name": "Hugging Face",
         "type": "cloud",
-        "capabilities": ["chat", "vision", "embeddings", "speech", "open-weight"],
+        "capabilities": ["chat", "vision", "embeddings", "speech", "open-weight", "ocr"],
         "endpointHint": "https://api-inference.huggingface.co",
     },
     {
         "id": "ollama",
         "name": "Ollama Local",
         "type": "local",
-        "capabilities": ["chat", "vision"],
+        "capabilities": ["chat", "vision", "ocr", "office-docs"],
         "endpointHint": "http://localhost:11434",
     },
 ]
@@ -484,6 +503,16 @@ def default_secrets():
         "googleApiKey": "",
         "googleAccessToken": "",
         "openaiApiKey": "",
+        "mailAddress": "",
+        "mailPassword": "",
+        "mailSmtpHost": "",
+        "mailSmtpPort": "",
+        "mailImapHost": "",
+        "mailImapPort": "",
+        "wechatOfficialToken": "",
+        "wechatOfficialAppId": "",
+        "wechatOfficialAppSecret": "",
+        "wechatOfficialEncodingAesKey": "",
     }
 
 
@@ -607,10 +636,19 @@ def find_ollama_binary():
     return ""
 
 
-def load_ollama_inventory():
+def load_ollama_inventory(force=False):
+    now = time.time()
+    cached = OLLAMA_INVENTORY_CACHE.get("value")
+    updated_at = float(OLLAMA_INVENTORY_CACHE.get("updated_at", 0.0) or 0.0)
+    if not force and cached is not None and (now - updated_at) < OLLAMA_INVENTORY_TTL_SECONDS:
+        return deepcopy(cached)
+
     binary = find_ollama_binary()
     if not binary:
-        return {"available": False, "installed": [], "error": "missing-binary"}
+        inventory = {"available": False, "installed": [], "error": "missing-binary"}
+        OLLAMA_INVENTORY_CACHE["value"] = deepcopy(inventory)
+        OLLAMA_INVENTORY_CACHE["updated_at"] = now
+        return inventory
     try:
         result = subprocess.run(
             [binary, "list"],
@@ -622,9 +660,15 @@ def load_ollama_inventory():
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return {"available": False, "installed": [], "error": "list-failed"}
+        inventory = {"available": False, "installed": [], "error": "list-failed"}
+        OLLAMA_INVENTORY_CACHE["value"] = deepcopy(inventory)
+        OLLAMA_INVENTORY_CACHE["updated_at"] = now
+        return inventory
     if result.returncode != 0:
-        return {"available": True, "installed": [], "error": "list-failed"}
+        inventory = {"available": True, "installed": [], "error": "list-failed"}
+        OLLAMA_INVENTORY_CACHE["value"] = deepcopy(inventory)
+        OLLAMA_INVENTORY_CACHE["updated_at"] = now
+        return inventory
 
     installed = []
     for raw_line in result.stdout.splitlines():
@@ -640,7 +684,10 @@ def load_ollama_inventory():
             "modified": parts[3] if len(parts) > 3 else "",
         }
         installed.append(item)
-    return {"available": True, "installed": installed, "error": ""}
+    inventory = {"available": True, "installed": installed, "error": ""}
+    OLLAMA_INVENTORY_CACHE["value"] = deepcopy(inventory)
+    OLLAMA_INVENTORY_CACHE["updated_at"] = now
+    return inventory
 
 
 def build_recommended_model_stacks(local_inventory):
@@ -744,8 +791,8 @@ def build_recommended_model_stacks(local_inventory):
             "label": "Receipt / Document Vision Stack",
             "source": "Hybrid Vision",
             "summary": "For receipts, invoices, screenshots, and home paperwork that must become structured records.",
-            "models": ["gpt-4o", "qwen2.5vl:7b"],
-            "capabilities": ["Vision", "OCR-style Understanding", "Structured Output", "Receipts"],
+            "models": ["gpt-4o", "qwen2.5vl:7b", "RapidOCR", "PaddleOCR"],
+            "capabilities": ["Vision", "OCR", "Structured Output", "Receipts", "Tables"],
             "languages": ["zh-CN", "en-US", "ja-JP"],
             "sync": {"openclaw": "easy", "workbuddy": "manual"},
             "editable": False,
@@ -759,6 +806,27 @@ def build_recommended_model_stacks(local_inventory):
             ],
             "requirements": ["Image upload pipeline in HomeHub"],
             "installCommand": "" if has_qwen_vl else "ollama pull qwen2.5vl:7b",
+        },
+        {
+            "id": "homehub-office-docs",
+            "label": "Office Document Agent Stack",
+            "source": "Hybrid Documents",
+            "summary": "Generate and update PowerPoint, Excel, and Word files for reports, family planning, and operational workflows.",
+            "models": ["gpt-5.4", "gpt-5.4-mini", "qwen2.5-coder:7b", "python-pptx", "openpyxl", "python-docx"],
+            "capabilities": ["PPT", "Excel", "Word", "Document Automation", "Structured Drafting"],
+            "languages": ["zh-CN", "en-US", "ja-JP"],
+            "sync": {"openclaw": "easy", "workbuddy": "manual"},
+            "editable": False,
+            "actions": [],
+            "deployment": "API + local Python",
+            "access": "Hybrid",
+            "status": "Recommended for office-style agents",
+            "notes": [
+                "Use GPT-5.4 for document planning, page structure, and drafting decisions.",
+                "Use qwen2.5-coder plus Python document libraries when HomeHub needs deterministic file generation.",
+                "Fits PPT reports, Excel trackers, Word summaries, and OCR-to-document pipelines.",
+            ],
+            "requirements": ["python-docx, openpyxl, python-pptx installed on the HomeHub machine"],
         },
         {
             "id": "homehub-retrieval-memory",
@@ -991,192 +1059,11 @@ def build_runtime_strategy(local_inventory):
             {"stage": "Daily chat fallback", "preferred": "local", "models": ["qwen2.5:3b-instruct", "qwen2.5:7b-instruct"]},
             {"stage": "Feature / service generation", "preferred": "hybrid", "models": ["qwen2.5-coder:7b", "gpt-5.4"]},
             {"stage": "Receipt and bill understanding", "preferred": "hybrid", "models": ["qwen2.5vl:7b", "gpt-4o"]},
+            {"stage": "OCR and document reading", "preferred": "hybrid", "models": ["RapidOCR", "qwen2.5vl:7b", "gpt-4o"]},
+            {"stage": "PPT / Excel / Word generation", "preferred": "hybrid", "models": ["gpt-5.4", "qwen2.5-coder:7b", "python-pptx", "openpyxl", "python-docx"]},
             {"stage": "Deep planning and review", "preferred": "cloud", "models": ["gpt-5.4", "gpt-5.4-mini"]},
         ],
     }
-
-
-def detect_input_modes(user_text):
-    lowered = str(user_text or "").lower()
-    modes = ["text"]
-    if any(token in lowered for token in ["image", "photo", "screenshot", "receipt", "invoice", "picture"]) or any(
-        token in user_text for token in ["图片", "照片", "截图", "账单图", "小票", "发票"]
-    ):
-        modes.append("image")
-    if any(token in lowered for token in ["say", "voice", "speak", "audio"]) or any(token in user_text for token in ["语音", "说话", "听我"]):
-        modes.append("voice")
-    return sorted(set(modes))
-
-
-def infer_task_spec_with_openai(user_text, locale):
-    if not SECRETS.get("openaiApiKey"):
-        return None
-    payload = openai_chat_json(
-        (
-            "You are HomeHub's task-spec parser. Return JSON only with keys: "
-            "taskType, intent, urgency, requiresImage, requiresGeneration, requiresScheduling, "
-            "requiresLongRunningAgent, preferredExecution, missingInfo, summary. "
-            "Valid taskType values: agent_creation, reminder, schedule, bill_intake, general_chat, study_plan, ui_navigation, network_lookup. "
-            "Valid urgency values: low, normal, high. "
-            "Valid preferredExecution values: local, cloud, hybrid."
-        ),
-        json.dumps({"locale": locale, "message": user_text}, ensure_ascii=False),
-        "gpt-4o-mini",
-    )
-    return payload if isinstance(payload, dict) else None
-
-
-def build_task_spec(user_text, locale):
-    lowered = str(user_text or "").lower()
-    spec = {
-        "taskType": "general_chat",
-        "intent": "general-chat",
-        "summary": "General household conversation or Q&A.",
-        "urgency": "normal",
-        "inputModes": detect_input_modes(user_text),
-        "requiresImage": False,
-        "requiresGeneration": False,
-        "requiresScheduling": False,
-        "requiresLongRunningAgent": False,
-        "preferredExecution": "hybrid",
-        "missingInfo": [],
-    }
-    if detect_ui_action(user_text, locale):
-        spec.update(
-            {
-                "taskType": "ui_navigation",
-                "intent": "ui-action",
-                "summary": "Navigate the TV shell UI directly.",
-                "preferredExecution": "local",
-            }
-        )
-        return spec
-    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
-        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
-    ):
-        spec.update(
-            {
-                "taskType": "network_lookup",
-                "intent": "network-lookup",
-                "summary": "Query approved external sources and return a sourced summary.",
-                "preferredExecution": "hybrid",
-            }
-        )
-        return spec
-
-    if any(token in user_text for token in ["智能体", "助手", "代理", "机器人"]) or any(
-        token in lowered for token in ["agent", "assistant", "workflow", "bot"]
-    ):
-        spec.update(
-            {
-                "taskType": "agent_creation",
-                "intent": "custom-agent-builder",
-                "summary": "Create, refine, or activate a long-running HomeHub agent.",
-                "requiresGeneration": True,
-                "requiresLongRunningAgent": True,
-                "preferredExecution": "hybrid",
-            }
-        )
-
-    if any(token in user_text for token in ["提醒", "闹钟"]) or "remind me" in lowered:
-        spec.update(
-            {
-                "taskType": "reminder",
-                "intent": "local-schedule",
-                "summary": "Create or manage a reminder.",
-                "requiresScheduling": True,
-                "preferredExecution": "local",
-            }
-        )
-    elif any(token in user_text for token in ["日程", "会议", "安排", "行程"]) or any(
-        token in lowered for token in ["schedule", "calendar", "meeting"]
-    ):
-        spec.update(
-            {
-                "taskType": "schedule",
-                "intent": "local-schedule",
-                "summary": "Create or query an event or schedule.",
-                "requiresScheduling": True,
-                "preferredExecution": "local",
-            }
-        )
-
-    if any(token in user_text for token in ["账单", "扣费", "发票", "小票", "收据"]) or any(
-        token in lowered for token in ["bill", "receipt", "invoice", "charge", "expense"]
-    ):
-        spec.update(
-            {
-                "taskType": "bill_intake" if "image" in spec["inputModes"] else spec["taskType"],
-                "summary": "Understand or track bills, receipts, or charge records.",
-                "requiresImage": "image" in spec["inputModes"] or spec["requiresImage"],
-                "preferredExecution": "hybrid",
-            }
-        )
-    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
-        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
-    ):
-        spec.update(
-            {
-                "taskType": "network_lookup",
-                "intent": "network-lookup",
-                "summary": "Query approved external sources and return a sourced summary.",
-                "preferredExecution": "hybrid",
-            }
-        )
-    if any(token in user_text for token in ["学习计划", "复习", "作业"]) or any(
-        token in lowered for token in ["study plan", "homework", "revision plan"]
-    ):
-        spec.update(
-            {
-                "taskType": "study_plan",
-                "intent": "study-plan-agent",
-                "summary": "Create or continue a study plan agent workflow.",
-                "requiresLongRunningAgent": True,
-                "preferredExecution": "hybrid",
-            }
-        )
-
-    if spec["taskType"] == "agent_creation":
-        missing = []
-        if not any(token in user_text for token in ["每", "每天", "每周", "每月", "收到", "上传", "定时"]) and not any(
-            token in lowered for token in ["daily", "weekly", "monthly", "when", "trigger", "schedule"]
-        ):
-            missing.append("trigger")
-        if not any(token in user_text for token in ["输出", "结果", "记录", "汇总", "提醒"]) and not any(
-            token in lowered for token in ["output", "result", "summary", "record", "alert"]
-        ):
-            missing.append("output")
-        spec["missingInfo"] = missing
-
-    ai_spec = infer_task_spec_with_openai(user_text, locale)
-    if ai_spec:
-        task_type = str(ai_spec.get("taskType", "")).strip()
-        if (
-            task_type in {"agent_creation", "reminder", "schedule", "bill_intake", "general_chat", "study_plan", "ui_navigation", "network_lookup"}
-            and not (spec["taskType"] != "general_chat" and task_type == "general_chat")
-        ):
-            spec["taskType"] = task_type
-        spec["intent"] = str(ai_spec.get("intent", spec["intent"])).strip() or spec["intent"]
-        spec["summary"] = str(ai_spec.get("summary", spec["summary"])).strip() or spec["summary"]
-        if str(ai_spec.get("urgency", "")).strip() in {"low", "normal", "high"}:
-            spec["urgency"] = str(ai_spec.get("urgency")).strip()
-        spec["requiresImage"] = bool(ai_spec.get("requiresImage", spec["requiresImage"]))
-        spec["requiresGeneration"] = bool(ai_spec.get("requiresGeneration", spec["requiresGeneration"]))
-        spec["requiresScheduling"] = bool(ai_spec.get("requiresScheduling", spec["requiresScheduling"]))
-        spec["requiresLongRunningAgent"] = bool(ai_spec.get("requiresLongRunningAgent", spec["requiresLongRunningAgent"]))
-        preferred = str(ai_spec.get("preferredExecution", spec["preferredExecution"])).strip()
-        if preferred in {"local", "cloud", "hybrid"}:
-            spec["preferredExecution"] = preferred
-        if isinstance(ai_spec.get("missingInfo"), list):
-            spec["missingInfo"] = [str(item).strip() for item in ai_spec.get("missingInfo", []) if str(item).strip()]
-    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
-        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
-    ):
-        spec["taskType"] = "network_lookup"
-        spec["intent"] = "network-lookup"
-        spec["summary"] = "Query approved external sources and return a sourced summary."
-        spec["preferredExecution"] = "hybrid"
-    return spec
 
 
 def build_tool_registry_snapshot():
@@ -1253,6 +1140,15 @@ def select_model_route(task_spec, runtime_strategy, local_inventory):
             "fallbackModel": fallback,
             "reason": "Bill and receipt understanding benefits from multimodal reasoning, with local vision fallback when needed.",
         }
+    if task_type == "document_workflow":
+        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["primaryModel"])
+        fallback = "qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else ("qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"])
+        return {
+            "execution": "hybrid",
+            "primaryModel": primary,
+            "fallbackModel": fallback,
+            "reason": "OCR and Office document work needs strong planning plus either local coder or multimodal fallback for extraction and file generation.",
+        }
     if task_type == "network_lookup":
         return {
             "execution": "hybrid",
@@ -1292,6 +1188,16 @@ def load_secrets_file():
         "googleApiKey": data.get("googleApiKey", ""),
         "googleAccessToken": data.get("googleAccessToken", ""),
         "openaiApiKey": data.get("openaiApiKey", ""),
+        "mailAddress": data.get("mailAddress", ""),
+        "mailPassword": data.get("mailPassword", ""),
+        "mailSmtpHost": data.get("mailSmtpHost", ""),
+        "mailSmtpPort": data.get("mailSmtpPort", ""),
+        "mailImapHost": data.get("mailImapHost", ""),
+        "mailImapPort": data.get("mailImapPort", ""),
+        "wechatOfficialToken": data.get("wechatOfficialToken", ""),
+        "wechatOfficialAppId": data.get("wechatOfficialAppId", ""),
+        "wechatOfficialAppSecret": data.get("wechatOfficialAppSecret", ""),
+        "wechatOfficialEncodingAesKey": data.get("wechatOfficialEncodingAesKey", ""),
     }
 
 
@@ -1312,10 +1218,30 @@ def get_effective_secrets():
         or os.environ.get("OPENAI_API_KEY")
         or file_secrets.get("openaiApiKey", "")
     )
+    mail_address = os.environ.get("HOMEHUB_MAIL_ADDRESS") or file_secrets.get("mailAddress", "")
+    mail_password = os.environ.get("HOMEHUB_MAIL_PASSWORD") or file_secrets.get("mailPassword", "")
+    mail_smtp_host = os.environ.get("HOMEHUB_MAIL_SMTP_HOST") or file_secrets.get("mailSmtpHost", "")
+    mail_smtp_port = os.environ.get("HOMEHUB_MAIL_SMTP_PORT") or file_secrets.get("mailSmtpPort", "")
+    mail_imap_host = os.environ.get("HOMEHUB_MAIL_IMAP_HOST") or file_secrets.get("mailImapHost", "")
+    mail_imap_port = os.environ.get("HOMEHUB_MAIL_IMAP_PORT") or file_secrets.get("mailImapPort", "")
+    wechat_official_token = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_TOKEN") or file_secrets.get("wechatOfficialToken", "")
+    wechat_official_app_id = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") or file_secrets.get("wechatOfficialAppId", "")
+    wechat_official_app_secret = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") or file_secrets.get("wechatOfficialAppSecret", "")
+    wechat_official_encoding_aes_key = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") or file_secrets.get("wechatOfficialEncodingAesKey", "")
     return {
         "googleApiKey": google_api_key,
         "googleAccessToken": google_access_token,
         "openaiApiKey": openai_api_key,
+        "mailAddress": mail_address,
+        "mailPassword": mail_password,
+        "mailSmtpHost": mail_smtp_host,
+        "mailSmtpPort": mail_smtp_port,
+        "mailImapHost": mail_imap_host,
+        "mailImapPort": mail_imap_port,
+        "wechatOfficialToken": wechat_official_token,
+        "wechatOfficialAppId": wechat_official_app_id,
+        "wechatOfficialAppSecret": wechat_official_app_secret,
+        "wechatOfficialEncodingAesKey": wechat_official_encoding_aes_key,
     }
 
 
@@ -1325,6 +1251,16 @@ def get_secret_sources():
         "googleApiKey": "env" if (os.environ.get("HOMEHUB_GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else ("file" if file_secrets.get("googleApiKey") else "missing"),
         "googleAccessToken": "env" if (os.environ.get("HOMEHUB_GOOGLE_ACCESS_TOKEN") or os.environ.get("GOOGLE_ACCESS_TOKEN")) else ("file" if file_secrets.get("googleAccessToken") else "missing"),
         "openaiApiKey": "env" if (os.environ.get("HOMEHUB_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")) else ("file" if file_secrets.get("openaiApiKey") else "missing"),
+        "mailAddress": "env" if os.environ.get("HOMEHUB_MAIL_ADDRESS") else ("file" if file_secrets.get("mailAddress") else "missing"),
+        "mailPassword": "env" if os.environ.get("HOMEHUB_MAIL_PASSWORD") else ("file" if file_secrets.get("mailPassword") else "missing"),
+        "mailSmtpHost": "env" if os.environ.get("HOMEHUB_MAIL_SMTP_HOST") else ("file" if file_secrets.get("mailSmtpHost") else "missing"),
+        "mailSmtpPort": "env" if os.environ.get("HOMEHUB_MAIL_SMTP_PORT") else ("file" if file_secrets.get("mailSmtpPort") else "missing"),
+        "mailImapHost": "env" if os.environ.get("HOMEHUB_MAIL_IMAP_HOST") else ("file" if file_secrets.get("mailImapHost") else "missing"),
+        "mailImapPort": "env" if os.environ.get("HOMEHUB_MAIL_IMAP_PORT") else ("file" if file_secrets.get("mailImapPort") else "missing"),
+        "wechatOfficialToken": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_TOKEN") else ("file" if file_secrets.get("wechatOfficialToken") else "missing"),
+        "wechatOfficialAppId": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") else ("file" if file_secrets.get("wechatOfficialAppId") else "missing"),
+        "wechatOfficialAppSecret": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") else ("file" if file_secrets.get("wechatOfficialAppSecret") else "missing"),
+        "wechatOfficialEncodingAesKey": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") else ("file" if file_secrets.get("wechatOfficialEncodingAesKey") else "missing"),
     }
 
 
@@ -1418,6 +1354,8 @@ def load_persisted_settings():
             "sttProvider": "google",
             "ttsProvider": "google",
             "runtimeProfile": "edge-hybrid",
+            "bootstrapConsent": False,
+            "bootstrapCompleted": False,
         }
 
     try:
@@ -1428,6 +1366,8 @@ def load_persisted_settings():
             "sttProvider": "google",
             "ttsProvider": "google",
             "runtimeProfile": "edge-hybrid",
+            "bootstrapConsent": False,
+            "bootstrapCompleted": False,
         }
 
     supported_codes = {item["code"] for item in LANGUAGE_SETTINGS["supported"]}
@@ -1453,6 +1393,8 @@ def load_persisted_settings():
         "sttProvider": stt_provider,
         "ttsProvider": tts_provider,
         "runtimeProfile": runtime_profile,
+        "bootstrapConsent": bool(data.get("bootstrapConsent", False)),
+        "bootstrapCompleted": bool(data.get("bootstrapCompleted", False)),
     }
 
 
@@ -1461,6 +1403,98 @@ def save_persisted_settings(settings):
         json.dumps(settings, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def load_bootstrap_status():
+    if not BOOTSTRAP_STATUS_FILE.exists():
+        return {
+            "stage": "idle",
+            "message": "",
+            "completed": False,
+        }
+    try:
+        data = json.loads(BOOTSTRAP_STATUS_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {
+            "stage": "idle",
+            "message": "",
+            "completed": False,
+        }
+    if not isinstance(data, dict):
+        return {
+            "stage": "idle",
+            "message": "",
+            "completed": False,
+        }
+    return data
+
+
+def save_bootstrap_status(payload):
+    BOOTSTRAP_STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def bootstrap_snapshot():
+    refresh_bootstrap_process_state()
+    status = load_bootstrap_status()
+    approved = bool(PERSISTED_SETTINGS.get("bootstrapConsent", False))
+    completed = bool(PERSISTED_SETTINGS.get("bootstrapCompleted", False))
+    in_progress = bool(status.get("stage") in {"starting", "installing-tools", "installing-python", "installing-models"})
+    blocking = bool(status.get("stage") in {"starting", "installing-tools", "installing-python"})
+    return {
+        "approved": approved,
+        "completed": completed,
+        "inProgress": in_progress,
+        "blocking": blocking,
+        "stage": status.get("stage", "idle"),
+        "message": status.get("message", ""),
+        "missingCommands": status.get("missingCommands", []),
+        "missingPythonModules": status.get("missingPythonModules", []),
+        "missingOllamaModels": status.get("missingOllamaModels", []),
+    }
+
+
+def refresh_bootstrap_process_state():
+    global BOOTSTRAP_PROCESS, PERSISTED_SETTINGS
+    if BOOTSTRAP_PROCESS is None:
+        return
+    code = BOOTSTRAP_PROCESS.poll()
+    if code is None:
+        return
+    BOOTSTRAP_PROCESS = None
+    status = load_bootstrap_status()
+    if status.get("completed"):
+        PERSISTED_SETTINGS["bootstrapCompleted"] = True
+        save_persisted_settings(PERSISTED_SETTINGS)
+
+
+def start_bootstrap_install():
+    global BOOTSTRAP_PROCESS
+    refresh_bootstrap_process_state()
+    if BOOTSTRAP_PROCESS is not None and BOOTSTRAP_PROCESS.poll() is None:
+        return False
+    save_bootstrap_status({"stage": "starting", "message": "Preparing first-run bootstrap.", "completed": False})
+    BOOTSTRAP_PROCESS = subprocess.Popen(
+        [
+            sys.executable,
+            str(BOOTSTRAP_SCRIPT),
+            "--apply",
+            "--quiet",
+            "--status-file",
+            str(BOOTSTRAP_STATUS_FILE),
+        ],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return True
+
+
+def maybe_start_bootstrap_install():
+    if not PERSISTED_SETTINGS.get("bootstrapConsent", False):
+        return
+    if PERSISTED_SETTINGS.get("bootstrapCompleted", False):
+        return
+    start_bootstrap_install()
 
 
 def log_external_usage(provider, model, operation, locale, text_value="", transcript="", audio_base64=""):
@@ -1481,6 +1515,8 @@ def log_external_usage(provider, model, operation, locale, text_value="", transc
 PERSISTED_SETTINGS = load_persisted_settings()
 SECRETS = get_effective_secrets()
 SECRET_SOURCES = get_secret_sources()
+maybe_start_bootstrap_install()
+
 
 WEATHER = {
     "location": "Tokyo",
@@ -1582,6 +1618,15 @@ TOOL_REGISTRY = [
         "execution": "hybrid",
     },
     {
+        "id": "document-workbench",
+        "label": "Document Workbench",
+        "kind": "core",
+        "featureId": "homehub-core",
+        "handles": ["document_workflow", "ocr", "ppt_generation", "excel_generation", "word_generation"],
+        "inputModes": ["image", "text", "voice"],
+        "execution": "hybrid",
+    },
+    {
         "id": "network-lookup",
         "label": "Controlled Network Lookup",
         "kind": "core",
@@ -1592,23 +1637,7 @@ TOOL_REGISTRY = [
     },
 ]
 
-VOICE_CONVERSATION = [
-    {
-        "speaker": "HomeHub",
-        "text": "Good evening. The living room box is online and ready.",
-        "time": "19:40",
-    },
-    {
-        "speaker": "You",
-        "text": "Show my family schedule and remind me about tonight's meeting.",
-        "time": "19:41",
-    },
-    {
-        "speaker": "HomeHub",
-        "text": "Two schedule conflicts were found. I pinned them in the Home tab and created an 8 PM reminder.",
-        "time": "19:41",
-    },
-]
+VOICE_CONVERSATION = build_initial_conversation(PERSISTED_SETTINGS["language"])
 
 CURRENT_CONVERSATION = deepcopy(VOICE_CONVERSATION)
 LAST_VOICE_ROUTE = {
@@ -2101,7 +2130,28 @@ def build_runtime_bridge():
         log=lambda message: print(f"[features] {message}"),
     )
     runtime.invoke_feature = lambda feature_id, payload, locale: FEATURE_MANAGER.invoke_feature(feature_id, payload, locale, runtime)
+    runtime.resolve_message = lambda message, locale: resolve_voice_request(message, locale)
     return runtime
+
+
+def run_background_email_sync():
+    while True:
+        try:
+            runtime = build_runtime_bridge()
+            FEATURE_MANAGER.invoke_feature(
+                "external-channels",
+                {
+                    "mode": "api",
+                    "method": "POST",
+                    "path": "/api/external-channels/email/sync",
+                    "body": {"limit": 10},
+                },
+                PERSISTED_SETTINGS.get("language", "zh-CN"),
+                runtime,
+            )
+        except Exception as exc:
+            print(f"[mail-sync] background sync failed: {exc}")
+        time.sleep(max(30, EMAIL_SYNC_INTERVAL_SECONDS))
 
 
 def ollama_chat_raw(system_prompt, user_prompt, model_name):
@@ -2720,12 +2770,13 @@ def generate_assistant_reply(user_text, locale):
     return "I received your voice. You can also ask me to create a schedule item or reminder."
 
 
-def append_conversation_turn(speaker, text_value):
+def append_conversation_turn(speaker, text_value, artifacts=None):
     CURRENT_CONVERSATION.append(
         {
             "speaker": speaker,
             "text": text_value,
             "time": now_hhmm(),
+            "artifacts": artifacts or [],
         }
     )
     if len(CURRENT_CONVERSATION) > 24:
@@ -3153,7 +3204,17 @@ def build_general_voice_reply(user_text, locale, model_route=None):
 
 def route_voice_request(user_text, locale):
     runtime = build_runtime_bridge()
-    task_spec = build_task_spec(user_text, locale)
+    task_spec = build_task_spec(
+        user_text,
+        locale,
+        detect_ui_action=detect_ui_action,
+        infer_task_spec=lambda text, lang: infer_task_spec_with_openai(
+            text,
+            lang,
+            ai_available=bool(SECRETS.get("openaiApiKey")),
+            openai_chat_json=openai_chat_json,
+        ),
+    )
     runtime_strategy = build_runtime_strategy(load_ollama_inventory())
     route = FEATURE_MANAGER.route_voice_intent(user_text, locale, runtime)
     selected = route.get("selected") or {}
@@ -3437,6 +3498,7 @@ def resolve_voice_request(user_text, locale):
 
     route = route_voice_request(combined_text, locale)
     lookup_result = None
+    ui_action = None
 
     if route.get("kind") == "clarify":
         PENDING_VOICE_CLARIFICATION = {
@@ -3456,13 +3518,17 @@ def resolve_voice_request(user_text, locale):
         result = FEATURE_MANAGER.dispatch_voice_intent(route, combined_text, locale, runtime) or {}
         reply = result.get("reply") or build_general_voice_reply(original_text, locale, route.get("modelRoute"))
         ui_action = result.get("uiAction")
+        artifacts = result.get("artifacts", [])
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
         lookup_result = perform_controlled_network_lookup(combined_text if clarification_context else original_text, locale)
         reply = build_network_lookup_reply(lookup_result, locale)
+        artifacts = []
     elif route.get("kind") == "agent_factory":
         reply = build_agent_factory_reply(locale)
+        artifacts = []
     else:
         reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+        artifacts = []
 
     PENDING_VOICE_CLARIFICATION = None
     return {
@@ -3471,6 +3537,7 @@ def resolve_voice_request(user_text, locale):
         "pendingClarification": None,
         "uiAction": ui_action,
         "lookupResult": lookup_result,
+        "artifacts": artifacts,
     }
 
 
@@ -3619,6 +3686,7 @@ def build_dashboard():
         "lastVoiceRoute": LAST_VOICE_ROUTE,
         "features": FEATURE_MANAGER.list_features(runtime),
         "agentTypes": FEATURE_MANAGER.list_agent_types(PERSISTED_SETTINGS["language"], runtime),
+        "bootstrap": bootstrap_snapshot(),
         **voice_router,
         **feature_payload,
     }
@@ -3640,6 +3708,30 @@ class Handler(BaseHTTPRequestHandler):
             # The browser canceled or replaced the request before the response finished.
             return
 
+    def _send_raw(self, payload, status=200, content_type="text/plain; charset=utf-8"):
+        body = payload if isinstance(payload, bytes) else str(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            return
+
+    def _send_feature_response(self, response):
+        if "rawBody" in response:
+            self._send_raw(
+                response.get("rawBody", ""),
+                status=response.get("status", 200),
+                content_type=response.get("contentType", "text/plain; charset=utf-8"),
+            )
+            return
+        self._send_json(response.get("body", {}), status=response.get("status", 200))
+
     def _send_file(self, file_path: Path, content_type: str):
         if not file_path.exists() or not file_path.is_file():
             self.send_error(404)
@@ -3654,18 +3746,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _read_json_body(self):
+    def _read_request_body(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
-            return None
+            return b""
         if length <= 0:
+            return b""
+        return self.rfile.read(length)
+
+    def _parse_request_body(self, raw):
+        if not raw:
             return None
-        raw = self.rfile.read(length)
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return None
+            return {"_raw": raw.decode("utf-8", errors="ignore")}
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -3673,7 +3769,7 @@ class Handler(BaseHTTPRequestHandler):
         runtime = build_runtime_bridge()
         feature_response = FEATURE_MANAGER.handle_api("GET", path, parse_qs(parsed.query), None, runtime)
         if feature_response:
-            self._send_json(feature_response.get("body", {}), status=feature_response.get("status", 200))
+            self._send_feature_response(feature_response)
             return
 
         if path == "/api/health":
@@ -3682,6 +3778,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/dashboard":
             self._send_json(build_dashboard())
+            return
+
+        if path == "/api/bootstrap/status":
+            self._send_json(bootstrap_snapshot())
             return
 
         if path == "/api/providers":
@@ -3750,6 +3850,21 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(STATIC_DIR / "assets" / "app.js", "application/javascript; charset=utf-8")
             return
 
+        if path.startswith("/generated/"):
+            relative = path.removeprefix("/generated/").strip("/")
+            target = (GENERATED_DIR / relative).resolve()
+            try:
+                target.relative_to(GENERATED_DIR.resolve())
+            except ValueError:
+                self.send_error(403)
+                return
+            if not target.exists() or not target.is_file():
+                self.send_error(404)
+                return
+            content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+            self._send_file(target, content_type)
+            return
+
         self.send_error(404)
 
     def do_POST(self):
@@ -3757,14 +3872,15 @@ class Handler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         runtime = build_runtime_bridge()
-        preview_body = self._read_json_body()
+        raw_body = self._read_request_body()
+        preview_body = self._parse_request_body(raw_body)
         feature_response = FEATURE_MANAGER.handle_api("POST", parsed.path, parse_qs(parsed.query), preview_body, runtime)
         if feature_response:
-            self._send_json(feature_response.get("body", {}), status=feature_response.get("status", 200))
+            self._send_feature_response(feature_response)
             return
 
         if parsed.path == "/api/settings/language":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body or "language" not in body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -3780,8 +3896,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True, "language": language})
             return
 
+        if parsed.path == "/api/bootstrap/approve":
+            PERSISTED_SETTINGS["bootstrapConsent"] = True
+            PERSISTED_SETTINGS["bootstrapCompleted"] = False
+            save_persisted_settings(PERSISTED_SETTINGS)
+            start_bootstrap_install()
+            self._send_json({"ok": True, "bootstrap": bootstrap_snapshot()})
+            return
+
         if parsed.path == "/api/settings/audio":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -3813,7 +3937,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/settings/secrets":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -3825,6 +3949,16 @@ class Handler(BaseHTTPRequestHandler):
                 "googleApiKey": google_api_key,
                 "googleAccessToken": body.get("googleAccessToken", file_secrets.get("googleAccessToken", "")),
                 "openaiApiKey": openai_api_key,
+                "mailAddress": body.get("mailAddress", file_secrets.get("mailAddress", "")),
+                "mailPassword": body.get("mailPassword", file_secrets.get("mailPassword", "")),
+                "mailSmtpHost": body.get("mailSmtpHost", file_secrets.get("mailSmtpHost", "")),
+                "mailSmtpPort": body.get("mailSmtpPort", file_secrets.get("mailSmtpPort", "")),
+                "mailImapHost": body.get("mailImapHost", file_secrets.get("mailImapHost", "")),
+                "mailImapPort": body.get("mailImapPort", file_secrets.get("mailImapPort", "")),
+                "wechatOfficialToken": body.get("wechatOfficialToken", file_secrets.get("wechatOfficialToken", "")),
+                "wechatOfficialAppId": body.get("wechatOfficialAppId", file_secrets.get("wechatOfficialAppId", "")),
+                "wechatOfficialAppSecret": body.get("wechatOfficialAppSecret", file_secrets.get("wechatOfficialAppSecret", "")),
+                "wechatOfficialEncodingAesKey": body.get("wechatOfficialEncodingAesKey", file_secrets.get("wechatOfficialEncodingAesKey", "")),
             })
             SECRETS = get_effective_secrets()
             SECRET_SOURCES = get_secret_sources()
@@ -3833,14 +3967,19 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "googleConfigured": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
                     "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
+                    "mailConfigured": bool(SECRETS.get("mailAddress") and SECRETS.get("mailPassword")),
+                    "wechatOfficialConfigured": bool(SECRETS.get("wechatOfficialToken") and SECRETS.get("wechatOfficialAppId")),
                     "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
                     "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
+                    "mailAddressSource": SECRET_SOURCES.get("mailAddress", "missing"),
+                    "wechatOfficialTokenSource": SECRET_SOURCES.get("wechatOfficialToken", "missing"),
+                    "wechatOfficialAppIdSource": SECRET_SOURCES.get("wechatOfficialAppId", "missing"),
                 }
             )
             return
 
         if parsed.path == "/api/audio/transcribe":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body or "audioBase64" not in body:
                 self._send_json({"error": "audioBase64 is required"}, status=400)
                 return
@@ -3856,11 +3995,14 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"error": f"Unexpected transcription error: {exc}"}, status=500)
                 return
+            transcript_text = str(result.get("transcript", "")).strip()
+            detected_locale = detect_text_locale(transcript_text, normalize_locale(locale, PERSISTED_SETTINGS["language"]))
+            result["detectedLocale"] = detected_locale
             self._send_json({"ok": True, **result})
             return
 
         if parsed.path == "/api/audio/synthesize":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body or "text" not in body:
                 self._send_json({"error": "text is required"}, status=400)
                 return
@@ -3879,7 +4021,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/network/query":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body or "query" not in body:
                 self._send_json({"error": "query is required"}, status=400)
                 return
@@ -3892,7 +4034,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/voice/chat":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body or "message" not in body:
                 self._send_json({"error": "message is required"}, status=400)
                 return
@@ -3902,13 +4044,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "message is empty"}, status=400)
                 return
 
-            locale = body.get("locale", PERSISTED_SETTINGS["language"])
+            requested_locale = normalize_locale(body.get("locale", PERSISTED_SETTINGS["language"]), PERSISTED_SETTINGS["language"])
+            locale = detect_text_locale(message, requested_locale)
             append_conversation_turn("You", message)
             resolution = resolve_voice_request(message, locale)
             voice_route = resolution["route"]
             LAST_VOICE_ROUTE = voice_route
             reply_text = resolution["reply"]
-            append_conversation_turn("HomeHub", reply_text)
+            append_conversation_turn("HomeHub", reply_text, resolution.get("artifacts", []))
 
             audio_payload = None
             if body.get("speakReply", True):
@@ -3923,11 +4066,13 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "reply": reply_text,
+                    "detectedLocale": locale,
                     "conversation": CURRENT_CONVERSATION,
                     "voiceRoute": voice_route,
                     "pendingVoiceClarification": resolution.get("pendingClarification"),
                     "uiAction": resolution.get("uiAction"),
                     "lookupResult": resolution.get("lookupResult"),
+                    "artifacts": resolution.get("artifacts", []),
                     "assistantMemory": build_assistant_memory_snapshot(),
                     "audio": audio_payload,
                 }
@@ -3935,7 +4080,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/settings/audio-provider":
-            body = preview_body or self._read_json_body()
+            body = preview_body
             if not body:
                 self._send_json({"error": "Invalid request body"}, status=400)
                 return
@@ -3986,8 +4131,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/voice/reset":
+            welcome_seed = build_initial_conversation(PERSISTED_SETTINGS["language"])
+            VOICE_CONVERSATION.clear()
+            VOICE_CONVERSATION.extend(deepcopy(welcome_seed))
             CURRENT_CONVERSATION.clear()
-            CURRENT_CONVERSATION.extend(deepcopy(VOICE_CONVERSATION))
+            CURRENT_CONVERSATION.extend(deepcopy(welcome_seed))
             LAST_VOICE_ROUTE = {
                 "kind": "general",
                 "selected": {
@@ -4033,8 +4181,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", RUNTIME_PORT), Handler)
-    print(f"HomeHub runtime started at http://127.0.0.1:{RUNTIME_PORT}")
+    email_sync_thread = threading.Thread(target=run_background_email_sync, daemon=True)
+    email_sync_thread.start()
+    server = ThreadingHTTPServer((RUNTIME_HOST, RUNTIME_PORT), Handler)
+    print(f"HomeHub runtime started at http://{RUNTIME_HOST}:{RUNTIME_PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -16,6 +16,7 @@ BLUEPRINT = {
 API_ROOT = "/api/u5bb6_u5ead_u8d26_u5355"
 API_ITEMS = "/api/u5bb6_u5ead_u8d26_u5355/items"
 API_RUN = "/api/u5bb6_u5ead_u8d26_u5355/run"
+EXPORT_SLUG = "family-bills"
 
 
 class Feature(HomeHubFeature):
@@ -144,12 +145,30 @@ class Feature(HomeHubFeature):
         return "其他"
 
     def should_record_expense(self, text: str) -> bool:
-        return self.detect_amount(text) is not None and any(
-            token in text for token in ["花了", "消费", "支出", "记账", "记到", "账单", "买了"]
-        )
+        if self.detect_amount(text) is None:
+            return False
+        if self.should_summarize(text):
+            return False
+        record_tokens = ["花了", "支出", "记账", "记到", "买了", "付款", "支付了", "消费了", "入账", "记录一笔"]
+        lowered = text.lower()
+        if any(token in text for token in record_tokens):
+            return True
+        return any(token in lowered for token in ["spent", "paid", "record expense", "log expense", "add expense"])
 
     def should_summarize(self, text: str) -> bool:
-        return any(token in text for token in ["总消费", "总额", "花了多少钱", "花费多少", "消费多少", "超出", "预警"])
+        summary_tokens = [
+            "总消费", "总额", "花了多少钱", "花费多少", "消费多少", "超出", "预警",
+            "消费情况", "账单概览", "财务报告", "目前为止", "到目前为止", "现在总共",
+            "累计", "历史记录", "以前有记录", "记录了吗", "有多少记录", "花销", "总共",
+        ]
+        return any(token in text for token in summary_tokens)
+
+    def should_export_artifact(self, text: str) -> bool:
+        export_tokens = ["表格", "excel", "xlsx", "导出", "下载", "文件", "文档", "sheet", "spreadsheet"]
+        data_tokens = ["消费", "账单", "费用", "支出", "明细", "记录"]
+        return any(token in text.lower() or token in text for token in export_tokens) and any(
+            token in text for token in data_tokens
+        )
 
     def parse_threshold(self, text: str, store: dict) -> int:
         match = re.search(r"(\d{3,6})\s*(?:日元|円|yen|jpy)?", text.lower())
@@ -160,7 +179,17 @@ class Feature(HomeHubFeature):
                 pass
         return int(store.get("settings", {}).get("warningThreshold", 2000) or 2000)
 
-    def add_expense_item(self, runtime: RuntimeBridge, amount: int, category: str, source_text: str) -> dict:
+    def add_expense_item(
+        self,
+        runtime: RuntimeBridge,
+        amount: int,
+        category: str,
+        source_text: str,
+        merchant: str = "",
+        purchase_date: str = "",
+        payment_method: str = "",
+        tax_amount: int = 0,
+    ) -> dict:
         store = self.get_store(runtime)
         item = {
             "id": f"{self.feature_id}-item-{self.now_iso().replace(':', '').replace('-', '')}",
@@ -169,11 +198,42 @@ class Feature(HomeHubFeature):
             "currency": "JPY",
             "sourceText": source_text.strip(),
             "createdAt": self.now_iso(),
+            "merchant": merchant.strip(),
+            "purchaseDate": purchase_date.strip(),
+            "paymentMethod": payment_method.strip(),
+            "taxAmount": int(tax_amount or 0),
         }
         store.setdefault("items", []).insert(0, item)
         self.append_action(runtime, f"Recorded {amount} JPY for {category}.")
         self.save_store(store, runtime)
         return item
+
+    def import_expense_items(self, runtime: RuntimeBridge, expenses: list[dict], source_text: str) -> dict:
+        created: list[dict] = []
+        total = 0
+        for expense in expenses:
+            try:
+                amount = int(float(expense.get("amount", 0) or 0))
+            except (TypeError, ValueError):
+                amount = 0
+            if amount <= 0:
+                continue
+            category = str(expense.get("category", "")).strip() or self.detect_category(source_text)
+            content = str(expense.get("content", "")).strip() or str(expense.get("note", "")).strip() or source_text.strip()
+            created.append(
+                self.add_expense_item(
+                    runtime,
+                    amount,
+                    category,
+                    content,
+                    str(expense.get("merchant", "")).strip(),
+                    str(expense.get("purchaseDate", "")).strip(),
+                    str(expense.get("paymentMethod", "")).strip(),
+                    int(float(expense.get("taxAmount", 0) or 0)),
+                )
+            )
+            total += amount
+        return {"items": created, "total": total, "count": len(created)}
 
     def summarize_items(self, runtime: RuntimeBridge, period: str, threshold: int | None = None) -> dict:
         store = self.get_store(runtime)
@@ -187,7 +247,7 @@ class Feature(HomeHubFeature):
                 continue
             same_day = created_at.date() == now.date()
             same_week = created_at.isocalendar()[:2] == now.isocalendar()[:2]
-            if (period == "today" and same_day) or (period == "week" and same_week):
+            if period == "all" or (period == "today" and same_day) or (period == "week" and same_week):
                 matched.append(item)
                 total += int(item.get("amount", 0) or 0)
         effective_threshold = threshold if threshold is not None else int(store.get("settings", {}).get("warningThreshold", 2000) or 2000)
@@ -208,22 +268,93 @@ class Feature(HomeHubFeature):
 
     def build_summary_reply(self, summary: dict, locale: str, include_total_always: bool = True) -> str:
         total = int(summary.get("total", 0) or 0)
+        count = int(summary.get("count", 0) or 0)
         threshold = int(summary.get("threshold", 2000) or 2000)
         over = bool(summary.get("overThreshold"))
-        label = "今天" if summary.get("period") == "today" else "本周"
+        period = str(summary.get("period") or "today")
+        label = "今天" if period == "today" else ("本周" if period == "week" else "到目前为止")
         if locale != "zh-CN":
-            base = f"Your {summary.get('period', 'current')} total is {total} JPY."
+            scope = "today" if period == "today" else ("this week" if period == "week" else "so far")
+            base = f"Your {scope} total is {total} JPY across {count} records."
             return base + (f" Warning: this is over the {threshold} JPY threshold." if over else "")
-        base = f"{label}截至目前总消费是 {total} 日元。"
+        base = f"{label}总消费是 {total} 日元，共有 {count} 条账目记录。"
         if over:
             return base + f" 已超过 {threshold} 日元预警额度。"
         return base if include_total_always else ""
+
+    def export_items_artifact(self, runtime: RuntimeBridge, period: str) -> dict:
+        summary = self.summarize_items(runtime, period, None)
+        items = list(summary.get("items", []))
+        generated_dir = runtime.root / "generated" / self.feature_id
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        label = "today" if period == "today" else ("week" if period == "week" else "all")
+        path = generated_dir / f"{stamp}-{EXPORT_SLUG}-{label}.xlsx"
+        try:
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Expenses"
+            sheet.append(["Created At", "Purchase Date", "Merchant", "Category", "Amount (JPY)", "Tax (JPY)", "Payment Method", "Currency", "Source Text"])
+            for item in items:
+                sheet.append([
+                    str(item.get("createdAt", "")),
+                    str(item.get("purchaseDate", "")),
+                    str(item.get("merchant", "")),
+                    str(item.get("category", "")),
+                    int(item.get("amount", 0) or 0),
+                    int(item.get("taxAmount", 0) or 0),
+                    str(item.get("paymentMethod", "")),
+                    str(item.get("currency", "JPY")),
+                    str(item.get("sourceText", "")),
+                ])
+            sheet.append([])
+            sheet.append(["Summary"])
+            sheet.append(["Period", period])
+            sheet.append(["Total", int(summary.get("total", 0) or 0)])
+            sheet.append(["Count", int(summary.get("count", 0) or 0)])
+            workbook.save(path)
+        except Exception:
+            path = path.with_suffix(".csv")
+            lines = ["Created At,Purchase Date,Merchant,Category,Amount (JPY),Tax (JPY),Payment Method,Currency,Source Text"]
+            for item in items:
+                source = str(item.get("sourceText", "")).replace('"', '""')
+                purchase_date = str(item.get("purchaseDate", "")).replace('"', '""')
+                merchant = str(item.get("merchant", "")).replace('"', '""')
+                payment_method = str(item.get("paymentMethod", "")).replace('"', '""')
+                lines.append(
+                    f"\"{item.get('createdAt', '')}\",\"{purchase_date}\",\"{merchant}\",\"{item.get('category', '')}\",\"{int(item.get('amount', 0) or 0)}\",\"{int(item.get('taxAmount', 0) or 0)}\",\"{payment_method}\",\"{item.get('currency', 'JPY')}\",\"{source}\""
+                )
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.append_action(runtime, f"Exported {period} expense table with {len(items)} items.")
+        return {
+            "kind": "spreadsheet",
+            "label": "Expense table" if label != "all" else "Expense table so far",
+            "fileName": path.name,
+            "url": f"/generated/{self.feature_id}/{path.name}",
+            "path": str(path.relative_to(runtime.root)),
+            "summary": summary,
+        }
 
     def run_feature(self, runtime: RuntimeBridge, source: str, payload: dict | None = None) -> dict:
         request = dict(payload or {})
         store = self.get_store(runtime)
         store["lastRun"] = self.now_iso()
         action = str(request.get("action", "")).strip() or ("record_expense" if self.should_record_expense(str(request.get("message", ""))) else "report_today_total")
+        if action == "import_expenses":
+            message = str(request.get("message", "")).strip()
+            expenses = request.get("expenses", [])
+            imported = self.import_expense_items(runtime, expenses if isinstance(expenses, list) else [], message)
+            if imported["count"] <= 0:
+                return {"ok": False, "error": "amount_required", "message": "No expense amount detected from image."}
+            return {
+                "ok": True,
+                "action": action,
+                "items": imported["items"],
+                "summary": {"count": imported["count"], "total": imported["total"]},
+                "reply": f"已从图片中记录 {imported['count']} 条消费，共 {imported['total']} 日元。",
+            }
         if action == "record_expense":
             message = str(request.get("message", "")).strip()
             amount = int(request.get("amount", 0) or self.detect_amount(message) or 0)
@@ -255,16 +386,25 @@ class Feature(HomeHubFeature):
         }
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.should_export_artifact(message):
+            period = "all" if any(token in message for token in ["目前为止", "到目前为止", "现在总共", "累计", "历史", "以前"]) else ("today" if "今天" in message else "week")
+            artifact = self.export_items_artifact(runtime, period)
+            summary = artifact.get("summary", {})
+            reply = (
+                f"我已经把{('今天' if period == 'today' else ('本周' if period == 'week' else '到目前为止'))}的消费记录整理成表格了，"
+                f"共 {int(summary.get('count', 0) or 0)} 条，合计 {int(summary.get('total', 0) or 0)} 日元。"
+            )
+            return {"reply": reply, "artifacts": [artifact], "result": {"ok": True, "action": "export_expense_table", "summary": summary}}
         if self.should_record_expense(message):
             result = self.run_feature(runtime, "voice", {"action": "record_expense", "message": message, "locale": locale})
             return {"reply": result.get("reply", ""), "result": result}
         if self.should_summarize(message):
-            period = "today" if "今天" in message else "week"
+            period = "all" if any(token in message for token in ["目前为止", "到目前为止", "现在总共", "累计", "历史", "以前"]) else ("today" if "今天" in message else "week")
             result = self.run_feature(
                 runtime,
                 "voice",
                 {
-                    "action": "report_today_total" if period == "today" else "report_week_total",
+                    "action": "report_all_total" if period == "all" else ("report_today_total" if period == "today" else "report_week_total"),
                     "period": period,
                     "threshold": self.parse_threshold(message, self.get_store(runtime)),
                     "includeTotalAlways": True,

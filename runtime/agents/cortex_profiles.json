@@ -1,0 +1,57 @@
+{
+  "items": {
+    "custom-agent-20260403142506": {
+      "agentId": "custom-agent-20260403142506",
+      "agentName": "家庭账单",
+      "createdAt": "2026-04-06T12:51",
+      "updatedAt": "2026-04-06T12:52",
+      "stage": "complete",
+      "blueprint": {
+        "mission": "记录用户的消费并提供每周的消费总结和提醒",
+        "primaryUser": "家庭成员，使用你的人。",
+        "trigger": "用户输入消费或根据图片内容进行金额记录，或者询问本周的消费总额和详细情况",
+        "inputs": "[{'name': '消费类型', 'type': 'string', 'description': '用户输入的消费类型，如衣服、餐饮等'}, {'name': '消费金额', 'type': 'number', 'description': '用户输入的消费金额'}, {'name': '图片内容', 'type': 'image', 'description': '用户提供的图片，用于识别消费金额'}]",
+        "output": "[{'name': '记录结果', 'type': 'string', 'description': '消费记录的结果，包括消费类型和金额'}, {'name': '每周总结', 'type': 'string', 'description': '每周六晚上六点发送的消费总结消息，包括总花费和详细消费情况'}]",
+        "constraints": "[{'condition': '无法判断是什么消费时', 'action': '用其他来记录'}, {'condition': '用户询问本周的消费总额和详细情况', 'action': '总结性告诉我花费总额和都花在什么地方了'}]",
+        "networkEnabled": false,
+        "generatedFeatureId": "u5bb6_u5ead_u8d26_u5355"
+      },
+      "stats": {
+        "totalEvents": 0,
+        "usageEvents": 0,
+        "confirmations": 0,
+        "networkLookups": 0,
+        "attachmentInputs": 0,
+        "textInputs": 0,
+        "successfulRuns": 0
+      },
+      "signals": {
+        "inputModes": {
+          "text": 0,
+          "image": 0
+        },
+        "topics": {
+          "finance": 1,
+          "schedule": 1
+        },
+        "toolDependence": {
+          "local": 0,
+          "network": 0
+        },
+        "workingStyle": {
+          "proactive": 118,
+          "structured": 118,
+          "cautious": 0
+        }
+      },
+      "evolution": {
+        "stageLabel": "seed",
+        "personalizationScore": 0.0,
+        "ownModelReadiness": "low",
+        "recommendedBrain": "shared",
+        "nextUpgrade": "Collect more confirmed interactions before specializing this agent."
+      },
+      "recentEvents": []
+    }
+  }
+}

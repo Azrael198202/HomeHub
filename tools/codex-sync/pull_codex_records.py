@@ -107,6 +107,32 @@ def should_copy(rel_path: Path, include_patterns: list[str], exclude_patterns: l
     return True
 
 
+def map_destination_rel_path(rel_path: Path) -> Path:
+    """
+    Map legacy machine layouts into current Codex layout.
+    Example legacy path:
+      2026/03/19/rollout-....jsonl
+    Current expected path:
+      sessions/2026/03/19/rollout-....jsonl
+    """
+    parts = rel_path.parts
+    if len(parts) >= 4:
+        year, month, day = parts[0], parts[1], parts[2]
+        filename = parts[-1]
+        if (
+            year.isdigit()
+            and len(year) == 4
+            and month.isdigit()
+            and len(month) == 2
+            and day.isdigit()
+            and len(day) == 2
+            and filename.startswith("rollout-")
+            and filename.endswith(".jsonl")
+        ):
+            return Path("sessions") / rel_path
+    return rel_path
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -162,10 +188,11 @@ def import_machine(config: PullConfig, machine_name: str, state: dict[str, str])
 
     for rel_path in collect_repo_files(machine_dir, config.include_patterns, config.exclude_patterns):
         repo_file = machine_dir / rel_path
-        local_file = config.source_dir / rel_path
+        destination_rel_path = map_destination_rel_path(rel_path)
+        local_file = config.source_dir / destination_rel_path
         local_file.parent.mkdir(parents=True, exist_ok=True)
 
-        key = f"{machine_name}/{normalize_rel_path(rel_path)}"
+        key = f"{machine_name}/{normalize_rel_path(destination_rel_path)}"
         repo_hash = sha256(repo_file)
         previous_hash = state.get(key)
 
