@@ -3454,8 +3454,9 @@ def resolve_voice_request(user_text, locale):
     combined_text = user_text
     clarification_context = PENDING_VOICE_CLARIFICATION
     ui_action = detect_ui_action(original_text, locale)
-    network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
-        token in str(original_text or "").lower() for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    text_lower = str(original_text or "").lower()
+    network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方网站", "官方消息", "最新消息", "最新新闻"]) or any(
+        token in text_lower for token in ["search", "lookup", "look up", "official website", "latest news", "breaking news", "web search", "online search"]
     )
 
     if ui_action and not clarification_context:
@@ -3511,6 +3512,15 @@ def resolve_voice_request(user_text, locale):
             "modelRoute": select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])}),
         }
         lookup_result = perform_controlled_network_lookup(original_text, locale)
+        if not lookup_result.get("ok") and str(lookup_result.get("error", "")).strip() == "no_allowed_source_found":
+            fallback_reply = build_general_voice_reply(original_text, locale, route.get("modelRoute"))
+            return {
+                "reply": fallback_reply,
+                "route": serialize_voice_route(route),
+                "pendingClarification": None,
+                "uiAction": None,
+                "lookupResult": lookup_result,
+            }
         return {
             "reply": build_network_lookup_reply(lookup_result, locale),
             "route": serialize_voice_route(route),
@@ -3550,7 +3560,10 @@ def resolve_voice_request(user_text, locale):
         artifacts = result.get("artifacts", [])
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
         lookup_result = perform_controlled_network_lookup(combined_text if clarification_context else original_text, locale)
-        reply = build_network_lookup_reply(lookup_result, locale)
+        if not lookup_result.get("ok") and str(lookup_result.get("error", "")).strip() == "no_allowed_source_found":
+            reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+        else:
+            reply = build_network_lookup_reply(lookup_result, locale)
         artifacts = []
     elif route.get("kind") == "agent_factory":
         reply = build_agent_factory_reply(locale)
