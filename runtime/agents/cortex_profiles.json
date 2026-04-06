@@ -39,8 +39,8 @@
           "network": 0
         },
         "workingStyle": {
-          "proactive": 5255,
-          "structured": 5255,
+          "proactive": 5295,
+          "structured": 5295,
           "cautious": 0
         }
       },
