@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import html
 import imaplib
 import json
@@ -94,13 +95,13 @@ class Feature(HomeHubFeature):
                 },
                 "line": {
                     "enabled": False,
-                    "status": "placeholder",
-                    "summary": "Reserved integration surface for LINE. Webhook and sender interfaces are scaffolded but not wired yet.",
-                "users": [],
-                "inbox": [],
-                "outbox": [],
-                "pending": [],
-            },
+                    "status": "ready-for-webhook",
+                    "summary": "Supports LINE Messaging API webhook, bridge handoff, and outbound push replies.",
+                    "users": [],
+                    "inbox": [],
+                    "outbox": [],
+                    "pending": [],
+                },
             },
             "mail": {
                 "enabled": True,
@@ -449,6 +450,15 @@ class Feature(HomeHubFeature):
             "configured": bool(token and app_id),
         }
 
+    def get_line_config(self, runtime: RuntimeBridge) -> dict:
+        channel_secret = str(runtime.get_secret("lineChannelSecret", "")).strip()
+        channel_access_token = str(runtime.get_secret("lineChannelAccessToken", "")).strip()
+        return {
+            "channelSecret": channel_secret,
+            "channelAccessToken": channel_access_token,
+            "configured": bool(channel_secret and channel_access_token),
+        }
+
     def get_bridge_config(self, runtime: RuntimeBridge) -> dict:
         target_url = str(runtime.get_secret("externalBridgeUrl", "")).strip()
         shared_token = str(runtime.get_secret("externalBridgeToken", "")).strip()
@@ -622,6 +632,16 @@ class Feature(HomeHubFeature):
             return deepcopy(item)
         return None
 
+    def claim_pending_bridge_item_from_apps(self, apps: dict) -> dict | None:
+        for app_key in ["wechatOfficial", "line"]:
+            bucket = apps.get(app_key, {})
+            if not isinstance(bucket, dict):
+                continue
+            item = self.claim_pending_bridge_item(bucket)
+            if item:
+                return item
+        return None
+
     def complete_bridge_item(self, bucket: dict, message_id: str, reply: str, resolution: dict | None) -> dict | None:
         pending = bucket.setdefault("pending", [])
         for index, item in enumerate(pending):
@@ -635,6 +655,16 @@ class Feature(HomeHubFeature):
             if isinstance(resolution, dict):
                 item["resolution"] = resolution
             return pending.pop(index)
+        return None
+
+    def complete_bridge_item_from_apps(self, apps: dict, message_id: str, reply: str, resolution: dict | None) -> dict | None:
+        for app_key in ["wechatOfficial", "line"]:
+            bucket = apps.get(app_key, {})
+            if not isinstance(bucket, dict):
+                continue
+            completed = self.complete_bridge_item(bucket, message_id, reply, resolution)
+            if completed:
+                return completed
         return None
 
     def get_wechat_access_token(self, runtime: RuntimeBridge) -> tuple[str, str]:
@@ -693,6 +723,113 @@ class Feature(HomeHubFeature):
             return False, error_text
         self.write_debug_log(runtime, "wechat_send_success", {"target": user_id, "contentPreview": content[:240]})
         return True, ""
+
+    def verify_line_signature(self, channel_secret: str, signature: str, raw_text: str) -> bool:
+        if not channel_secret or not signature:
+            return False
+        digest = hmac.new(channel_secret.encode("utf-8"), raw_text.encode("utf-8"), hashlib.sha256).digest()
+        expected = base64.b64encode(digest).decode("utf-8")
+        return hmac.compare_digest(expected, signature.strip())
+
+    def parse_line_payload(self, raw_text: str) -> dict:
+        payload = json.loads(raw_text)
+        return payload if isinstance(payload, dict) else {}
+
+    def normalize_line_event(self, event: dict) -> tuple[dict, str, str, str, dict]:
+        source = event.get("source", {}) if isinstance(event.get("source"), dict) else {}
+        source_type = str(source.get("type", "")).strip().lower()
+        sender_id = (
+            str(source.get("userId", "")).strip()
+            or str(source.get("groupId", "")).strip()
+            or str(source.get("roomId", "")).strip()
+        )
+        sender = {
+            "id": sender_id,
+            "displayName": sender_id or source_type or "line-user",
+            "remark": source_type,
+        }
+        reply_token = str(event.get("replyToken", "")).strip()
+        event_type = str(event.get("type", "")).strip().lower() or "message"
+        message = event.get("message", {}) if isinstance(event.get("message"), dict) else {}
+        message_type = str(message.get("type", "")).strip().lower() or event_type
+        content = ""
+        if event_type == "message":
+            if message_type == "text":
+                content = str(message.get("text", "")).strip()
+            elif message_type == "image":
+                content = f"[line image]\nmessageId: {str(message.get('id', '')).strip()}".strip()
+            elif message_type == "audio":
+                duration = str(message.get("duration", "")).strip()
+                content = f"[line audio]\nmessageId: {str(message.get('id', '')).strip()}\nduration: {duration}".strip()
+            elif message_type == "video":
+                content = f"[line video]\nmessageId: {str(message.get('id', '')).strip()}".strip()
+            elif message_type == "file":
+                content = f"[line file]\nfileName: {str(message.get('fileName', '')).strip()}\nmessageId: {str(message.get('id', '')).strip()}".strip()
+            elif message_type == "location":
+                content = f"[line location]\ntitle: {str(message.get('title', '')).strip()}\naddress: {str(message.get('address', '')).strip()}".strip()
+            elif message_type == "sticker":
+                content = f"[line sticker]\npackageId: {str(message.get('packageId', '')).strip()}\nstickerId: {str(message.get('stickerId', '')).strip()}".strip()
+        elif event_type == "follow":
+            message_type = "event"
+            content = "用户刚刚添加了 LINE 官方账号，希望开始与 HomeHub 对话。"
+        elif event_type == "join":
+            message_type = "event"
+            content = "LINE 官方账号被加入了群组或房间。"
+        elif event_type == "postback":
+            message_type = "event"
+            postback = event.get("postback", {}) if isinstance(event.get("postback"), dict) else {}
+            content = f"[line postback] {str(postback.get('data', '')).strip()}".strip()
+        else:
+            message_type = "event"
+            content = f"[line event] {event_type}".strip()
+        metadata = {
+            "replyToken": reply_token,
+            "eventType": event_type,
+            "source": source,
+            "messageId": str(message.get("id", "")).strip(),
+        }
+        return sender, message_type, content, reply_token, metadata
+
+    def send_line_api(self, runtime: RuntimeBridge, endpoint: str, payload: dict, *, debug_prefix: str, target: str) -> tuple[bool, str]:
+        config = self.get_line_config(runtime)
+        if not config["configured"]:
+            self.write_debug_log(runtime, f"{debug_prefix}_failed", {"target": target, "error": "line_not_configured"})
+            return False, "line_not_configured"
+        request = urllib.request.Request(
+            f"https://api.line.me{endpoint}",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": f"Bearer {config['channelAccessToken']}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                raw = response.read().decode("utf-8", errors="replace").strip()
+                result = json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            error_text = body or str(exc)
+            self.write_debug_log(runtime, f"{debug_prefix}_failed", {"target": target, "error": error_text, "status": exc.code})
+            return False, error_text
+        except Exception as exc:
+            self.write_debug_log(runtime, f"{debug_prefix}_failed", {"target": target, "error": str(exc), "errorType": exc.__class__.__name__})
+            return False, str(exc)
+        self.write_debug_log(runtime, f"{debug_prefix}_success", {"target": target, "response": result})
+        return True, ""
+
+    def send_line_reply_text(self, runtime: RuntimeBridge, reply_token: str, content: str) -> tuple[bool, str]:
+        if not reply_token:
+            return False, "missing_reply_token"
+        payload = {"replyToken": reply_token, "messages": [{"type": "text", "text": content}]}
+        return self.send_line_api(runtime, "/v2/bot/message/reply", payload, debug_prefix="line_reply", target=reply_token)
+
+    def send_line_push_text(self, runtime: RuntimeBridge, user_id: str, content: str) -> tuple[bool, str]:
+        if not user_id:
+            return False, "missing_user_id"
+        payload = {"to": user_id, "messages": [{"type": "text", "text": content}]}
+        return self.send_line_api(runtime, "/v2/bot/message/push", payload, debug_prefix="line_push", target=user_id)
 
     def normalize_wechat_message(self, payload: dict) -> tuple[str, str]:
         message_type = str(payload.get("MsgType", "text")).strip().lower() or "text"
@@ -1304,12 +1441,12 @@ class Feature(HomeHubFeature):
         wechat = apps.get("wechatOfficial", {}) if isinstance(apps.get("wechatOfficial"), dict) else {}
         mail = store.get("mail", {}) if isinstance(store.get("mail"), dict) else {}
         if locale == "zh-CN":
-            apps_summary = f"外接应用已准备好，公众号收件 {len(wechat.get('inbox', []))} 条，LINE 接口已留占位。"
+            apps_summary = f"外接应用已准备好，公众号收件 {len(wechat.get('inbox', []))} 条，LINE 收件 {len(line.get('inbox', []))} 条。"
             mail_summary = f"邮件模块已准备好，当前收件 {len(mail.get('inbox', []))} 条，发件队列 {len(mail.get('outbox', []))} 条。"
             apps_name = "外部应用连接"
             mail_name = "邮件收发"
         else:
-            apps_summary = f"External app bridge ready. WeChat inbox: {len(wechat.get('inbox', []))}, LINE scaffold reserved."
+            apps_summary = f"External app bridge ready. WeChat inbox: {len(wechat.get('inbox', []))}, LINE inbox: {len(line.get('inbox', []))}."
             mail_summary = f"Mail bridge ready. Inbox: {len(mail.get('inbox', []))}, outbox: {len(mail.get('outbox', []))}."
             apps_name = "External Apps"
             mail_name = "Mail Hub"
@@ -1320,6 +1457,7 @@ class Feature(HomeHubFeature):
     def dashboard_payload(self, locale: str, runtime: RuntimeBridge) -> dict:
         store = self.get_store(runtime)
         wechat_config = self.get_wechat_official_config(runtime)
+        line_config = self.get_line_config(runtime)
         mail_config = self.get_mail_config(runtime)
         return {
             "externalChannels": {
@@ -1333,6 +1471,12 @@ class Feature(HomeHubFeature):
                     "appSecretConfigured": bool(wechat_config["appSecret"]),
                     "encodingAesKeyConfigured": bool(wechat_config["encodingAesKey"]),
                     "webhookUrl": API_WECHAT_WEBHOOK,
+                },
+                "lineConfig": {
+                    "configured": line_config["configured"],
+                    "channelSecretConfigured": bool(line_config["channelSecret"]),
+                    "channelAccessTokenConfigured": bool(line_config["channelAccessToken"]),
+                    "webhookUrl": API_LINE_WEBHOOK,
                 },
                 "mailConfig": {
                     "configured": mail_config["configured"],
@@ -1361,6 +1505,7 @@ class Feature(HomeHubFeature):
                     "mail": mail,
                     "recentActions": store.get("recentActions", [])[:10],
                     "wechatOfficialConfig": self.get_wechat_official_config(runtime),
+                    "lineConfig": self.get_line_config(runtime),
                     "mailConfig": self.get_mail_config(runtime),
                     "bridgeConfig": self.get_bridge_config(runtime),
                 },
@@ -1373,7 +1518,7 @@ class Feature(HomeHubFeature):
             if not bridge_config["sharedToken"] or shared_token != bridge_config["sharedToken"]:
                 self.write_debug_log(runtime, "bridge_pull_rejected", {"reason": "invalid_bridge_token"})
                 return {"status": 403, "body": {"ok": False, "error": "invalid_bridge_token"}}
-            item = self.claim_pending_bridge_item(wechat)
+            item = self.claim_pending_bridge_item_from_apps(apps)
             self.save_store(store, runtime)
             if not item:
                 return {"status": 200, "body": {"ok": True, "item": None}}
@@ -1447,13 +1592,14 @@ class Feature(HomeHubFeature):
             resolution = payload.get("resolution", {}) if isinstance(payload.get("resolution"), dict) else {}
             if not message_id:
                 return {"status": 400, "body": {"ok": False, "error": "messageId is required"}}
-            completed = self.complete_bridge_item(wechat, message_id, reply, resolution)
+            completed = self.complete_bridge_item_from_apps(apps, message_id, reply, resolution)
             if not completed:
                 return {"status": 404, "body": {"ok": False, "error": "message_not_found"}}
             target_user = str((completed.get("sender") or {}).get("id", "")).strip()
+            channel = str(completed.get("channel", "")).strip()
             send_ok = False
             send_error = ""
-            if completed.get("channel") == "wechat-official" and target_user and reply:
+            if channel == "wechat-official" and target_user and reply:
                 send_ok, send_error = self.send_wechat_official_text(runtime, target_user, reply)
                 out_item = self.queue_outbound(
                     wechat,
@@ -1464,13 +1610,24 @@ class Feature(HomeHubFeature):
                 out_item["status"] = "sent" if send_ok else "failed"
                 if send_error:
                     out_item["error"] = send_error
+            elif channel == "line" and target_user and reply:
+                send_ok, send_error = self.send_line_push_text(runtime, target_user, reply)
+                out_item = self.queue_outbound(
+                    line,
+                    {"id": target_user, "displayName": target_user},
+                    reply,
+                    "line",
+                )
+                out_item["status"] = "sent" if send_ok else "failed"
+                if send_error:
+                    out_item["error"] = send_error
             self.save_store(store, runtime)
             self.write_debug_log(
                 runtime,
                 "bridge_result_processed",
                 {
                     "messageId": message_id,
-                    "channel": completed.get("channel", ""),
+                    "channel": channel,
                     "targetUser": target_user,
                     "replyPreview": reply[:240],
                     "sendOk": send_ok,
@@ -1479,7 +1636,7 @@ class Feature(HomeHubFeature):
             )
             self.write_processing_log(
                 runtime,
-                "wechat-official",
+                channel or "external-bridge",
                 {
                     "eventType": "bridge_result_processed",
                     "messageId": message_id,
@@ -1692,12 +1849,155 @@ class Feature(HomeHubFeature):
             return {"status": 200 if send_ok else 502, "body": {"ok": send_ok, "item": item, "error": send_error}}
 
         if method == "POST" and path == API_LINE_WEBHOOK:
-            self.append_action(runtime, "LINE inbound webhook placeholder was called.")
-            return {"status": 202, "body": {"ok": False, "status": "placeholder", "message": "LINE webhook scaffold is reserved but not implemented yet.", "line": line}}
+            config = self.get_line_config(runtime)
+            payload = body or {}
+            raw_text = str(payload.get("_raw", "")).strip()
+            headers = payload.get("_headers", {}) if isinstance(payload.get("_headers"), dict) else {}
+            signature = str(headers.get("x-line-signature", "")).strip()
+            if not config["configured"]:
+                self.write_debug_log(runtime, "line_inbound_failed", {"reason": "line_not_configured"})
+                return {"status": 503, "body": {"error": "LINE is not configured."}}
+            if not raw_text:
+                self.write_debug_log(runtime, "line_inbound_failed", {"reason": "missing_json_body"})
+                return {"status": 400, "body": {"error": "LINE webhook requires JSON body."}}
+            if not self.verify_line_signature(config["channelSecret"], signature, raw_text):
+                self.write_debug_log(runtime, "line_inbound_failed", {"reason": "invalid_signature"})
+                return {"status": 403, "body": {"error": "invalid signature"}}
+            try:
+                line_payload = self.parse_line_payload(raw_text)
+            except (json.JSONDecodeError, ValueError):
+                self.write_debug_log(runtime, "line_inbound_failed", {"reason": "invalid_json", "rawPreview": raw_text[:240]})
+                return {"status": 400, "body": {"error": "Invalid LINE JSON payload."}}
+            events = line_payload.get("events", []) if isinstance(line_payload.get("events"), list) else []
+            bridge_config = self.get_bridge_config(runtime)
+            processed = 0
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                sender, message_type, content, reply_token, metadata = self.normalize_line_event(event)
+                event_type = str(metadata.get("eventType", "")).strip()
+                locale = str(runtime.get_setting("language", "zh-CN")).strip() or "zh-CN"
+                self.write_debug_log(
+                    runtime,
+                    "line_inbound_received",
+                    {
+                        "senderId": sender["id"],
+                        "messageType": message_type,
+                        "eventType": event_type,
+                        "contentPreview": content[:240],
+                    },
+                )
+                if not sender["id"] or not content:
+                    continue
+                self.upsert_channel_user(line.setdefault("users", []), sender)
+                if bridge_config["configured"] and bridge_config.get("targetUrl"):
+                    bridge_result = self.forward_bridge_request(
+                        runtime,
+                        channel="line",
+                        sender=sender,
+                        content=content,
+                        locale=locale,
+                        subject="",
+                        attachments=[],
+                        message_type=message_type,
+                        metadata=metadata,
+                    )
+                    if bridge_result.get("ok"):
+                        bridge_body = bridge_result.get("body", {}) if isinstance(bridge_result.get("body"), dict) else {}
+                        resolution = bridge_body.get("resolution", {}) if isinstance(bridge_body.get("resolution"), dict) else {}
+                        if not resolution:
+                            resolution = {"reply": str(bridge_body.get("reply", "")).strip()}
+                        resolution["resolutionStrategy"] = str(resolution.get("resolutionStrategy", "")).strip() or "line_bridge_forward"
+                    else:
+                        error_text = str(bridge_result.get("error", "")).strip() or "bridge_unavailable"
+                        resolution = {
+                            "reply": "本地 HomeHub 当前不可达，请稍后再试。",
+                            "route": {
+                                "kind": "bridge",
+                                "selected": {"featureId": "external-channels", "action": "line_bridge_unavailable", "score": 1.0},
+                            },
+                            "resolutionStrategy": "line_bridge_failed",
+                            "bridgeError": error_text,
+                        }
+                    reply_text = str(resolution.get("reply", "")).strip() or "HomeHub 已收到你的消息。"
+                    if reply_token:
+                        self.send_line_reply_text(runtime, reply_token, reply_text)
+                else:
+                    if bridge_config.get("sharedToken"):
+                        queue_item = self.create_bridge_queue_item(
+                            "line",
+                            sender,
+                            content,
+                            locale,
+                            message_type=message_type,
+                            metadata=metadata,
+                        )
+                        line.setdefault("pending", []).insert(0, queue_item)
+                        del line["pending"][100:]
+                        self.save_store(store, runtime)
+                        self.write_debug_log(
+                            runtime,
+                            "line_bridge_queued",
+                            {
+                                "messageId": queue_item["id"],
+                                "senderId": sender["id"],
+                                "messageType": message_type,
+                                "contentPreview": content[:240],
+                            },
+                        )
+                        if reply_token:
+                            self.send_line_reply_text(runtime, reply_token, "消息已收到，正在交给本地 HomeHub 处理。")
+                        processed += 1
+                        continue
+                    resolution = self.resolve_inbound(runtime, "line", sender, content, locale)
+                    reply_text = str(resolution.get("reply", "")).strip() or "HomeHub 已收到你的消息。"
+                    if reply_token:
+                        self.send_line_reply_text(runtime, reply_token, reply_text)
+                item = self.record_inbound_message(line, sender, content, locale, message_type=message_type, homehub_result=resolution)
+                self.append_action(runtime, f"Processed inbound LINE message from {sender.get('displayName') or sender['id']}.")
+                self.write_debug_log(
+                    runtime,
+                    "line_inbound_replied",
+                    {
+                        "senderId": sender["id"],
+                        "messageType": message_type,
+                        "replyPreview": reply_text[:240],
+                    },
+                )
+                self.write_processing_log(
+                    runtime,
+                    "line",
+                    {
+                        "eventType": "inbound_processed",
+                        "sender": sender,
+                        "messageType": message_type,
+                        "event": event_type,
+                        "content": content[:4000],
+                        "route": resolution.get("route", {}),
+                        "effectiveLocale": resolution.get("effectiveLocale", locale),
+                        "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                        "reply": reply_text,
+                        "artifacts": resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
+                    },
+                )
+                processed += 1
+            self.save_store(store, runtime)
+            return {"status": 200, "body": {"ok": True, "processed": processed}}
 
         if method == "POST" and path == API_LINE_SEND:
-            self.append_action(runtime, "LINE outbound placeholder was called.")
-            return {"status": 202, "body": {"ok": False, "status": "placeholder", "message": "LINE sender scaffold is reserved but not implemented yet.", "line": line}}
+            payload = body or {}
+            target = {"id": str(payload.get("userId", "")).strip(), "displayName": str(payload.get("displayName", "")).strip()}
+            content = str(payload.get("content", "")).strip()
+            if not target["id"] or not content:
+                return {"status": 400, "body": {"error": "userId and content are required"}}
+            item = self.queue_outbound(line, target, content, "line")
+            send_ok, send_error = self.send_line_push_text(runtime, target["id"], content)
+            item["status"] = "sent" if send_ok else "failed"
+            if send_error:
+                item["error"] = send_error
+            self.save_store(store, runtime)
+            self.append_action(runtime, f"Sent outbound LINE message for {target.get('displayName') or target['id']}." if send_ok else f"Failed outbound LINE message for {target.get('displayName') or target['id']}.")
+            return {"status": 200 if send_ok else 502, "body": {"ok": send_ok, "item": item, "error": send_error}}
 
         if method == "POST" and path == API_EMAIL_INTAKE:
             payload = body or {}

@@ -99,6 +99,8 @@ HOMEHUB_WECHAT_OFFICIAL_APP_ID=your_app_id
 HOMEHUB_WECHAT_OFFICIAL_APP_SECRET=your_app_secret
 HOMEHUB_WECHAT_OFFICIAL_TOKEN=your_token
 HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY=
+HOMEHUB_LINE_CHANNEL_SECRET=your_line_channel_secret
+HOMEHUB_LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
 ```
 
 5. Railway provides `PORT` automatically. `runtime/api_server.py` binds to `0.0.0.0:$PORT` for Railway.

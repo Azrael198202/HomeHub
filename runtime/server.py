@@ -521,6 +521,8 @@ def default_secrets():
         "wechatOfficialAppId": "",
         "wechatOfficialAppSecret": "",
         "wechatOfficialEncodingAesKey": "",
+        "lineChannelSecret": "",
+        "lineChannelAccessToken": "",
         "externalBridgeUrl": "",
         "externalBridgeToken": "",
     }
@@ -1214,6 +1216,8 @@ def load_secrets_file():
         "wechatOfficialAppId": data.get("wechatOfficialAppId", ""),
         "wechatOfficialAppSecret": data.get("wechatOfficialAppSecret", ""),
         "wechatOfficialEncodingAesKey": data.get("wechatOfficialEncodingAesKey", ""),
+        "lineChannelSecret": data.get("lineChannelSecret", ""),
+        "lineChannelAccessToken": data.get("lineChannelAccessToken", ""),
         "externalBridgeUrl": data.get("externalBridgeUrl", ""),
         "externalBridgeToken": data.get("externalBridgeToken", ""),
     }
@@ -1246,6 +1250,8 @@ def get_effective_secrets():
     wechat_official_app_id = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") or file_secrets.get("wechatOfficialAppId", "")
     wechat_official_app_secret = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") or file_secrets.get("wechatOfficialAppSecret", "")
     wechat_official_encoding_aes_key = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") or file_secrets.get("wechatOfficialEncodingAesKey", "")
+    line_channel_secret = os.environ.get("HOMEHUB_LINE_CHANNEL_SECRET") or file_secrets.get("lineChannelSecret", "")
+    line_channel_access_token = os.environ.get("HOMEHUB_LINE_CHANNEL_ACCESS_TOKEN") or file_secrets.get("lineChannelAccessToken", "")
     external_bridge_url = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") or file_secrets.get("externalBridgeUrl", "")
     external_bridge_token = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") or file_secrets.get("externalBridgeToken", "")
     return {
@@ -1262,6 +1268,8 @@ def get_effective_secrets():
         "wechatOfficialAppId": wechat_official_app_id,
         "wechatOfficialAppSecret": wechat_official_app_secret,
         "wechatOfficialEncodingAesKey": wechat_official_encoding_aes_key,
+        "lineChannelSecret": line_channel_secret,
+        "lineChannelAccessToken": line_channel_access_token,
         "externalBridgeUrl": external_bridge_url,
         "externalBridgeToken": external_bridge_token,
     }
@@ -1283,6 +1291,8 @@ def get_secret_sources():
         "wechatOfficialAppId": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") else ("file" if file_secrets.get("wechatOfficialAppId") else "missing"),
         "wechatOfficialAppSecret": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") else ("file" if file_secrets.get("wechatOfficialAppSecret") else "missing"),
         "wechatOfficialEncodingAesKey": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") else ("file" if file_secrets.get("wechatOfficialEncodingAesKey") else "missing"),
+        "lineChannelSecret": "env" if os.environ.get("HOMEHUB_LINE_CHANNEL_SECRET") else ("file" if file_secrets.get("lineChannelSecret") else "missing"),
+        "lineChannelAccessToken": "env" if os.environ.get("HOMEHUB_LINE_CHANNEL_ACCESS_TOKEN") else ("file" if file_secrets.get("lineChannelAccessToken") else "missing"),
         "externalBridgeUrl": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") else ("file" if file_secrets.get("externalBridgeUrl") else "missing"),
         "externalBridgeToken": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") else ("file" if file_secrets.get("externalBridgeToken") else "missing"),
     }
@@ -3988,6 +3998,11 @@ class Handler(BaseHTTPRequestHandler):
         runtime = build_runtime_bridge()
         raw_body = self._read_request_body()
         preview_body = self._parse_request_body(raw_body)
+        request_headers = {str(key).lower(): str(value) for key, value in self.headers.items()}
+        if preview_body is None:
+            preview_body = {"_headers": request_headers}
+        elif isinstance(preview_body, dict):
+            preview_body["_headers"] = request_headers
         feature_response = FEATURE_MANAGER.handle_api("POST", parsed.path, parse_qs(parsed.query), preview_body, runtime)
         if feature_response:
             self._send_feature_response(feature_response)
@@ -4073,6 +4088,8 @@ class Handler(BaseHTTPRequestHandler):
                 "wechatOfficialAppId": body.get("wechatOfficialAppId", file_secrets.get("wechatOfficialAppId", "")),
                 "wechatOfficialAppSecret": body.get("wechatOfficialAppSecret", file_secrets.get("wechatOfficialAppSecret", "")),
                 "wechatOfficialEncodingAesKey": body.get("wechatOfficialEncodingAesKey", file_secrets.get("wechatOfficialEncodingAesKey", "")),
+                "lineChannelSecret": body.get("lineChannelSecret", file_secrets.get("lineChannelSecret", "")),
+                "lineChannelAccessToken": body.get("lineChannelAccessToken", file_secrets.get("lineChannelAccessToken", "")),
                 "externalBridgeUrl": body.get("externalBridgeUrl", file_secrets.get("externalBridgeUrl", "")),
                 "externalBridgeToken": body.get("externalBridgeToken", file_secrets.get("externalBridgeToken", "")),
             })
@@ -4085,11 +4102,14 @@ class Handler(BaseHTTPRequestHandler):
                     "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
                     "mailConfigured": bool(SECRETS.get("mailAddress") and SECRETS.get("mailPassword")),
                     "wechatOfficialConfigured": bool(SECRETS.get("wechatOfficialToken") and SECRETS.get("wechatOfficialAppId")),
+                    "lineConfigured": bool(SECRETS.get("lineChannelSecret") and SECRETS.get("lineChannelAccessToken")),
                     "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
                     "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
                     "mailAddressSource": SECRET_SOURCES.get("mailAddress", "missing"),
                     "wechatOfficialTokenSource": SECRET_SOURCES.get("wechatOfficialToken", "missing"),
                     "wechatOfficialAppIdSource": SECRET_SOURCES.get("wechatOfficialAppId", "missing"),
+                    "lineChannelSecretSource": SECRET_SOURCES.get("lineChannelSecret", "missing"),
+                    "lineChannelAccessTokenSource": SECRET_SOURCES.get("lineChannelAccessToken", "missing"),
                     "externalBridgeConfigured": bool(SECRETS.get("externalBridgeUrl") and SECRETS.get("externalBridgeToken")),
                     "externalBridgeUrlSource": SECRET_SOURCES.get("externalBridgeUrl", "missing"),
                 }

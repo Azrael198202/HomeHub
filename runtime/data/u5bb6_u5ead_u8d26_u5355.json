@@ -78,67 +78,67 @@
   ],
   "recentActions": [
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1728",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1754",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:28"
+      "createdAt": "2026-04-06T17:54"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1728",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1754",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:28"
+      "createdAt": "2026-04-06T17:54"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1727",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1753",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:27"
+      "createdAt": "2026-04-06T17:53"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1727",
-      "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:27"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1752",
+      "summary": "Calculated all total: 22300 JPY.",
+      "createdAt": "2026-04-06T17:52"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1727",
-      "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:27"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1751",
+      "summary": "Exported all expense table with 7 items.",
+      "createdAt": "2026-04-06T17:51"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1727",
-      "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:27"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1751",
+      "summary": "Calculated all total: 22300 JPY.",
+      "createdAt": "2026-04-06T17:51"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1726",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1735",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:26"
+      "createdAt": "2026-04-06T17:35"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1726",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1735",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:26"
+      "createdAt": "2026-04-06T17:35"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1726",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1735",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:26"
+      "createdAt": "2026-04-06T17:35"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1725",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1734",
       "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:25"
+      "createdAt": "2026-04-06T17:34"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1725",
-      "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:25"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1734",
+      "summary": "Calculated all total: 22300 JPY.",
+      "createdAt": "2026-04-06T17:34"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1724",
-      "summary": "Calculated today total: 9100 JPY.",
-      "createdAt": "2026-04-06T17:24"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1734",
+      "summary": "Exported all expense table with 7 items.",
+      "createdAt": "2026-04-06T17:34"
     }
   ],
-  "lastRun": "2026-04-06T17:28",
+  "lastRun": "2026-04-06T17:54",
   "lastSummary": {
     "period": "today",
     "total": 9100,
@@ -195,6 +195,6 @@
         "taxAmount": 0
       }
     ],
-    "generatedAt": "2026-04-06T17:28"
+    "generatedAt": "2026-04-06T17:54"
   }
 }

@@ -47,6 +47,270 @@
     "summary": "Receive inbound emails, route them through HomeHub, and queue outbound mail replies.",
     "inbox": [
       {
+        "id": "imap-msgid-<CAOPBOHBwbEU3ip4ZDaB4HC0mYa+Whgz+FQ0KAMq_Y6bme26=Qw@mail.gmail.com>",
+        "sender": {
+          "id": "=?UTF-8?B?6Z+T6be5?= <ying.hahn@gmail.com>",
+          "address": "=?UTF-8?B?6Z+T6be5?= <ying.hahn@gmail.com>",
+          "displayName": "=?UTF-8?B?6Z+T6be5?= <ying.hahn@gmail.com>"
+        },
+        "subject": "=?UTF-8?B?6K6w6LSm?=",
+        "content": "小栖 ，把目前为止家庭账单的明细做成excel发给我。",
+        "messageType": "email",
+        "locale": "zh-CN",
+        "createdAt": "2026-04-06T18:30",
+        "homehubReply": "已经帮你把“家庭账单明细Excel”加入 HomeHub 本地日程，时间是 04月06日 18:30。 我也加了一个提前 0 分钟的提醒，会在电视、语音和手机端一起显示。",
+        "homehubRoute": {
+          "kind": "feature",
+          "selected": {
+            "intent": "schedule-reminder",
+            "action": "create_event",
+            "score": 0.98,
+            "featureId": "local-schedule",
+            "featureName": "Local Schedule and Reminder"
+          },
+          "candidates": [
+            {
+              "intent": "schedule-reminder",
+              "action": "create_event",
+              "score": 0.98,
+              "featureId": "local-schedule",
+              "featureName": "Local Schedule and Reminder"
+            },
+            {
+              "intent": "custom-agent-builder",
+              "action": "operational_agent",
+              "score": 0.91,
+              "featureId": "custom-agents",
+              "featureName": "Custom Agents Studio"
+            }
+          ],
+          "clarificationQuestion": "",
+          "reasoning": "",
+          "taskSpec": {
+            "taskType": "document_workflow",
+            "intent": "document-workflow",
+            "summary": "Read, extract, or generate office-style documents such as OCR results, PowerPoint, Excel, or Word files.",
+            "urgency": "normal",
+            "inputModes": [
+              "text"
+            ],
+            "requiresImage": false,
+            "requiresGeneration": true,
+            "requiresScheduling": false,
+            "requiresLongRunningAgent": false,
+            "preferredExecution": "hybrid",
+            "missingInfo": []
+          },
+          "toolPlan": [
+            {
+              "toolId": "local-schedule",
+              "label": "Local Schedule",
+              "execution": "local",
+              "kind": "feature",
+              "selected": true
+            },
+            {
+              "toolId": "document-workbench",
+              "label": "Document Workbench",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": false
+            }
+          ],
+          "modelRoute": {
+            "execution": "local",
+            "primaryModel": "qwen2.5:1.5b-instruct",
+            "fallbackModel": "qwen2.5:1.5b-instruct",
+            "reason": "Low Memory mode keeps document work on light local paths unless cloud is available."
+          }
+        },
+        "homehubResolutionStrategy": "email_body_only",
+        "mailbox": "INBOX",
+        "imapUid": "9",
+        "autoReply": {
+          "ok": true,
+          "error": "",
+          "subject": "Re: =?UTF-8?B?6K6w6LSm?=",
+          "attachments": []
+        },
+        "sourceDate": "2026-04-06T18:27:47+09:00"
+      },
+      {
+        "id": "imap-msgid-<server001.092.1775467443333.292@njmailer.linecorp.com>",
+        "sender": {
+          "id": "LY Corporation <noreply@linecorp.com>",
+          "address": "LY Corporation <noreply@linecorp.com>",
+          "displayName": "LY Corporation <noreply@linecorp.com>"
+        },
+        "subject": "Your signup link for Business ID",
+        "content": "Email \n \n @media only screen and (max-width: 600px) { \n a[class=btn] { \n display: block !important; \n margin-bottom: 10px !important; \n background-image: none !important; \n margin-right: 0 !important \n } \n \n div[class=column] { \n width: auto !important; \n float: none !important \n } \n \n table.social div[class=column] { \n width: auto !important \n } \n} \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n Here's the link you need to sign up for Business ID. Press Continue in the next 24 hours to sign up. \n \n Continue \n \n \n If the button link doesn't work, copy and paste https://account.line.biz/signup/email/join?token=Wj5oeBaRepqUqEsMR_XfXCvbPFs&redirectUri=https%3A%2F%2Fdevelopers.line.biz%2Fconsole%2F&internalRedirectUri&scope= into your browser. This email was sent to an email address registered to a Business ID account. If that sounds unfamiliar, it's possible your address was entered by mistake. In that case, please delete this email. \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n © LY Corporation",
+        "messageType": "email",
+        "locale": "zh-CN",
+        "createdAt": "2026-04-06T18:25",
+        "homehubReply": "已经帮你把“Business ID Sign-up Reminder”加入 HomeHub 本地日程，时间是 04月07日 03:25。 我也加了一个提前 30 分钟的提醒，会在电视、语音和手机端一起显示。",
+        "homehubRoute": {
+          "kind": "feature",
+          "selected": {
+            "intent": "schedule-reminder",
+            "action": "create_event",
+            "score": 0.98,
+            "featureId": "local-schedule",
+            "featureName": "Local Schedule and Reminder"
+          },
+          "candidates": [
+            {
+              "intent": "schedule-reminder",
+              "action": "create_event",
+              "score": 0.98,
+              "featureId": "local-schedule",
+              "featureName": "Local Schedule and Reminder"
+            },
+            {
+              "intent": "custom-agent-builder",
+              "action": "general_agent_help",
+              "score": 0.78,
+              "featureId": "custom-agents",
+              "featureName": "Custom Agents Studio"
+            }
+          ],
+          "clarificationQuestion": "",
+          "reasoning": "",
+          "taskSpec": {
+            "taskType": "document_workflow",
+            "intent": "document-workflow",
+            "summary": "Read, extract, or generate office-style documents such as OCR results, PowerPoint, Excel, or Word files.",
+            "urgency": "normal",
+            "inputModes": [
+              "image",
+              "text"
+            ],
+            "requiresImage": true,
+            "requiresGeneration": true,
+            "requiresScheduling": false,
+            "requiresLongRunningAgent": true,
+            "preferredExecution": "hybrid",
+            "missingInfo": []
+          },
+          "toolPlan": [
+            {
+              "toolId": "local-schedule",
+              "label": "Local Schedule",
+              "execution": "local",
+              "kind": "feature",
+              "selected": true
+            },
+            {
+              "toolId": "document-workbench",
+              "label": "Document Workbench",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": false
+            }
+          ],
+          "modelRoute": {
+            "execution": "local",
+            "primaryModel": "qwen2.5:1.5b-instruct",
+            "fallbackModel": "qwen2.5:1.5b-instruct",
+            "reason": "Low Memory mode keeps document work on light local paths unless cloud is available."
+          }
+        },
+        "homehubResolutionStrategy": "email_body_only",
+        "mailbox": "INBOX",
+        "imapUid": "8",
+        "autoReply": {
+          "ok": false,
+          "error": "Skipped because the email did not mention 小栖 or homehub.",
+          "subject": "Re: Your signup link for Business ID",
+          "attachments": []
+        },
+        "sourceDate": "2026-04-06T18:24:03+09:00"
+      },
+      {
+        "id": "imap-msgid-<ss6ROZu_ml4MxC3eweaNuw@notifications.google.com>",
+        "sender": {
+          "id": "Google <no-reply@accounts.google.com>",
+          "address": "Google <no-reply@accounts.google.com>",
+          "displayName": "Google <no-reply@accounts.google.com>"
+        },
+        "subject": "=?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=",
+        "content": "[image: Google]\r\nアカウントにログインするためのアプリ パスワードが作成されました\r\n\r\n\r\nhomehub2026001@gmail.com\r\nHomeHub Mail\r\nのこのパスワードを生成した覚えがない場合は、アカウントが不正に使用されている \r\n可能性があります。今すぐアカウントを確認し、保護してください。\r\nアクティビティを確認\r\n<https://accounts.google.com/AccountChooser?Email=homehub2026001@gmail.com&continue=https://myaccount.google.com/alert/nt/1775466963949?rfn%3D20%26rfnc%3D1%26eid%3D7868696784605088069%26et%3D0>\r\nセキュリティ関連のアクティビティも確認できます\r\nhttps://myaccount.google.com/notifications\r\nこのメールは Google のアカウントやサービスの重要な変更についてお知らせするた \r\nめにお送りしています。\r\n© 2026 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA",
+        "messageType": "email",
+        "locale": "zh-CN",
+        "createdAt": "2026-04-06T18:17",
+        "homehubReply": "I generated downloadable artifacts for 家庭账单: 20260406-181728-imagegoogle-homehub2026001gmailcom.svg.",
+        "homehubRoute": {
+          "kind": "feature",
+          "selected": {
+            "intent": "custom-agent-builder",
+            "action": "open_custom_agents",
+            "score": 0.91,
+            "featureId": "custom-agents",
+            "featureName": "Custom Agents Studio"
+          },
+          "candidates": [
+            {
+              "intent": "custom-agent-builder",
+              "action": "operational_agent",
+              "score": 0.91,
+              "featureId": "custom-agents",
+              "featureName": "Custom Agents Studio"
+            }
+          ],
+          "clarificationQuestion": "",
+          "reasoning": "",
+          "taskSpec": {
+            "taskType": "general_chat",
+            "intent": "general-chat",
+            "summary": "General household conversation or Q&A.",
+            "urgency": "normal",
+            "inputModes": [
+              "image",
+              "text"
+            ],
+            "requiresImage": false,
+            "requiresGeneration": false,
+            "requiresScheduling": false,
+            "requiresLongRunningAgent": false,
+            "preferredExecution": "hybrid",
+            "missingInfo": []
+          },
+          "toolPlan": [
+            {
+              "toolId": "custom-agent-builder",
+              "label": "Custom Agent Builder",
+              "execution": "hybrid",
+              "kind": "feature",
+              "selected": true
+            },
+            {
+              "toolId": "general-chat",
+              "label": "General Chat",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": false
+            }
+          ],
+          "modelRoute": {
+            "execution": "local",
+            "primaryModel": "qwen2.5:1.5b-instruct",
+            "fallbackModel": "qwen2.5:3b-instruct",
+            "reason": "Low Memory mode prioritizes the lightest local models to reduce swap and UI stalls."
+          }
+        },
+        "homehubResolutionStrategy": "email_body_only",
+        "mailbox": "INBOX",
+        "imapUid": "7",
+        "autoReply": {
+          "ok": true,
+          "error": "",
+          "subject": "Re: =?UTF-8?B?44K744Kt44Ol44Oq44OG44Kj6YCa55+l?=",
+          "attachments": [
+            "20260406-181728-imagegoogle-homehub2026001gmailcom.svg"
+          ]
+        },
+        "sourceDate": "2026-04-06T09:16:03+00:00"
+      },
+      {
         "id": "imap-39",
         "sender": {
           "id": "=?utf-8?q?=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA?=\r\n <no-reply@mercari.jp>",
@@ -1196,84 +1460,84 @@
         "error": "EOF occurred in violation of protocol (_ssl.c:1129)"
       }
     ],
-    "lastSyncAt": "2026-04-06T16:37"
+    "lastSyncAt": "2026-04-06T18:41"
   },
   "recentActions": [
     {
-      "id": "external-2026-04-06T17:03",
-      "summary": "Synchronized 47 inbound email message(s).",
-      "createdAt": "2026-04-06T17:03"
-    },
-    {
-      "id": "external-2026-04-06T16:37",
+      "id": "external-2026-04-06T18:41",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:37"
+      "createdAt": "2026-04-06T18:41"
     },
     {
-      "id": "external-2026-04-06T16:36",
+      "id": "external-2026-04-06T18:40",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:36"
+      "createdAt": "2026-04-06T18:40"
     },
     {
-      "id": "external-2026-04-06T16:34",
+      "id": "external-2026-04-06T18:39",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:34"
+      "createdAt": "2026-04-06T18:39"
     },
     {
-      "id": "external-2026-04-06T16:32",
+      "id": "external-2026-04-06T18:38",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:32"
+      "createdAt": "2026-04-06T18:38"
     },
     {
-      "id": "external-2026-04-06T16:31",
+      "id": "external-2026-04-06T18:36",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:31"
+      "createdAt": "2026-04-06T18:36"
     },
     {
-      "id": "external-2026-04-06T16:29",
+      "id": "external-2026-04-06T18:35",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:29"
+      "createdAt": "2026-04-06T18:35"
     },
     {
-      "id": "external-2026-04-06T16:27",
+      "id": "external-2026-04-06T18:34",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:27"
+      "createdAt": "2026-04-06T18:34"
     },
     {
-      "id": "external-2026-04-06T16:25",
+      "id": "external-2026-04-06T18:33",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:25"
+      "createdAt": "2026-04-06T18:33"
     },
     {
-      "id": "external-2026-04-06T16:24",
+      "id": "external-2026-04-06T18:32",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:24"
+      "createdAt": "2026-04-06T18:32"
     },
     {
-      "id": "external-2026-04-06T16:22",
+      "id": "external-2026-04-06T18:31",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:22"
+      "createdAt": "2026-04-06T18:31"
     },
     {
-      "id": "external-2026-04-06T16:21",
+      "id": "external-2026-04-06T18:30",
+      "summary": "Synchronized 1 inbound email message(s).",
+      "createdAt": "2026-04-06T18:30"
+    },
+    {
+      "id": "external-2026-04-06T18:27",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:21"
+      "createdAt": "2026-04-06T18:27"
     },
     {
-      "id": "external-2026-04-06T16:19",
+      "id": "external-2026-04-06T18:26",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:19"
+      "createdAt": "2026-04-06T18:26"
     },
     {
-      "id": "external-2026-04-06T16:18",
-      "summary": "Sent outbound email for ying.hahn@gmail.com.",
-      "createdAt": "2026-04-06T16:18"
+      "id": "external-2026-04-06T18:25",
+      "summary": "Synchronized 1 inbound email message(s).",
+      "createdAt": "2026-04-06T18:25"
     },
     {
-      "id": "external-2026-04-06T16:17",
+      "id": "external-2026-04-06T18:23",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:17"
+      "createdAt": "2026-04-06T18:23"
     }
   ],
-  "lastRun": "2026-04-06T17:03"
+  "lastRun": "2026-04-06T18:41"
 }
