@@ -2253,9 +2253,9 @@ def run_background_bridge_pull():
                     send_ok = bool(result_body.get("sendOk")) if isinstance(result_body, dict) else False
                     send_error = str(result_body.get("sendError", "")).strip() if isinstance(result_body, dict) else ""
                     if send_ok:
-                        print(f"[bridge-pull] delivered {message_id} back to Railway and WeChat send succeeded")
+                        print(f"[bridge-pull] delivered {message_id} back to Railway and IM send succeeded")
                     else:
-                        print(f"[bridge-pull] delivered {message_id} back to Railway but WeChat send failed: {send_error or 'unknown_error'}")
+                        print(f"[bridge-pull] delivered {message_id} back to Railway but IM send failed: {send_error or 'unknown_error'}")
         except Exception as exc:
             print(f"[bridge-pull] background pull failed: {exc}")
         time.sleep(max(3, BRIDGE_PULL_INTERVAL_SECONDS))
