@@ -887,16 +887,23 @@
       "title": "Reminder: 家庭账单明细Excel",
       "triggerAt": "2026-04-06T18:30",
       "eventId": "evt-20260406183034-436",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T18:30"
+      "createdAt": "2026-04-06T18:30",
+      "completedAt": "2026-04-06T19:16"
     }
   ],
   "recentActions": [
+    {
+      "id": "act-20260406191656-169",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 家庭账单明细Excel'.",
+      "createdAt": "2026-04-06T19:16"
+    },
     {
       "id": "act-20260406183034-872",
       "kind": "create-event",
@@ -962,12 +969,6 @@
       "kind": "create-event",
       "summary": "Created schedule '新しいログイン確認メール' for 2026-04-06T17:59.",
       "createdAt": "2026-04-06T18:00"
-    },
-    {
-      "id": "act-20260406175939-186",
-      "kind": "create-event",
-      "summary": "Created schedule '商品取引完了通知' for 2026-04-06T18:00.",
-      "createdAt": "2026-04-06T17:59"
     }
   ]
 }

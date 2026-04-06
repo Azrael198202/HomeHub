@@ -1439,6 +1439,7 @@ class Feature(HomeHubFeature):
         store = self.get_store(runtime)
         apps = store.get("apps", {})
         wechat = apps.get("wechatOfficial", {}) if isinstance(apps.get("wechatOfficial"), dict) else {}
+        line = apps.get("line", {}) if isinstance(apps.get("line"), dict) else {}
         mail = store.get("mail", {}) if isinstance(store.get("mail"), dict) else {}
         if locale == "zh-CN":
             apps_summary = f"外接应用已准备好，公众号收件 {len(wechat.get('inbox', []))} 条，LINE 收件 {len(line.get('inbox', []))} 条。"
@@ -1903,6 +1904,15 @@ class Feature(HomeHubFeature):
                         metadata=metadata,
                     )
                     if bridge_result.get("ok"):
+                        self.write_debug_log(
+                            runtime,
+                            "line_bridge_success",
+                            {
+                                "senderId": sender["id"],
+                                "messageType": message_type,
+                                "resolutionStrategy": "line_bridge_forward",
+                            },
+                        )
                         bridge_body = bridge_result.get("body", {}) if isinstance(bridge_result.get("body"), dict) else {}
                         resolution = bridge_body.get("resolution", {}) if isinstance(bridge_body.get("resolution"), dict) else {}
                         if not resolution:
@@ -1910,6 +1920,15 @@ class Feature(HomeHubFeature):
                         resolution["resolutionStrategy"] = str(resolution.get("resolutionStrategy", "")).strip() or "line_bridge_forward"
                     else:
                         error_text = str(bridge_result.get("error", "")).strip() or "bridge_unavailable"
+                        self.write_debug_log(
+                            runtime,
+                            "line_bridge_failed",
+                            {
+                                "senderId": sender["id"],
+                                "messageType": message_type,
+                                "error": error_text,
+                            },
+                        )
                         resolution = {
                             "reply": "本地 HomeHub 当前不可达，请稍后再试。",
                             "route": {
@@ -1950,10 +1969,29 @@ class Feature(HomeHubFeature):
                         processed += 1
                         continue
                     resolution = self.resolve_inbound(runtime, "line", sender, content, locale)
+                    self.write_debug_log(
+                        runtime,
+                        "line_inbound_resolved",
+                        {
+                            "senderId": sender["id"],
+                            "messageType": message_type,
+                            "resolutionStrategy": resolution.get("resolutionStrategy", "local_processing"),
+                        },
+                    )
                     reply_text = str(resolution.get("reply", "")).strip() or "HomeHub 已收到你的消息。"
                     if reply_token:
                         self.send_line_reply_text(runtime, reply_token, reply_text)
                 item = self.record_inbound_message(line, sender, content, locale, message_type=message_type, homehub_result=resolution)
+                self.write_debug_log(
+                    runtime,
+                    "line_inbound_saved",
+                    {
+                        "messageId": item["id"],
+                        "senderId": sender["id"],
+                        "messageType": message_type,
+                        "contentPreview": content[:240],
+                    },
+                )
                 self.append_action(runtime, f"Processed inbound LINE message from {sender.get('displayName') or sender['id']}.")
                 self.write_debug_log(
                     runtime,
