@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import html
 import imaplib
 import json
 import mimetypes
+import re
 import smtplib
 import urllib.error
 import urllib.request
@@ -1010,19 +1012,38 @@ class Feature(HomeHubFeature):
 
     def extract_email_text(self, message) -> str:
         if message.is_multipart():
+            html_candidate = ""
             for part in message.walk():
                 content_type = str(part.get_content_type() or "").lower()
                 disposition = str(part.get("Content-Disposition", "")).lower()
                 if "attachment" in disposition:
                     continue
+                payload = part.get_payload(decode=True) or b""
+                charset = part.get_content_charset() or "utf-8"
                 if content_type == "text/plain":
-                    payload = part.get_payload(decode=True) or b""
-                    charset = part.get_content_charset() or "utf-8"
                     return payload.decode(charset, errors="ignore").strip()
-            return ""
+                if content_type == "text/html" and not html_candidate:
+                    html_candidate = payload.decode(charset, errors="ignore").strip()
+            return self.extract_text_from_html(html_candidate) if html_candidate else ""
         payload = message.get_payload(decode=True) or b""
         charset = message.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="ignore").strip()
+        raw = payload.decode(charset, errors="ignore").strip()
+        if str(message.get_content_type() or "").lower() == "text/html":
+            return self.extract_text_from_html(raw)
+        return raw
+
+    def extract_text_from_html(self, html_text: str) -> str:
+        raw = str(html_text or "").strip()
+        if not raw:
+            return ""
+        text = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", raw)
+        text = re.sub(r"(?i)<br\\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</p\\s*>", "\n", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = html.unescape(text)
+        text = re.sub(r"[ \t\r\f\v]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
 
     def extract_email_attachments(self, message) -> list[dict]:
         attachments: list[dict] = []
@@ -1051,6 +1072,47 @@ class Feature(HomeHubFeature):
             )
         return attachments
 
+    def list_imap_mailboxes(self, client) -> list[str]:
+        names: list[str] = []
+        try:
+            status, payload = client.list()
+        except Exception:
+            return names
+        if status != "OK" or not payload:
+            return names
+        for raw in payload:
+            line = raw.decode("utf-8", errors="ignore") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            parts = line.rsplit(' "', 1)
+            if len(parts) == 2:
+                mailbox = parts[1].rstrip('"').strip()
+                if mailbox:
+                    names.append(mailbox)
+        return names
+
+    def candidate_imap_mailboxes(self, client) -> list[str]:
+        listed = self.list_imap_mailboxes(client)
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add(name: str) -> None:
+            value = str(name or "").strip()
+            if value and value not in seen:
+                seen.add(value)
+                candidates.append(value)
+
+        add("INBOX")
+        for mailbox in listed:
+            lowered = mailbox.lower()
+            if "all mail" in lowered or "allmail" in lowered or "すべて" in mailbox or "所有邮件" in mailbox or "全部邮件" in mailbox:
+                add(mailbox)
+        return candidates
+
+    def build_email_record_id(self, uid: str, email_message) -> str:
+        header_id = str(email_message.get("Message-ID", "")).strip()
+        if header_id:
+            return f"imap-msgid-{header_id}"
+        return f"imap-uid-{uid}"
+
     def sync_mailbox(self, runtime: RuntimeBridge, limit: int = 10) -> dict:
         config = self.get_mail_config(runtime)
         if not config["configured"]:
@@ -1074,103 +1136,138 @@ class Feature(HomeHubFeature):
         try:
             with imaplib.IMAP4_SSL(config["imapHost"], config["imapPort"]) as client:
                 client.login(config["address"], config["password"])
-                client.select("INBOX")
-                status, payload = client.search(None, "ALL")
-                if status != "OK":
-                    self.write_debug_log(
-                        runtime,
-                        "email_sync_failed",
-                        {
-                            "imapHost": config["imapHost"],
-                            "imapPort": config["imapPort"],
-                            "error": "Failed to search inbox.",
-                        },
-                    )
-                    return {"ok": False, "error": "Failed to search inbox."}
-                message_ids = [item for item in payload[0].split() if item][-limit:]
-                for message_id in reversed(message_ids):
-                    fetch_status, fetched = client.fetch(message_id, "(RFC822)")
-                    if fetch_status != "OK" or not fetched:
+                for mailbox in self.candidate_imap_mailboxes(client):
+                    try:
+                        select_status, _ = client.select(mailbox, readonly=True)
+                    except Exception:
                         continue
-                    raw_message = fetched[0][1]
-                    email_message = message_from_bytes(raw_message)
-                    inbox_id = f"imap-{message_id.decode('utf-8', errors='ignore')}"
-                    if inbox_id in known_ids:
+                    if select_status != "OK":
                         continue
-                    from_address = str(email_message.get("From", "")).strip()
-                    subject = str(email_message.get("Subject", "")).strip()
-                    content = self.extract_email_text(email_message)
-                    attachments = self.extract_email_attachments(email_message)
-                    if not from_address or (not content and not attachments):
+                    status, payload = client.uid("search", None, "ALL")
+                    if status != "OK":
                         continue
-                    sender = {
-                        "id": from_address,
-                        "address": from_address,
-                        "displayName": from_address,
-                    }
-                    locale = str(runtime.get_setting("language", "zh-CN")).strip() or "zh-CN"
-                    resolution = self.resolve_inbound(runtime, "email", sender, content, locale, subject, attachments)
-                    resolution = self.resolve_email_with_attachments(runtime, sender, content, locale, subject, attachments, resolution)
-                    item = self.record_inbound_message(mail, sender, content, locale, message_type="email", subject=subject, homehub_result=resolution)
-                    item["id"] = inbox_id
-                    if attachments:
-                        item["attachments"] = self.email_attachment_record_view(self.classify_email_attachments(attachments))
-                    reply_text = str(resolution.get("reply", "")).strip()
-                    reply_artifacts = resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else []
-                    if reply_text and self.should_auto_reply_email(content, attachments):
-                        reply_ok, reply_error = self.send_inbound_email_reply(runtime, sender, subject, reply_text, reply_artifacts)
-                        item["autoReply"] = {
-                            "ok": reply_ok,
-                            "error": reply_error,
-                            "subject": self.build_reply_subject(subject),
-                            "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                    message_uids = [item for item in (payload[0].split() if payload and payload[0] else []) if item]
+                    recent_uids = message_uids[-max(limit * 5, 25):]
+                    for message_uid in reversed(recent_uids):
+                        fetch_status, fetched = client.uid("fetch", message_uid, "(RFC822)")
+                        if fetch_status != "OK" or not fetched:
+                            self.write_debug_log(
+                                runtime,
+                                "email_sync_skipped_message",
+                                {
+                                    "messageUid": message_uid.decode("utf-8", errors="ignore"),
+                                    "mailbox": mailbox,
+                                    "reason": "fetch_failed",
+                                },
+                            )
+                            continue
+                        raw_message = fetched[0][1]
+                        email_message = message_from_bytes(raw_message)
+                        inbox_id = self.build_email_record_id(message_uid.decode("utf-8", errors="ignore"), email_message)
+                        if inbox_id in known_ids:
+                            self.write_debug_log(
+                                runtime,
+                                "email_sync_skipped_message",
+                                {
+                                    "messageId": inbox_id,
+                                    "messageUid": message_uid.decode("utf-8", errors="ignore"),
+                                    "mailbox": mailbox,
+                                    "reason": "already_known",
+                                },
+                            )
+                            continue
+                        from_address = str(email_message.get("From", "")).strip()
+                        subject = str(email_message.get("Subject", "")).strip()
+                        content = self.extract_email_text(email_message)
+                        attachments = self.extract_email_attachments(email_message)
+                        if not from_address or (not content and not attachments):
+                            self.write_debug_log(
+                                runtime,
+                                "email_sync_skipped_message",
+                                {
+                                    "messageId": inbox_id,
+                                    "messageUid": message_uid.decode("utf-8", errors="ignore"),
+                                    "mailbox": mailbox,
+                                    "from": from_address,
+                                    "subject": subject,
+                                    "reason": "empty_content_and_no_attachments" if from_address else "missing_from_address",
+                                    "contentType": str(email_message.get_content_type() or "").strip().lower(),
+                                    "isMultipart": bool(email_message.is_multipart()),
+                                },
+                            )
+                            continue
+                        sender = {
+                            "id": from_address,
+                            "address": from_address,
+                            "displayName": from_address,
                         }
-                    elif reply_text:
-                        item["autoReply"] = {
-                            "ok": False,
-                            "error": "Skipped because the email did not mention 小栖 or homehub.",
-                            "subject": self.build_reply_subject(subject),
-                            "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
-                        }
-                        self.write_debug_log(
+                        locale = str(runtime.get_setting("language", "zh-CN")).strip() or "zh-CN"
+                        resolution = self.resolve_inbound(runtime, "email", sender, content, locale, subject, attachments)
+                        resolution = self.resolve_email_with_attachments(runtime, sender, content, locale, subject, attachments, resolution)
+                        item = self.record_inbound_message(mail, sender, content, locale, message_type="email", subject=subject, homehub_result=resolution)
+                        item["id"] = inbox_id
+                        item["mailbox"] = mailbox
+                        item["imapUid"] = message_uid.decode("utf-8", errors="ignore")
+                        if attachments:
+                            item["attachments"] = self.email_attachment_record_view(self.classify_email_attachments(attachments))
+                        reply_text = str(resolution.get("reply", "")).strip()
+                        reply_artifacts = resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else []
+                        if reply_text and self.should_auto_reply_email(content, attachments):
+                            reply_ok, reply_error = self.send_inbound_email_reply(runtime, sender, subject, reply_text, reply_artifacts)
+                            item["autoReply"] = {
+                                "ok": reply_ok,
+                                "error": reply_error,
+                                "subject": self.build_reply_subject(subject),
+                                "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                            }
+                        elif reply_text:
+                            item["autoReply"] = {
+                                "ok": False,
+                                "error": "Skipped because the email did not mention 小栖 or homehub.",
+                                "subject": self.build_reply_subject(subject),
+                                "attachments": [str(artifact.get("fileName", "")).strip() for artifact in reply_artifacts if isinstance(artifact, dict)],
+                            }
+                            self.write_debug_log(
+                                runtime,
+                                "email_auto_reply_skipped",
+                                {
+                                    "reason": "missing_reply_keyword",
+                                    "target": sender["address"],
+                                    "subject": subject,
+                                    "contentPreview": content[:240],
+                                    "attachmentNames": [str(item.get("name", "")).strip() for item in attachments],
+                                },
+                            )
+                        date_header = str(email_message.get("Date", "")).strip()
+                        if date_header:
+                            try:
+                                item["sourceDate"] = parsedate_to_datetime(date_header).isoformat()
+                            except Exception:
+                                item["sourceDate"] = date_header
+                        self.write_processing_log(
                             runtime,
-                            "email_auto_reply_skipped",
+                            "email",
                             {
-                                "reason": "missing_reply_keyword",
-                                "target": sender["address"],
+                                "eventType": "inbound_processed",
+                                "messageId": inbox_id,
+                                "sender": sender,
                                 "subject": subject,
-                                "contentPreview": content[:240],
-                                "attachmentNames": [str(item.get("name", "")).strip() for item in attachments],
+                                "content": content[:4000],
+                                "attachments": item.get("attachments", []),
+                                "mailbox": mailbox,
+                                "imapUid": item["imapUid"],
+                                "route": resolution.get("route", {}),
+                                "effectiveLocale": resolution.get("effectiveLocale", locale),
+                                "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                                "attachmentRouting": resolution.get("attachmentRouting", []),
+                                "executedTasks": resolution.get("executedTasks", []),
+                                "reply": reply_text,
+                                "artifacts": reply_artifacts,
+                                "autoReply": item.get("autoReply", {}),
                             },
                         )
-                    date_header = str(email_message.get("Date", "")).strip()
-                    if date_header:
-                        try:
-                            item["sourceDate"] = parsedate_to_datetime(date_header).isoformat()
-                        except Exception:
-                            item["sourceDate"] = date_header
-                    self.write_processing_log(
-                        runtime,
-                        "email",
-                        {
-                            "eventType": "inbound_processed",
-                            "messageId": inbox_id,
-                            "sender": sender,
-                            "subject": subject,
-                            "content": content[:4000],
-                            "attachments": item.get("attachments", []),
-                            "route": resolution.get("route", {}),
-                            "effectiveLocale": resolution.get("effectiveLocale", locale),
-                            "resolutionStrategy": resolution.get("resolutionStrategy", ""),
-                            "attachmentRouting": resolution.get("attachmentRouting", []),
-                            "executedTasks": resolution.get("executedTasks", []),
-                            "reply": reply_text,
-                            "artifacts": reply_artifacts,
-                            "autoReply": item.get("autoReply", {}),
-                        },
-                    )
-                    known_ids.add(inbox_id)
-                    imported += 1
+                        known_ids.add(inbox_id)
+                        imported += 1
                 mail["lastSyncAt"] = self.now_iso()
                 self.save_store(store, runtime)
                 self.append_action(runtime, f"Synchronized {imported} inbound email message(s).")
@@ -1574,8 +1671,13 @@ class Feature(HomeHubFeature):
             if not target["id"] or not content:
                 return {"status": 400, "body": {"error": "userId and content are required"}}
             item = self.queue_outbound(wechat, target, content, "wechat-official")
-            self.append_action(runtime, f"Queued outbound WeChat message for {target.get('displayName') or target['id']}.")
-            return {"status": 200, "body": {"ok": True, "item": item}}
+            send_ok, send_error = self.send_wechat_official_text(runtime, target["id"], content)
+            item["status"] = "sent" if send_ok else "failed"
+            if send_error:
+                item["error"] = send_error
+            self.save_store(store, runtime)
+            self.append_action(runtime, f"Sent outbound WeChat message for {target.get('displayName') or target['id']}." if send_ok else f"Failed outbound WeChat message for {target.get('displayName') or target['id']}.")
+            return {"status": 200 if send_ok else 502, "body": {"ok": send_ok, "item": item, "error": send_error}}
 
         if method == "POST" and path == API_LINE_WEBHOOK:
             self.append_action(runtime, "LINE inbound webhook placeholder was called.")

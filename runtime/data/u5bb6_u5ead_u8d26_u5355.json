@@ -4,6 +4,18 @@
   },
   "items": [
     {
+      "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T1641",
+      "amount": 4562,
+      "category": "其他",
+      "currency": "JPY",
+      "sourceText": "集。",
+      "createdAt": "2026-04-06T16:41",
+      "merchant": "集。",
+      "purchaseDate": "",
+      "paymentMethod": "",
+      "taxAmount": 0
+    },
+    {
       "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T0823",
       "amount": 486,
       "category": "其他",
@@ -66,74 +78,86 @@
   ],
   "recentActions": [
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1547",
-      "summary": "Calculated today total: 4538 JPY.",
-      "createdAt": "2026-04-06T15:47"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1644",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:44"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1542",
-      "summary": "Calculated today total: 4538 JPY.",
-      "createdAt": "2026-04-06T15:42"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1243",
-      "summary": "Exported all expense table with 7 items.",
-      "createdAt": "2026-04-06T12:43"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1243",
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated today total: 9100 JPY.",
+      "createdAt": "2026-04-06T16:42"
+    },
+    {
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
       "summary": "Calculated all total: 22300 JPY.",
-      "createdAt": "2026-04-06T12:43"
+      "createdAt": "2026-04-06T16:42"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1238",
-      "summary": "Recorded 4562 JPY for 其他.",
-      "createdAt": "2026-04-06T12:38"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Exported all expense table with 7 items.",
+      "createdAt": "2026-04-06T16:42"
     },
     {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1236",
-      "summary": "Exported all expense table with 6 items.",
-      "createdAt": "2026-04-06T12:36"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1236",
-      "summary": "Calculated all total: 17738 JPY.",
-      "createdAt": "2026-04-06T12:36"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1159",
-      "summary": "Calculated today total: 4538 JPY.",
-      "createdAt": "2026-04-06T11:59"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1157",
-      "summary": "Calculated today total: 4538 JPY.",
-      "createdAt": "2026-04-06T11:57"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1149",
-      "summary": "Exported all expense table with 6 items.",
-      "createdAt": "2026-04-06T11:49"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1149",
-      "summary": "Calculated all total: 17738 JPY.",
-      "createdAt": "2026-04-06T11:49"
-    },
-    {
-      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1138",
-      "summary": "Calculated all total: 17738 JPY.",
-      "createdAt": "2026-04-06T11:38"
+      "id": "u5bb6_u5ead_u8d26_u5355-20260406T1642",
+      "summary": "Calculated all total: 22300 JPY.",
+      "createdAt": "2026-04-06T16:42"
     }
   ],
-  "lastRun": "2026-04-06T15:47",
+  "lastRun": "2026-04-06T16:44",
   "lastSummary": {
     "period": "today",
-    "total": 4538,
-    "count": 3,
+    "total": 9100,
+    "count": 4,
     "threshold": 2000,
     "overThreshold": true,
     "items": [
+      {
+        "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T1641",
+        "amount": 4562,
+        "category": "其他",
+        "currency": "JPY",
+        "sourceText": "集。",
+        "createdAt": "2026-04-06T16:41",
+        "merchant": "集。",
+        "purchaseDate": "",
+        "paymentMethod": "",
+        "taxAmount": 0
+      },
       {
         "id": "u5bb6_u5ead_u8d26_u5355-item-20260406T0823",
         "amount": 486,
@@ -171,6 +195,6 @@
         "taxAmount": 0
       }
     ],
-    "generatedAt": "2026-04-06T15:47"
+    "generatedAt": "2026-04-06T16:44"
   }
 }

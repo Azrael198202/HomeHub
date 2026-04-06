@@ -1159,6 +1159,18 @@
     ],
     "outbox": [
       {
+        "id": "outbound-20260406161834",
+        "target": {
+          "address": "ying.hahn@gmail.com",
+          "displayName": ""
+        },
+        "subject": "HomeHub mail test",
+        "content": "Hello from HomeHub.",
+        "kind": "email",
+        "status": "sent",
+        "createdAt": "2026-04-06T16:18"
+      },
+      {
         "id": "outbound-20260406111524",
         "target": {
           "address": "ying.hahn@gmail.com",
@@ -1184,84 +1196,84 @@
         "error": "EOF occurred in violation of protocol (_ssl.c:1129)"
       }
     ],
-    "lastSyncAt": "2026-04-06T16:09"
+    "lastSyncAt": "2026-04-06T16:37"
   },
   "recentActions": [
     {
-      "id": "external-2026-04-06T16:09",
+      "id": "external-2026-04-06T16:37",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:09"
+      "createdAt": "2026-04-06T16:37"
     },
     {
-      "id": "external-2026-04-06T16:09",
+      "id": "external-2026-04-06T16:36",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:09"
+      "createdAt": "2026-04-06T16:36"
     },
     {
-      "id": "external-2026-04-06T16:07",
+      "id": "external-2026-04-06T16:34",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:07"
+      "createdAt": "2026-04-06T16:34"
     },
     {
-      "id": "external-2026-04-06T16:05",
+      "id": "external-2026-04-06T16:32",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:05"
+      "createdAt": "2026-04-06T16:32"
     },
     {
-      "id": "external-2026-04-06T16:03",
+      "id": "external-2026-04-06T16:31",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:03"
+      "createdAt": "2026-04-06T16:31"
     },
     {
-      "id": "external-2026-04-06T16:02",
+      "id": "external-2026-04-06T16:29",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:02"
+      "createdAt": "2026-04-06T16:29"
     },
     {
-      "id": "external-2026-04-06T16:00",
+      "id": "external-2026-04-06T16:27",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T16:00"
+      "createdAt": "2026-04-06T16:27"
     },
     {
-      "id": "external-2026-04-06T15:59",
+      "id": "external-2026-04-06T16:25",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:59"
+      "createdAt": "2026-04-06T16:25"
     },
     {
-      "id": "external-2026-04-06T15:57",
+      "id": "external-2026-04-06T16:24",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:57"
+      "createdAt": "2026-04-06T16:24"
     },
     {
-      "id": "external-2026-04-06T15:55",
+      "id": "external-2026-04-06T16:22",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:55"
+      "createdAt": "2026-04-06T16:22"
     },
     {
-      "id": "external-2026-04-06T15:54",
+      "id": "external-2026-04-06T16:21",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:54"
+      "createdAt": "2026-04-06T16:21"
     },
     {
-      "id": "external-2026-04-06T15:52",
+      "id": "external-2026-04-06T16:19",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:52"
+      "createdAt": "2026-04-06T16:19"
     },
     {
-      "id": "external-2026-04-06T15:50",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:50"
+      "id": "external-2026-04-06T16:18",
+      "summary": "Sent outbound email for ying.hahn@gmail.com.",
+      "createdAt": "2026-04-06T16:18"
     },
     {
-      "id": "external-2026-04-06T15:49",
+      "id": "external-2026-04-06T16:17",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:49"
+      "createdAt": "2026-04-06T16:17"
     },
     {
-      "id": "external-2026-04-06T15:47",
+      "id": "external-2026-04-06T16:16",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T15:47"
+      "createdAt": "2026-04-06T16:16"
     }
   ],
-  "lastRun": "2026-04-06T16:09"
+  "lastRun": "2026-04-06T16:37"
 }
