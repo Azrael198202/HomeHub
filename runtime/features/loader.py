@@ -61,9 +61,12 @@ class FeatureManager:
         loaded: list[HomeHubFeature] = []
         for relative_path, _ in signature:
             path = self.features_dir / relative_path
-            feature = self._load_feature_from_path(path)
-            feature.on_refresh(runtime)
-            loaded.append(feature)
+            try:
+                feature = self._load_feature_from_path(path)
+                feature.on_refresh(runtime)
+                loaded.append(feature)
+            except Exception as exc:
+                runtime.emit_log(f"Feature load skipped for {relative_path}: {exc}")
 
         self._features = loaded
         self._signature = signature

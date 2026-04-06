@@ -7,8 +7,15 @@ import threading
 from io import BytesIO
 from pathlib import Path
 
-import numpy as np
-from PIL import Image
+try:
+    import numpy as np
+except ModuleNotFoundError:
+    np = None
+
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
 
 from .base import HomeHubFeature, RuntimeBridge
 try:
@@ -45,6 +52,8 @@ class Feature(HomeHubFeature):
 
     def run_local_ocr(self, image_base64: str) -> dict:
         if not image_base64:
+            return {}
+        if np is None or Image is None:
             return {}
         engine = self.get_rapidocr_engine()
         if engine is None:
