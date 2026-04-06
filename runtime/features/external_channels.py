@@ -6,6 +6,8 @@ import imaplib
 import json
 import mimetypes
 import smtplib
+import urllib.error
+import urllib.request
 from copy import deepcopy
 from datetime import datetime
 from email import message_from_bytes
@@ -29,6 +31,9 @@ API_LINE_SEND = "/api/external-channels/line/send"
 API_EMAIL_INTAKE = "/api/external-channels/email/intake"
 API_EMAIL_SEND = "/api/external-channels/email/send"
 API_EMAIL_SYNC = "/api/external-channels/email/sync"
+API_BRIDGE_INBOUND = "/api/external-channels/bridge/inbound"
+API_BRIDGE_PULL = "/api/external-channels/bridge/pull"
+API_BRIDGE_RESULT = "/api/external-channels/bridge/result"
 
 
 class Feature(HomeHubFeature):
@@ -48,6 +53,9 @@ class Feature(HomeHubFeature):
             API_EMAIL_INTAKE,
             API_EMAIL_SEND,
             API_EMAIL_SYNC,
+            API_BRIDGE_INBOUND,
+            API_BRIDGE_PULL,
+            API_BRIDGE_RESULT,
         ]
         return data
 
@@ -80,15 +88,17 @@ class Feature(HomeHubFeature):
                     "users": [],
                     "inbox": [],
                     "outbox": [],
+                    "pending": [],
                 },
                 "line": {
                     "enabled": False,
                     "status": "placeholder",
                     "summary": "Reserved integration surface for LINE. Webhook and sender interfaces are scaffolded but not wired yet.",
-                    "users": [],
-                    "inbox": [],
-                    "outbox": [],
-                },
+                "users": [],
+                "inbox": [],
+                "outbox": [],
+                "pending": [],
+            },
             },
             "mail": {
                 "enabled": True,
@@ -437,6 +447,105 @@ class Feature(HomeHubFeature):
             "configured": bool(token and app_id),
         }
 
+    def get_bridge_config(self, runtime: RuntimeBridge) -> dict:
+        target_url = str(runtime.get_secret("externalBridgeUrl", "")).strip()
+        shared_token = str(runtime.get_secret("externalBridgeToken", "")).strip()
+        return {
+            "targetUrl": target_url.rstrip("/"),
+            "sharedToken": shared_token,
+            "configured": bool(target_url and shared_token),
+        }
+
+    def resolve_bridge_request(
+        self,
+        runtime: RuntimeBridge,
+        channel: str,
+        sender: dict,
+        content: str,
+        locale: str,
+        subject: str = "",
+        attachments: list[dict] | None = None,
+    ) -> dict:
+        resolution = self.resolve_inbound(runtime, channel, sender, content, locale, subject, attachments)
+        if channel == "email":
+            resolution = self.resolve_email_with_attachments(runtime, sender, content, locale, subject, attachments or [], resolution)
+        return resolution
+
+    def forward_bridge_request(
+        self,
+        runtime: RuntimeBridge,
+        *,
+        channel: str,
+        sender: dict,
+        content: str,
+        locale: str,
+        subject: str = "",
+        attachments: list[dict] | None = None,
+        message_type: str = "text",
+        metadata: dict | None = None,
+    ) -> dict:
+        config = self.get_bridge_config(runtime)
+        if not config["configured"]:
+            return {"ok": False, "error": "bridge_not_configured"}
+        target_url = f"{config['targetUrl']}{API_BRIDGE_INBOUND}"
+        payload = {
+            "channel": channel,
+            "sender": sender,
+            "content": content,
+            "locale": locale,
+            "subject": subject,
+            "attachments": attachments or [],
+            "messageType": message_type,
+            "metadata": metadata or {},
+            "bridgeToken": config["sharedToken"],
+        }
+        request = urllib.request.Request(
+            target_url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        self.write_debug_log(
+            runtime,
+            "bridge_forward_attempt",
+            {
+                "channel": channel,
+                "targetUrl": target_url,
+                "sender": sender,
+                "subject": subject,
+                "contentPreview": content[:240],
+                "messageType": message_type,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw_body = response.read().decode("utf-8", errors="replace")
+            bridge_body = json.loads(raw_body)
+            if not isinstance(bridge_body, dict):
+                raise ValueError("Bridge response was not a JSON object.")
+            self.write_debug_log(
+                runtime,
+                "bridge_forward_success",
+                {
+                    "channel": channel,
+                    "targetUrl": target_url,
+                    "replyPreview": str(bridge_body.get("reply", ""))[:240],
+                },
+            )
+            return {"ok": True, "body": bridge_body}
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            self.write_debug_log(
+                runtime,
+                "bridge_forward_failed",
+                {
+                    "channel": channel,
+                    "targetUrl": target_url,
+                    "error": str(exc),
+                    "errorType": exc.__class__.__name__,
+                },
+            )
+            return {"ok": False, "error": str(exc), "errorType": exc.__class__.__name__}
+
     def verify_wechat_signature(self, token: str, query: dict) -> bool:
         signature = str((query.get("signature") or [""])[0]).strip()
         timestamp = str((query.get("timestamp") or [""])[0]).strip()
@@ -468,6 +577,120 @@ class Feature(HomeHubFeature):
             f"<Content><![CDATA[{safe_reply}]]></Content>"
             "</xml>"
         )
+
+    def create_bridge_queue_item(
+        self,
+        channel: str,
+        sender: dict,
+        content: str,
+        locale: str,
+        *,
+        subject: str = "",
+        message_type: str = "text",
+        attachments: list[dict] | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        return {
+            "id": f"bridge-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+            "channel": channel,
+            "sender": sender,
+            "content": content,
+            "locale": locale,
+            "subject": subject,
+            "messageType": message_type,
+            "attachments": attachments or [],
+            "metadata": metadata or {},
+            "status": "pending",
+            "attempts": 0,
+            "createdAt": self.now_iso(),
+            "claimedAt": "",
+            "completedAt": "",
+        }
+
+    def claim_pending_bridge_item(self, bucket: dict) -> dict | None:
+        pending = bucket.setdefault("pending", [])
+        for item in pending:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("status", "pending")).strip() != "pending":
+                continue
+            item["status"] = "processing"
+            item["attempts"] = int(item.get("attempts", 0) or 0) + 1
+            item["claimedAt"] = self.now_iso()
+            return deepcopy(item)
+        return None
+
+    def complete_bridge_item(self, bucket: dict, message_id: str, reply: str, resolution: dict | None) -> dict | None:
+        pending = bucket.setdefault("pending", [])
+        for index, item in enumerate(pending):
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id", "")).strip() != message_id:
+                continue
+            item["status"] = "completed"
+            item["completedAt"] = self.now_iso()
+            item["reply"] = reply
+            if isinstance(resolution, dict):
+                item["resolution"] = resolution
+            return pending.pop(index)
+        return None
+
+    def get_wechat_access_token(self, runtime: RuntimeBridge) -> tuple[str, str]:
+        config = self.get_wechat_official_config(runtime)
+        if not config["appId"] or not config["appSecret"]:
+            return "", "wechat_app_credentials_missing"
+        cache = runtime.state.setdefault("_wechatAccessToken", {"token": "", "expiresAt": 0.0})
+        now_ts = datetime.now().timestamp()
+        cached_token = str(cache.get("token", "")).strip()
+        expires_at = float(cache.get("expiresAt", 0.0) or 0.0)
+        if cached_token and expires_at > (now_ts + 60):
+            return cached_token, ""
+        token_url = (
+            "https://api.weixin.qq.com/cgi-bin/token"
+            f"?grant_type=client_credential&appid={config['appId']}&secret={config['appSecret']}"
+        )
+        request = urllib.request.Request(token_url, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        except Exception as exc:
+            return "", str(exc)
+        access_token = str(payload.get("access_token", "")).strip()
+        if not access_token:
+            return "", str(payload.get("errmsg", "")).strip() or "wechat_access_token_failed"
+        expires_in = int(payload.get("expires_in", 7200) or 7200)
+        cache["token"] = access_token
+        cache["expiresAt"] = now_ts + max(300, expires_in - 120)
+        return access_token, ""
+
+    def send_wechat_official_text(self, runtime: RuntimeBridge, user_id: str, content: str) -> tuple[bool, str]:
+        access_token, token_error = self.get_wechat_access_token(runtime)
+        if not access_token:
+            self.write_debug_log(runtime, "wechat_send_failed", {"target": user_id, "error": token_error or "missing_access_token"})
+            return False, token_error or "missing_access_token"
+        payload = {
+            "touser": user_id,
+            "msgtype": "text",
+            "text": {"content": content},
+        }
+        request = urllib.request.Request(
+            f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                result = json.loads(response.read().decode("utf-8", errors="replace"))
+        except Exception as exc:
+            self.write_debug_log(runtime, "wechat_send_failed", {"target": user_id, "error": str(exc), "errorType": exc.__class__.__name__})
+            return False, str(exc)
+        if int(result.get("errcode", 0) or 0) != 0:
+            error_text = str(result.get("errmsg", "")).strip() or f"errcode={result.get('errcode')}"
+            self.write_debug_log(runtime, "wechat_send_failed", {"target": user_id, "error": error_text, "response": result})
+            return False, error_text
+        self.write_debug_log(runtime, "wechat_send_success", {"target": user_id, "contentPreview": content[:240]})
+        return True, ""
 
     def normalize_wechat_message(self, payload: dict) -> tuple[str, str]:
         message_type = str(payload.get("MsgType", "text")).strip().lower() or "text"
@@ -1022,6 +1245,7 @@ class Feature(HomeHubFeature):
                     "imapHost": mail_config["imapHost"],
                     "imapPort": mail_config["imapPort"],
                 },
+                "bridgeConfig": self.get_bridge_config(runtime),
             }
         }
 
@@ -1041,8 +1265,126 @@ class Feature(HomeHubFeature):
                     "recentActions": store.get("recentActions", [])[:10],
                     "wechatOfficialConfig": self.get_wechat_official_config(runtime),
                     "mailConfig": self.get_mail_config(runtime),
+                    "bridgeConfig": self.get_bridge_config(runtime),
                 },
             }
+
+        if method == "POST" and path == API_BRIDGE_PULL:
+            payload = body or {}
+            bridge_config = self.get_bridge_config(runtime)
+            shared_token = str(payload.get("bridgeToken", "")).strip()
+            if not bridge_config["sharedToken"] or shared_token != bridge_config["sharedToken"]:
+                self.write_debug_log(runtime, "bridge_pull_rejected", {"reason": "invalid_bridge_token"})
+                return {"status": 403, "body": {"ok": False, "error": "invalid_bridge_token"}}
+            item = self.claim_pending_bridge_item(wechat)
+            self.save_store(store, runtime)
+            if not item:
+                return {"status": 200, "body": {"ok": True, "item": None}}
+            self.write_debug_log(
+                runtime,
+                "bridge_pull_success",
+                {
+                    "messageId": item["id"],
+                    "channel": item["channel"],
+                    "sender": item.get("sender", {}),
+                    "messageType": item.get("messageType", "text"),
+                },
+            )
+            return {"status": 200, "body": {"ok": True, "item": item}}
+
+        if method == "POST" and path == API_BRIDGE_INBOUND:
+            payload = body or {}
+            bridge_config = self.get_bridge_config(runtime)
+            shared_token = str(payload.get("bridgeToken", "")).strip()
+            if bridge_config["sharedToken"] and shared_token != bridge_config["sharedToken"]:
+                self.write_debug_log(runtime, "bridge_inbound_rejected", {"reason": "invalid_bridge_token"})
+                return {"status": 403, "body": {"ok": False, "error": "invalid_bridge_token"}}
+            channel = str(payload.get("channel", "")).strip() or "bridge"
+            sender = payload.get("sender", {}) if isinstance(payload.get("sender"), dict) else {}
+            content = str(payload.get("content", "")).strip()
+            locale = str(payload.get("locale", runtime.get_setting("language", "zh-CN"))).strip() or "zh-CN"
+            subject = str(payload.get("subject", "")).strip()
+            attachments = payload.get("attachments", []) if isinstance(payload.get("attachments"), list) else []
+            message_type = str(payload.get("messageType", "text")).strip() or "text"
+            if not content and not attachments:
+                return {"status": 400, "body": {"ok": False, "error": "content or attachments are required"}}
+            resolution = self.resolve_bridge_request(runtime, channel, sender, content, locale, subject, attachments)
+            reply_text = str(resolution.get("reply", "")).strip()
+            self.write_processing_log(
+                runtime,
+                f"{channel}-bridge",
+                {
+                    "eventType": "bridge_inbound_processed",
+                    "sender": sender,
+                    "messageType": message_type,
+                    "subject": subject,
+                    "content": content[:4000],
+                    "attachments": self.email_attachment_record_view(self.classify_email_attachments(attachments)) if attachments else [],
+                    "route": resolution.get("route", {}),
+                    "effectiveLocale": resolution.get("effectiveLocale", locale),
+                    "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                    "attachmentRouting": resolution.get("attachmentRouting", []),
+                    "executedTasks": resolution.get("executedTasks", []),
+                    "reply": reply_text,
+                    "artifacts": resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
+                },
+            )
+            return {
+                "status": 200,
+                "body": {
+                    "ok": True,
+                    "reply": reply_text,
+                    "resolution": resolution,
+                },
+            }
+
+        if method == "POST" and path == API_BRIDGE_RESULT:
+            payload = body or {}
+            bridge_config = self.get_bridge_config(runtime)
+            shared_token = str(payload.get("bridgeToken", "")).strip()
+            if not bridge_config["sharedToken"] or shared_token != bridge_config["sharedToken"]:
+                self.write_debug_log(runtime, "bridge_result_rejected", {"reason": "invalid_bridge_token"})
+                return {"status": 403, "body": {"ok": False, "error": "invalid_bridge_token"}}
+            message_id = str(payload.get("messageId", "")).strip()
+            reply = str(payload.get("reply", "")).strip()
+            resolution = payload.get("resolution", {}) if isinstance(payload.get("resolution"), dict) else {}
+            if not message_id:
+                return {"status": 400, "body": {"ok": False, "error": "messageId is required"}}
+            completed = self.complete_bridge_item(wechat, message_id, reply, resolution)
+            if not completed:
+                return {"status": 404, "body": {"ok": False, "error": "message_not_found"}}
+            target_user = str((completed.get("sender") or {}).get("id", "")).strip()
+            send_ok = False
+            send_error = ""
+            if completed.get("channel") == "wechat-official" and target_user and reply:
+                send_ok, send_error = self.send_wechat_official_text(runtime, target_user, reply)
+                out_item = self.queue_outbound(
+                    wechat,
+                    {"id": target_user, "displayName": target_user},
+                    reply,
+                    "wechat-official",
+                )
+                out_item["status"] = "sent" if send_ok else "failed"
+                if send_error:
+                    out_item["error"] = send_error
+            self.save_store(store, runtime)
+            self.write_processing_log(
+                runtime,
+                "wechat-official",
+                {
+                    "eventType": "bridge_result_processed",
+                    "messageId": message_id,
+                    "sender": completed.get("sender", {}),
+                    "content": str(completed.get("content", ""))[:4000],
+                    "reply": reply,
+                    "sendOk": send_ok,
+                    "sendError": send_error,
+                    "route": resolution.get("route", {}),
+                    "effectiveLocale": resolution.get("effectiveLocale", completed.get("locale", "")),
+                    "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                },
+            )
+            return {"status": 200, "body": {"ok": True, "sendOk": send_ok, "sendError": send_error}}
 
         if method == "GET" and path == API_WECHAT_WEBHOOK:
             config = self.get_wechat_official_config(runtime)
@@ -1108,6 +1450,7 @@ class Feature(HomeHubFeature):
                 "displayName": str(xml_payload.get("FromUserName", "")).strip(),
                 "remark": "",
             }
+            bridge_config = self.get_bridge_config(runtime)
             self.write_debug_log(
                 runtime,
                 "wechat_inbound_received",
@@ -1125,7 +1468,64 @@ class Feature(HomeHubFeature):
                     "contentType": "text/plain; charset=utf-8",
                 }
             self.upsert_channel_user(wechat.setdefault("users", []), sender)
-            resolution = self.resolve_inbound(runtime, "wechat-official", sender, content, locale)
+            if bridge_config["configured"] and bridge_config.get("targetUrl"):
+                bridge_result = self.forward_bridge_request(
+                    runtime,
+                    channel="wechat-official",
+                    sender=sender,
+                    content=content,
+                    locale=locale,
+                    subject="",
+                    attachments=[],
+                    message_type=message_type,
+                    metadata={"event": event},
+                )
+                if bridge_result.get("ok"):
+                    bridge_body = bridge_result.get("body", {}) if isinstance(bridge_result.get("body"), dict) else {}
+                    resolution = bridge_body.get("resolution", {}) if isinstance(bridge_body.get("resolution"), dict) else {}
+                    if not resolution:
+                        resolution = {"reply": str(bridge_body.get("reply", "")).strip()}
+                    resolution["resolutionStrategy"] = str(resolution.get("resolutionStrategy", "")).strip() or "wechat_bridge_forward"
+                else:
+                    error_text = str(bridge_result.get("error", "")).strip() or "bridge_unavailable"
+                    resolution = {
+                        "reply": "本地 HomeHub 当前不可达，请稍后再试。",
+                        "route": {
+                            "kind": "bridge",
+                            "selected": {"featureId": "external-channels", "action": "wechat_bridge_unavailable", "score": 1.0},
+                        },
+                        "resolutionStrategy": "wechat_bridge_failed",
+                        "bridgeError": error_text,
+                    }
+            else:
+                if bridge_config.get("sharedToken"):
+                    queue_item = self.create_bridge_queue_item(
+                        "wechat-official",
+                        sender,
+                        content,
+                        locale,
+                        message_type=message_type,
+                        metadata={"event": event},
+                    )
+                    wechat.setdefault("pending", []).insert(0, queue_item)
+                    del wechat["pending"][100:]
+                    self.save_store(store, runtime)
+                    self.write_debug_log(
+                        runtime,
+                        "wechat_bridge_queued",
+                        {
+                            "messageId": queue_item["id"],
+                            "senderId": sender["id"],
+                            "messageType": message_type,
+                            "contentPreview": content[:240],
+                        },
+                    )
+                    return {
+                        "status": 200,
+                        "rawBody": self.build_wechat_passive_reply(xml_payload, "消息已收到，正在交给本地 HomeHub 处理。"),
+                        "contentType": "application/xml; charset=utf-8",
+                    }
+                resolution = self.resolve_inbound(runtime, "wechat-official", sender, content, locale)
             item = self.record_inbound_message(wechat, sender, content, locale, message_type=message_type, homehub_result=resolution)
             reply_text = str(resolution.get("reply", "")).strip() or "HomeHub 已收到你的消息。"
             if message_type == "event" and event == "unsubscribe":

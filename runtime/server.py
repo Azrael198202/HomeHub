@@ -51,6 +51,7 @@ BOOTSTRAP_PROCESS = None
 OLLAMA_INVENTORY_CACHE = {"value": None, "updated_at": 0.0}
 OLLAMA_INVENTORY_TTL_SECONDS = 15.0
 EMAIL_SYNC_INTERVAL_SECONDS = int(os.environ.get("HOMEHUB_EMAIL_SYNC_INTERVAL", "90"))
+BRIDGE_PULL_INTERVAL_SECONDS = int(os.environ.get("HOMEHUB_BRIDGE_PULL_INTERVAL", "5"))
 
 
 def get_secrets_file():
@@ -520,6 +521,8 @@ def default_secrets():
         "wechatOfficialAppId": "",
         "wechatOfficialAppSecret": "",
         "wechatOfficialEncodingAesKey": "",
+        "externalBridgeUrl": "",
+        "externalBridgeToken": "",
     }
 
 
@@ -1211,6 +1214,8 @@ def load_secrets_file():
         "wechatOfficialAppId": data.get("wechatOfficialAppId", ""),
         "wechatOfficialAppSecret": data.get("wechatOfficialAppSecret", ""),
         "wechatOfficialEncodingAesKey": data.get("wechatOfficialEncodingAesKey", ""),
+        "externalBridgeUrl": data.get("externalBridgeUrl", ""),
+        "externalBridgeToken": data.get("externalBridgeToken", ""),
     }
 
 
@@ -1241,6 +1246,8 @@ def get_effective_secrets():
     wechat_official_app_id = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") or file_secrets.get("wechatOfficialAppId", "")
     wechat_official_app_secret = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") or file_secrets.get("wechatOfficialAppSecret", "")
     wechat_official_encoding_aes_key = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") or file_secrets.get("wechatOfficialEncodingAesKey", "")
+    external_bridge_url = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") or file_secrets.get("externalBridgeUrl", "")
+    external_bridge_token = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") or file_secrets.get("externalBridgeToken", "")
     return {
         "googleApiKey": google_api_key,
         "googleAccessToken": google_access_token,
@@ -1255,6 +1262,8 @@ def get_effective_secrets():
         "wechatOfficialAppId": wechat_official_app_id,
         "wechatOfficialAppSecret": wechat_official_app_secret,
         "wechatOfficialEncodingAesKey": wechat_official_encoding_aes_key,
+        "externalBridgeUrl": external_bridge_url,
+        "externalBridgeToken": external_bridge_token,
     }
 
 
@@ -1274,6 +1283,8 @@ def get_secret_sources():
         "wechatOfficialAppId": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") else ("file" if file_secrets.get("wechatOfficialAppId") else "missing"),
         "wechatOfficialAppSecret": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") else ("file" if file_secrets.get("wechatOfficialAppSecret") else "missing"),
         "wechatOfficialEncodingAesKey": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") else ("file" if file_secrets.get("wechatOfficialEncodingAesKey") else "missing"),
+        "externalBridgeUrl": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") else ("file" if file_secrets.get("externalBridgeUrl") else "missing"),
+        "externalBridgeToken": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") else ("file" if file_secrets.get("externalBridgeToken") else "missing"),
     }
 
 
@@ -2165,6 +2176,66 @@ def run_background_email_sync():
         except Exception as exc:
             print(f"[mail-sync] background sync failed: {exc}")
         time.sleep(max(30, EMAIL_SYNC_INTERVAL_SECONDS))
+
+
+def run_background_bridge_pull():
+    while True:
+        try:
+            bridge_url = str(SECRETS.get("externalBridgeUrl", "")).strip().rstrip("/")
+            bridge_token = str(SECRETS.get("externalBridgeToken", "")).strip()
+            if bridge_url and bridge_token:
+                pull_request = urllib.request.Request(
+                    f"{bridge_url}/api/external-channels/bridge/pull",
+                    data=json.dumps({"bridgeToken": bridge_token}).encode("utf-8"),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(pull_request, timeout=20) as response:
+                    pull_body = json.loads(response.read().decode("utf-8", errors="replace"))
+                item = pull_body.get("item") if isinstance(pull_body, dict) else None
+                if isinstance(item, dict) and item:
+                    runtime = build_runtime_bridge()
+                    bridge_response = FEATURE_MANAGER.invoke_feature(
+                        "external-channels",
+                        {
+                            "mode": "api",
+                            "method": "POST",
+                            "path": "/api/external-channels/bridge/inbound",
+                            "body": {
+                                "channel": item.get("channel", ""),
+                                "sender": item.get("sender", {}),
+                                "content": item.get("content", ""),
+                                "locale": item.get("locale", PERSISTED_SETTINGS.get("language", "zh-CN")),
+                                "subject": item.get("subject", ""),
+                                "attachments": item.get("attachments", []),
+                                "messageType": item.get("messageType", "text"),
+                                "metadata": item.get("metadata", {}),
+                                "bridgeToken": bridge_token,
+                            },
+                        },
+                        PERSISTED_SETTINGS.get("language", "zh-CN"),
+                        runtime,
+                    ) or {}
+                    bridge_body = bridge_response.get("body", {}) if isinstance(bridge_response.get("body"), dict) else {}
+                    result_request = urllib.request.Request(
+                        f"{bridge_url}/api/external-channels/bridge/result",
+                        data=json.dumps(
+                            {
+                                "bridgeToken": bridge_token,
+                                "messageId": item.get("id", ""),
+                                "reply": bridge_body.get("reply", ""),
+                                "resolution": bridge_body.get("resolution", {}),
+                            },
+                            ensure_ascii=False,
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(result_request, timeout=20) as response:
+                        response.read()
+        except Exception as exc:
+            print(f"[bridge-pull] background pull failed: {exc}")
+        time.sleep(max(3, BRIDGE_PULL_INTERVAL_SECONDS))
 
 
 def ollama_chat_raw(system_prompt, user_prompt, model_name):
@@ -4001,6 +4072,8 @@ class Handler(BaseHTTPRequestHandler):
                 "wechatOfficialAppId": body.get("wechatOfficialAppId", file_secrets.get("wechatOfficialAppId", "")),
                 "wechatOfficialAppSecret": body.get("wechatOfficialAppSecret", file_secrets.get("wechatOfficialAppSecret", "")),
                 "wechatOfficialEncodingAesKey": body.get("wechatOfficialEncodingAesKey", file_secrets.get("wechatOfficialEncodingAesKey", "")),
+                "externalBridgeUrl": body.get("externalBridgeUrl", file_secrets.get("externalBridgeUrl", "")),
+                "externalBridgeToken": body.get("externalBridgeToken", file_secrets.get("externalBridgeToken", "")),
             })
             SECRETS = get_effective_secrets()
             SECRET_SOURCES = get_secret_sources()
@@ -4016,6 +4089,8 @@ class Handler(BaseHTTPRequestHandler):
                     "mailAddressSource": SECRET_SOURCES.get("mailAddress", "missing"),
                     "wechatOfficialTokenSource": SECRET_SOURCES.get("wechatOfficialToken", "missing"),
                     "wechatOfficialAppIdSource": SECRET_SOURCES.get("wechatOfficialAppId", "missing"),
+                    "externalBridgeConfigured": bool(SECRETS.get("externalBridgeUrl") and SECRETS.get("externalBridgeToken")),
+                    "externalBridgeUrlSource": SECRET_SOURCES.get("externalBridgeUrl", "missing"),
                 }
             )
             return
@@ -4225,6 +4300,8 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     email_sync_thread = threading.Thread(target=run_background_email_sync, daemon=True)
     email_sync_thread.start()
+    bridge_pull_thread = threading.Thread(target=run_background_bridge_pull, daemon=True)
+    bridge_pull_thread.start()
     server = ThreadingHTTPServer((RUNTIME_HOST, RUNTIME_PORT), Handler)
     print(f"HomeHub runtime started at http://{RUNTIME_HOST}:{RUNTIME_PORT}")
     try:
