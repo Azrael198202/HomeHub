@@ -307,6 +307,15 @@ class Feature(HomeHubFeature):
         attachments: list[dict],
         initial_resolution: dict,
     ) -> dict:
+        def merge_resolution_text(primary: str, secondary: str) -> str:
+            first = str(primary or "").strip()
+            second = str(secondary or "").strip()
+            if not first:
+                return second
+            if not second or second == first:
+                return first
+            return f"{first}\n{second}"
+
         classified_attachments = self.classify_email_attachments(attachments)
         if not self.should_route_email_attachments_to_agent(content, classified_attachments, initial_resolution):
             return initial_resolution
@@ -343,9 +352,50 @@ class Feature(HomeHubFeature):
         body = agent_result.get("body", {}) if isinstance(agent_result.get("body"), dict) else {}
         if not bool(body.get("ok")):
             return initial_resolution
+        agent_item = body.get("item", {}) if isinstance(body.get("item"), dict) else {}
+        generated_feature_id = str(body.get("featureId", "")).strip() or str(agent_item.get("generatedFeatureId", "")).strip()
+        executed_tasks = [
+            {
+                "kind": "attachment_intake",
+                "featureId": "custom-agents",
+                "reply": str(body.get("reply", "")).strip(),
+            }
+        ]
+        merged_reply = str(body.get("reply", "")).strip() or str(initial_resolution.get("reply", "")).strip()
+        merged_artifacts = body.get("artifacts", []) if isinstance(body.get("artifacts"), list) else []
+        followup_needed = any(
+            token in content.lower() or token in content
+            for token in [
+                "表格", "excel", "xlsx", "导出", "下载", "文件", "文档", "sheet", "spreadsheet",
+                "总额", "总金额", "总的消费金额", "到目前为止", "目前为止", "累计", "明细",
+                "report", "summary", "total amount", "total", "details",
+            ]
+        )
+        if generated_feature_id and followup_needed:
+            followup = runtime.call_feature(
+                generated_feature_id,
+                {
+                    "mode": "voice",
+                    "message": content,
+                    "locale": locale,
+                },
+                locale,
+            )
+            if isinstance(followup, dict):
+                merged_reply = merge_resolution_text(merged_reply, followup.get("reply", ""))
+                if isinstance(followup.get("artifacts"), list):
+                    merged_artifacts = merged_artifacts + followup.get("artifacts", [])
+                executed_tasks.append(
+                    {
+                        "kind": "followup_feature",
+                        "featureId": generated_feature_id,
+                        "reply": str(followup.get("reply", "")).strip(),
+                        "artifacts": [str(item.get("fileName", "")).strip() for item in followup.get("artifacts", []) if isinstance(item, dict)],
+                    }
+                )
         merged = {
-            "reply": str(body.get("reply", "")).strip() or str(initial_resolution.get("reply", "")).strip(),
-            "artifacts": body.get("artifacts", []) if isinstance(body.get("artifacts"), list) else [],
+            "reply": merged_reply,
+            "artifacts": merged_artifacts,
             "route": {
                 "kind": "feature",
                 "selected": {
@@ -366,6 +416,7 @@ class Feature(HomeHubFeature):
             "resolutionStrategy": "email_body_plus_attachment_agent",
             "attachmentAgentResult": body,
             "attachmentRouting": classified_attachments,
+            "executedTasks": executed_tasks,
         }
         return merged
 
@@ -864,6 +915,7 @@ class Feature(HomeHubFeature):
                             "route": resolution.get("route", {}),
                             "resolutionStrategy": resolution.get("resolutionStrategy", ""),
                             "attachmentRouting": resolution.get("attachmentRouting", []),
+                            "executedTasks": resolution.get("executedTasks", []),
                             "reply": reply_text,
                             "artifacts": reply_artifacts,
                             "autoReply": item.get("autoReply", {}),
@@ -1167,6 +1219,7 @@ class Feature(HomeHubFeature):
                     "route": resolution.get("route", {}),
                     "resolutionStrategy": resolution.get("resolutionStrategy", ""),
                     "attachmentRouting": resolution.get("attachmentRouting", []),
+                    "executedTasks": resolution.get("executedTasks", []),
                     "reply": reply_text,
                     "artifacts": reply_artifacts,
                     "autoReply": item.get("autoReply", {}),

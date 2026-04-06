@@ -45,6 +45,92 @@
     "summary": "Receive inbound emails, route them through HomeHub, and queue outbound mail replies.",
     "inbox": [
       {
+        "id": "imap-39",
+        "sender": {
+          "id": "=?utf-8?q?=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA?=\r\n <no-reply@mercari.jp>",
+          "address": "=?utf-8?q?=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA?=\r\n <no-reply@mercari.jp>",
+          "displayName": "=?utf-8?q?=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA?=\r\n <no-reply@mercari.jp>"
+        },
+        "subject": "=?UTF-8?q?=E3=80=90P500=E3=83=97=E3=83=AC=E3=82=BC=E3=83=B3=E3=83=88?=\r\n =?UTF-8?q?=F0=9F=8E=81=E3=80=91=E5=AE=B6=E6=97=8F=E3=82=84=E5=8F=8B?=\r\n =?UTF-8?q?=E4=BA=BA=E3=81=AB=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA=E3=82=92?=\r\n =?UTF-8?q?=E7=B4=B9=E4=BB=8B=E3=81=97=E3=81=A6=E3=83=9D=E3=82=A4=E3=83=B3?=\r\n =?UTF-8?q?=E3=83=88GET=EF=BC=81?=",
+        "content": "詳細を確認する https://campaign.jp.mercari.com/pages/FriendReferralPage_2/index.html?referrer=email\r\n\r\n招待キャンペーン実施中\r\n\r\nあなたの招待コードを使って、家族や友人をメルカリに招待しませんか？\r\nメルカリへの招待であなたもお相手もそれぞれ500円分のポイントがもらえるお得なプログラムが実施中です。\r\n\r\n招待した人数に上限はありません。\r\nこの機会にぜひ、たくさんの方を招待してみてください！\r\n\r\n\r\n招待方法\r\n\r\n1. マイページの「招待して500ポイント GET」をタップ\r\n2. あなたの招待コードをコピーして、招待したい方へシェア\r\n3. お相手が会員登録時に招待コードを入力すれば完了！\r\n\r\n\r\nポイントについて\r\n\r\n・付与されるポイント：招待した方、招待された方にそれぞれP500を付与\r\n・ポイントの有効期間：付与された日を含めた30日間\r\n・ポイントの付与時期：招待された方の登録完了から14日後までに付与\r\n\r\n\r\n本プログラムの詳細は、下記のページでもご確認いただけます。\r\n\r\n👉 キャンペーンページを見る https://campaign.jp.mercari.com/pages/FriendReferralPage_2/index.html??referrer=email\r\n\r\n今後ともメルカリをよろしくお願いいたします。\r\n\r\nこのメールは送信専用です。ご返信いただいてもお答えできませんのでご了承ください。お問い合わせ、メールの配信停止は以下のリンクからお願いします。\r\n\r\nお問い合わせ https://help.jp.mercari.com/guide/articles/749/メールの配信停止 https://sp.mercari.jp/unsubscribe/?token=efd0cfc1c30a2be7392c01759ccd49a5abee588e&type=email_news&user_id=265478151\r\n\r\nhttps://twitter.com/mercari_jp?ref_src=twsrc%5Egoogle%7Ctwcamp%5Eserp%7Ctwgr%5Eauthorhttps://www.instagram.com/mercari_jp/?hl=ja\r\n\r\nhttps://apps.apple.com/jp/app/%E3%83%95%E3%83%AA%E3%83%9E%E3%82%A2%E3%83%97%E3%83%AA%E3%81%AF%E3%83%A1%E3%83%AB%E3%82%AB%E3%83%AA-%E3%83%A1%E3%83%AB%E3%83%9A%E3%82%A4%E3%81%AE%E3%82%B9%E3%83%9E%E3%83%9B%E6%B1%BA%E6%B8%88%E3%81%A7%E3%82%82%E3%81%A3%E3%81%A8%E3%81%8A%E5%BE%97/id667861049https://play.google.com/store/apps/details?id=com.kouzoh.mercari&hl=ja&gl=US\r\n\r\n株式会社メルカリ\r\n〒106-6118 東京都港区六本木6-10-1 六本木ヒルズ森タワー\r\n©2023 Mercari, inc.",
+        "messageType": "email",
+        "locale": "zh-CN",
+        "createdAt": "2026-04-06T13:39",
+        "homehubReply": "这次受控联网查询没有拿到结果：no_allowed_source_found。",
+        "homehubRoute": {
+          "kind": "general",
+          "selected": {
+            "intent": "network-lookup",
+            "featureId": "homehub-core",
+            "featureName": "HomeHub Core",
+            "action": "controlled_network_lookup",
+            "score": 0.91
+          },
+          "candidates": [],
+          "clarificationQuestion": "",
+          "reasoning": "Detected a controlled network lookup request from the message.",
+          "taskSpec": {
+            "taskType": "network_lookup",
+            "intent": "network-lookup",
+            "summary": "Query approved external sources and return a sourced summary.",
+            "urgency": "normal",
+            "inputModes": [
+              "text"
+            ],
+            "requiresImage": false,
+            "requiresGeneration": false,
+            "requiresScheduling": false,
+            "requiresLongRunningAgent": false,
+            "preferredExecution": "hybrid",
+            "missingInfo": []
+          },
+          "toolPlan": [
+            {
+              "toolId": "general-chat",
+              "label": "General Chat",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": true
+            },
+            {
+              "toolId": "vision-bill-intake",
+              "label": "Bill Vision Intake",
+              "execution": "hybrid",
+              "kind": "pipeline",
+              "selected": true
+            },
+            {
+              "toolId": "document-workbench",
+              "label": "Document Workbench",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": true
+            },
+            {
+              "toolId": "network-lookup",
+              "label": "Controlled Network Lookup",
+              "execution": "hybrid",
+              "kind": "core",
+              "selected": true
+            }
+          ],
+          "modelRoute": {
+            "execution": "hybrid",
+            "primaryModel": "qwen2.5:1.5b-instruct",
+            "fallbackModel": "qwen2.5:7b-instruct",
+            "reason": "Controlled network lookup fetches approved sources first, then summarizes with a chat model."
+          }
+        },
+        "homehubResolutionStrategy": "email_metadata_fallback",
+        "autoReply": {
+          "ok": false,
+          "error": "Skipped because the email did not mention 小栖 or homehub.",
+          "subject": "Re: =?UTF-8?q?=E3=80=90P500=E3=83=97=E3=83=AC=E3=82=BC=E3=83=B3=E3=83=88?=\r\n =?UTF-8?q?=F0=9F=8E=81=E3=80=91=E5=AE=B6=E6=97=8F=E3=82=84=E5=8F=8B?=\r\n =?UTF-8?q?=E4=BA=BA=E3=81=AB=E3=83=A1=E3=83=AB=E3=82=AB=E3=83=AA=E3=82=92?=\r\n =?UTF-8?q?=E7=B4=B9=E4=BB=8B=E3=81=97=E3=81=A6=E3=83=9D=E3=82=A4=E3=83=B3?=\r\n =?UTF-8?q?=E3=83=88GET=EF=BC=81?=",
+          "attachments": []
+        },
+        "sourceDate": "2026-04-05T07:30:02+00:00"
+      },
+      {
         "id": "imap-50",
         "sender": {
           "id": "=?UTF-8?B?6Z+T6be5?= <ying.hahn@gmail.com>",
@@ -1096,84 +1182,84 @@
         "error": "EOF occurred in violation of protocol (_ssl.c:1129)"
       }
     ],
-    "lastSyncAt": "2026-04-06T12:32"
+    "lastSyncAt": "2026-04-06T13:47"
   },
   "recentActions": [
     {
-      "id": "external-2026-04-06T12:52",
+      "id": "external-2026-04-06T13:47",
+      "summary": "Synchronized 0 inbound email message(s).",
+      "createdAt": "2026-04-06T13:47"
+    },
+    {
+      "id": "external-2026-04-06T13:46",
+      "summary": "Synchronized 0 inbound email message(s).",
+      "createdAt": "2026-04-06T13:46"
+    },
+    {
+      "id": "external-2026-04-06T13:44",
+      "summary": "Synchronized 0 inbound email message(s).",
+      "createdAt": "2026-04-06T13:44"
+    },
+    {
+      "id": "external-2026-04-06T13:42",
+      "summary": "Synchronized 0 inbound email message(s).",
+      "createdAt": "2026-04-06T13:42"
+    },
+    {
+      "id": "external-2026-04-06T13:41",
+      "summary": "Synchronized 0 inbound email message(s).",
+      "createdAt": "2026-04-06T13:41"
+    },
+    {
+      "id": "external-2026-04-06T13:39",
       "summary": "Synchronized 1 inbound email message(s).",
-      "createdAt": "2026-04-06T12:52"
+      "createdAt": "2026-04-06T13:39"
     },
     {
-      "id": "external-2026-04-06T12:40",
-      "summary": "Synchronized 1 inbound email message(s).",
-      "createdAt": "2026-04-06T12:40"
-    },
-    {
-      "id": "external-2026-04-06T12:32",
+      "id": "external-2026-04-06T13:23",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:32"
+      "createdAt": "2026-04-06T13:23"
     },
     {
-      "id": "external-2026-04-06T12:30",
+      "id": "external-2026-04-06T13:21",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:30"
+      "createdAt": "2026-04-06T13:21"
     },
     {
-      "id": "external-2026-04-06T12:29",
+      "id": "external-2026-04-06T13:20",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:29"
+      "createdAt": "2026-04-06T13:20"
     },
     {
-      "id": "external-2026-04-06T12:27",
+      "id": "external-2026-04-06T13:18",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:27"
+      "createdAt": "2026-04-06T13:18"
     },
     {
-      "id": "external-2026-04-06T12:25",
+      "id": "external-2026-04-06T13:16",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:25"
+      "createdAt": "2026-04-06T13:16"
     },
     {
-      "id": "external-2026-04-06T12:24",
+      "id": "external-2026-04-06T13:15",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:24"
+      "createdAt": "2026-04-06T13:15"
     },
     {
-      "id": "external-2026-04-06T12:22",
+      "id": "external-2026-04-06T13:13",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:22"
+      "createdAt": "2026-04-06T13:13"
     },
     {
-      "id": "external-2026-04-06T12:20",
+      "id": "external-2026-04-06T13:11",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:20"
+      "createdAt": "2026-04-06T13:11"
     },
     {
-      "id": "external-2026-04-06T12:19",
+      "id": "external-2026-04-06T13:10",
       "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:19"
-    },
-    {
-      "id": "external-2026-04-06T12:17",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:17"
-    },
-    {
-      "id": "external-2026-04-06T12:15",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:15"
-    },
-    {
-      "id": "external-2026-04-06T12:14",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:14"
-    },
-    {
-      "id": "external-2026-04-06T12:12",
-      "summary": "Synchronized 0 inbound email message(s).",
-      "createdAt": "2026-04-06T12:12"
+      "createdAt": "2026-04-06T13:10"
     }
   ],
-  "lastRun": "2026-04-06T12:52"
+  "lastRun": "2026-04-06T13:47"
 }

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from urllib.parse import urlparse
+import os
 
 try:
     from server import Handler as HomeHubHandler
-    from server import RUNTIME_HOST, RUNTIME_PORT, ThreadingHTTPServer, run_background_email_sync, threading
+    from server import ThreadingHTTPServer, run_background_email_sync, threading
 except ModuleNotFoundError:
     from runtime.server import Handler as HomeHubHandler
-    from runtime.server import RUNTIME_HOST, RUNTIME_PORT, ThreadingHTTPServer, run_background_email_sync, threading
+    from runtime.server import ThreadingHTTPServer, run_background_email_sync, threading
+
+
+API_RUNTIME_HOST = os.environ.get("HOMEHUB_API_HOST", "0.0.0.0")
+API_RUNTIME_PORT = int(os.environ.get("PORT") or os.environ.get("HOMEHUB_API_PORT", "8787"))
 
 
 class ApiOnlyHandler(HomeHubHandler):
@@ -39,8 +44,8 @@ class ApiOnlyHandler(HomeHubHandler):
 if __name__ == "__main__":
     email_sync_thread = threading.Thread(target=run_background_email_sync, daemon=True)
     email_sync_thread.start()
-    server = ThreadingHTTPServer((RUNTIME_HOST, RUNTIME_PORT), ApiOnlyHandler)
-    print(f"HomeHub API started at http://{RUNTIME_HOST}:{RUNTIME_PORT}")
+    server = ThreadingHTTPServer((API_RUNTIME_HOST, API_RUNTIME_PORT), ApiOnlyHandler)
+    print(f"HomeHub API started at http://{API_RUNTIME_HOST}:{API_RUNTIME_PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

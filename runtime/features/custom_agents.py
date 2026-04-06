@@ -1777,8 +1777,10 @@ def load_feature() -> HomeHubFeature:
                     "body": {
                         "ok": True,
                         "agentId": agent.get("id"),
+                        "featureId": agent.get("generatedFeatureId"),
                         "reply": result.get("reply"),
                         "analysis": result.get("analysis", {}),
+                        "featureResult": result.get("featureResult", {}) if isinstance(result.get("featureResult"), dict) else {},
                         "artifacts": result.get("artifacts", []),
                         "item": agent,
                         "cortex": self.cortex(runtime).get_summary(str(agent.get("id", ""))),

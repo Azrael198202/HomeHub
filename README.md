@@ -87,7 +87,7 @@ For Railway GitHub deployments, use the dedicated API entrypoint directly:
 2. Set the start command to:
 
 ```bash
-python3 runtime/api_server.py
+   python3 runtime/api_server.py
 ```
 
 3. Add these environment variables in Railway:
@@ -102,6 +102,7 @@ HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY=
 
 4. Railway provides `PORT` automatically. HomeHub now reads `PORT` first and binds to `0.0.0.0` by default, so the WeChat webhook can be reached publicly.
 5. `runtime/api_server.py` exposes API routes only, which is better for webhook and external channel deployments than serving the full TV shell runtime in the same Railway service.
+6. `runtime/server.py` is now local-only by default and binds to `127.0.0.1:${HOMEHUB_PORT:-8787}`. Railway should deploy `runtime/api_server.py`, which binds to `0.0.0.0:$PORT`.
 6. Use this webhook URL in the WeChat platform:
 
 ```text

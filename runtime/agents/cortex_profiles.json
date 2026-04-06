@@ -3,8 +3,8 @@
     "custom-agent-20260403142506": {
       "agentId": "custom-agent-20260403142506",
       "agentName": "家庭账单",
-      "createdAt": "2026-04-06T12:51",
-      "updatedAt": "2026-04-06T12:52",
+      "createdAt": "2026-04-06T13:12",
+      "updatedAt": "2026-04-06T13:48",
       "stage": "complete",
       "blueprint": {
         "mission": "记录用户的消费并提供每周的消费总结和提醒",
@@ -39,8 +39,8 @@
           "network": 0
         },
         "workingStyle": {
-          "proactive": 118,
-          "structured": 118,
+          "proactive": 2192,
+          "structured": 2192,
           "cautious": 0
         }
       },
