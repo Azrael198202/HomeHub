@@ -262,6 +262,13 @@ VOICE_PROFILE = {
 
 RUNTIME_PROFILES = [
     {
+        "id": "low-memory",
+        "label": "Low Memory",
+        "summary": "Optimized for 8GB-class machines. HomeHub avoids local 7B vision/coder workloads, keeps OCR lightweight, and prefers small local chat or cloud offload.",
+        "localRoles": ["wake word", "light chat", "RapidOCR", "mail sync", "small-model fallback"],
+        "cloudRoles": ["heavy planning", "vision reasoning", "document generation review"],
+    },
+    {
         "id": "edge-hybrid",
         "label": "Edge Hybrid",
         "summary": "Default for industrial boxes: keep wake, fallback chat, and basic routing local; use API for heavy planning and premium voice.",
@@ -1037,7 +1044,7 @@ def build_ai_capability_catalog(provider_catalog, selected_audio):
 
 
 def get_runtime_profile():
-    selected_id = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
+    selected_id = PERSISTED_SETTINGS.get("runtimeProfile", "low-memory")
     for item in RUNTIME_PROFILES:
         if item["id"] == selected_id:
             return deepcopy(item)
@@ -1101,11 +1108,12 @@ def build_tool_plan(task_spec, route):
 
 def select_model_route(task_spec, runtime_strategy, local_inventory):
     installed = set(runtime_strategy.get("localDetected", []))
+    low_memory = runtime_strategy.get("id") == "low-memory"
     route = {
-        "execution": task_spec.get("preferredExecution", "hybrid"),
-        "primaryModel": "qwen2.5:3b-instruct" if "qwen2.5:3b-instruct" in installed else "gpt-5.4-mini",
+        "execution": "local" if low_memory else task_spec.get("preferredExecution", "hybrid"),
+        "primaryModel": "qwen2.5:1.5b-instruct" if low_memory and "qwen2.5:1.5b-instruct" in installed else ("qwen2.5:3b-instruct" if "qwen2.5:3b-instruct" in installed else "gpt-5.4-mini"),
         "fallbackModel": "qwen2.5:1.5b-instruct" if "qwen2.5:1.5b-instruct" in installed else "qwen2.5:3b-instruct",
-        "reason": "Balanced default for mixed household conversations.",
+        "reason": "Balanced default for mixed household conversations." if not low_memory else "Low Memory mode keeps the default path on the lightest local chat model available.",
     }
     task_type = task_spec.get("taskType")
     if task_type == "ui_navigation":
@@ -1123,31 +1131,31 @@ def select_model_route(task_spec, runtime_strategy, local_inventory):
             "reason": "Schedules and reminders should prefer local deterministic parsing.",
         }
     if task_type == "agent_creation":
-        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["primaryModel"])
-        fallback = "qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["fallbackModel"]
+        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if not low_memory and "qwen2.5-coder:7b" in installed else route["primaryModel"])
+        fallback = "qwen2.5-coder:7b" if not low_memory and "qwen2.5-coder:7b" in installed else route["fallbackModel"]
         return {
-            "execution": "hybrid" if runtime_strategy.get("apiReady", {}).get("openai") else "local",
+            "execution": "cloud" if low_memory and runtime_strategy.get("apiReady", {}).get("openai") else ("hybrid" if runtime_strategy.get("apiReady", {}).get("openai") else "local"),
             "primaryModel": primary,
             "fallbackModel": fallback,
-            "reason": "Agent creation needs stronger planning and structured follow-up, with a local coder fallback.",
+            "reason": "Agent creation needs stronger planning and structured follow-up, with a local coder fallback." if not low_memory else "Low Memory mode offloads agent creation when cloud is ready and avoids local coder-heavy work.",
         }
     if task_type == "bill_intake":
-        primary = "gpt-4o" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else route["primaryModel"])
-        fallback = "qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else "qwen2.5:7b-instruct"
+        primary = "gpt-4o" if runtime_strategy.get("apiReady", {}).get("openai") else (route["primaryModel"] if low_memory else ("qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else route["primaryModel"]))
+        fallback = route["fallbackModel"] if low_memory else ("qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else "qwen2.5:7b-instruct")
         return {
-            "execution": "hybrid",
+            "execution": "cloud" if low_memory and runtime_strategy.get("apiReady", {}).get("openai") else ("local" if low_memory else "hybrid"),
             "primaryModel": primary,
             "fallbackModel": fallback,
-            "reason": "Bill and receipt understanding benefits from multimodal reasoning, with local vision fallback when needed.",
+            "reason": "Bill and receipt understanding benefits from multimodal reasoning, with local vision fallback when needed." if not low_memory else "Low Memory mode prefers RapidOCR plus cloud vision, and avoids local 7B vision fallback.",
         }
     if task_type == "document_workflow":
-        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if "qwen2.5-coder:7b" in installed else route["primaryModel"])
-        fallback = "qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else ("qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"])
+        primary = "gpt-5.4" if runtime_strategy.get("apiReady", {}).get("openai") else ("qwen2.5-coder:7b" if not low_memory and "qwen2.5-coder:7b" in installed else route["primaryModel"])
+        fallback = route["fallbackModel"] if low_memory else ("qwen2.5vl:7b" if "qwen2.5vl:7b" in installed else ("qwen2.5:7b-instruct" if "qwen2.5:7b-instruct" in installed else route["fallbackModel"]))
         return {
-            "execution": "hybrid",
+            "execution": "cloud" if low_memory and runtime_strategy.get("apiReady", {}).get("openai") else ("local" if low_memory else "hybrid"),
             "primaryModel": primary,
             "fallbackModel": fallback,
-            "reason": "OCR and Office document work needs strong planning plus either local coder or multimodal fallback for extraction and file generation.",
+            "reason": "OCR and Office document work needs strong planning plus either local coder or multimodal fallback for extraction and file generation." if not low_memory else "Low Memory mode keeps document work on light local paths unless cloud is available.",
         }
     if task_type == "network_lookup":
         return {
@@ -1166,6 +1174,11 @@ def select_model_route(task_spec, runtime_strategy, local_inventory):
     if runtime_strategy.get("id") == "local-essential":
         route["execution"] = "local"
         route["reason"] = "Local Essential mode keeps daily work on-device whenever possible."
+    elif low_memory:
+        route["execution"] = "local"
+        route["primaryModel"] = "qwen2.5:1.5b-instruct" if "qwen2.5:1.5b-instruct" in installed else route["primaryModel"]
+        route["fallbackModel"] = "qwen2.5:3b-instruct" if "qwen2.5:3b-instruct" in installed else route["fallbackModel"]
+        route["reason"] = "Low Memory mode prioritizes the lightest local models to reduce swap and UI stalls."
     elif runtime_strategy.get("id") == "cloud-enhanced" and runtime_strategy.get("apiReady", {}).get("openai"):
         route["execution"] = "cloud"
         route["primaryModel"] = "gpt-5.4-mini"
@@ -1353,7 +1366,7 @@ def load_persisted_settings():
             "language": LANGUAGE_SETTINGS["current"],
             "sttProvider": "google",
             "ttsProvider": "google",
-            "runtimeProfile": "edge-hybrid",
+            "runtimeProfile": "low-memory",
             "bootstrapConsent": False,
             "bootstrapCompleted": False,
         }
@@ -1365,7 +1378,7 @@ def load_persisted_settings():
             "language": LANGUAGE_SETTINGS["current"],
             "sttProvider": "google",
             "ttsProvider": "google",
-            "runtimeProfile": "edge-hybrid",
+            "runtimeProfile": "low-memory",
             "bootstrapConsent": False,
             "bootstrapCompleted": False,
         }
@@ -1384,9 +1397,9 @@ def load_persisted_settings():
         tts_provider = "google"
 
     supported_profiles = {item["id"] for item in RUNTIME_PROFILES}
-    runtime_profile = data.get("runtimeProfile", "edge-hybrid")
+    runtime_profile = data.get("runtimeProfile", "low-memory")
     if runtime_profile not in supported_profiles:
-        runtime_profile = "edge-hybrid"
+        runtime_profile = "low-memory"
 
     return {
         "language": language,
@@ -2215,6 +2228,12 @@ def ollama_chat_json(system_prompt, user_prompt, model_name):
 def select_local_json_model(model_name=""):
     inventory = load_ollama_inventory()
     installed = {item["name"] for item in inventory.get("installed", [])}
+    if PERSISTED_SETTINGS.get("runtimeProfile") == "low-memory":
+        if "qwen2.5:1.5b-instruct" in installed:
+            return "qwen2.5:1.5b-instruct"
+        if "qwen2.5:3b-instruct" in installed:
+            return "qwen2.5:3b-instruct"
+        return ""
     if "coder" in str(model_name).lower() and "qwen2.5-coder:7b" in installed:
         return "qwen2.5-coder:7b"
     if "qwen2.5-coder:7b" in installed:
@@ -2231,6 +2250,12 @@ def select_local_json_model(model_name=""):
 def select_local_chat_model():
     inventory = load_ollama_inventory()
     installed = {item["name"] for item in inventory.get("installed", [])}
+    if PERSISTED_SETTINGS.get("runtimeProfile") == "low-memory":
+        if "qwen2.5:1.5b-instruct" in installed:
+            return "qwen2.5:1.5b-instruct"
+        if "qwen2.5:3b-instruct" in installed:
+            return "qwen2.5:3b-instruct"
+        return ""
     if "qwen2.5:7b-instruct" in installed:
         return "qwen2.5:7b-instruct"
     if "qwen2.5:3b-instruct" in installed:
@@ -2241,6 +2266,8 @@ def select_local_chat_model():
 
 
 def select_local_vision_model():
+    if PERSISTED_SETTINGS.get("runtimeProfile") == "low-memory":
+        return ""
     inventory = load_ollama_inventory()
     installed = {item["name"] for item in inventory.get("installed", [])}
     if "qwen2.5vl:7b" in installed:
@@ -2319,7 +2346,7 @@ def openai_vision_json(prompt, image_base64, mime_type, model_name="gpt-4o"):
 
 
 def analyze_image_with_homehub(prompt, image_base64, mime_type="image/png", preferred_model=""):
-    runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
+    runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "low-memory")
     local_model = preferred_model if preferred_model.startswith("qwen2.5vl") else select_local_vision_model()
     if runtime_profile != "local-essential":
         cloud_result = openai_vision_json(prompt, image_base64, mime_type, "gpt-4o")
@@ -2328,6 +2355,8 @@ def analyze_image_with_homehub(prompt, image_base64, mime_type="image/png", pref
                 cloud_result.setdefault("provider", "openai")
                 cloud_result.setdefault("model", "gpt-4o")
             return cloud_result
+    if runtime_profile == "low-memory" and not local_model:
+        return None
     local_result = ollama_vision_json(prompt, image_base64, mime_type, local_model)
     if isinstance(local_result, dict):
         local_result.setdefault("provider", "ollama")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import threading
 from io import BytesIO
 from pathlib import Path
 
@@ -22,6 +23,7 @@ BLUEPRINT = {
 }
 
 _RAPID_OCR_ENGINE = None
+_RAPID_OCR_LOCK = threading.Lock()
 
 
 class Feature(HomeHubFeature):
@@ -51,7 +53,8 @@ class Feature(HomeHubFeature):
             image_bytes = base64.b64decode(image_base64)
             image = Image.open(BytesIO(image_bytes)).convert("RGB")
             array = np.array(image)
-            result, _ = engine(array)
+            with _RAPID_OCR_LOCK:
+                result, _ = engine(array)
         except Exception:
             return {}
         if not result:
