@@ -15,6 +15,10 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from .base import HomeHubFeature, RuntimeBridge
+try:
+    from server_components.language_detector import detect_text_locale, normalize_locale
+except ModuleNotFoundError:
+    from runtime.server_components.language_detector import detect_text_locale, normalize_locale
 
 
 API_ROOT = "/api/external-channels"
@@ -491,30 +495,50 @@ class Feature(HomeHubFeature):
         return message_type, str(payload.get("Content", "")).strip()
 
     def resolve_inbound(self, runtime: RuntimeBridge, channel: str, sender: dict, content: str, locale: str, subject: str = "", attachments: list[dict] | None = None) -> dict:
+        attachment_text = "\n".join(
+            filter(
+                None,
+                [
+                    f"{str(item.get('name', '')).strip()}\n{str(item.get('preview', '')).strip()}".strip()
+                    for item in (attachments or [])
+                    if isinstance(item, dict)
+                ],
+            )
+        ).strip()
+        effective_locale = detect_text_locale(
+            "\n".join(filter(None, [content, attachment_text])),
+            normalize_locale(locale, str(runtime.get_setting("language", "zh-CN"))),
+        )
         if runtime.resolve_message:
             try:
                 if channel == "email":
                     attempts: list[dict] = []
                     for strategy, candidate in self.build_email_resolution_candidates(sender, content, subject, attachments):
-                        resolution = runtime.resolve_message(candidate, locale) or {}
+                        resolution = runtime.resolve_message(candidate, effective_locale) or {}
                         attempts.append(
                             {
                                 "strategy": strategy,
+                                "locale": effective_locale,
                                 "inputPreview": candidate[:240],
                                 "route": resolution.get("route"),
                                 "replyPreview": str(resolution.get("reply", ""))[:240],
                             }
                         )
                         if strategy == "email_metadata_fallback" or not self.looks_like_generic_resolution(resolution):
+                            resolution["effectiveLocale"] = effective_locale
                             resolution["resolutionStrategy"] = strategy
                             resolution["resolutionAttempts"] = attempts
                             return resolution
                     fallback = {"reply": ""}
+                    fallback["effectiveLocale"] = effective_locale
                     fallback["resolutionStrategy"] = "email_none"
                     fallback["resolutionAttempts"] = attempts
                     return fallback
                 payload = self.build_inbound_payload(channel, sender, content, locale, subject)
-                return runtime.resolve_message(payload, locale) or {}
+                resolution = runtime.resolve_message(payload, effective_locale) or {}
+                if isinstance(resolution, dict):
+                    resolution["effectiveLocale"] = effective_locale
+                return resolution
             except Exception as exc:
                 return {"reply": f"HomeHub could not process the inbound {channel} message: {exc}"}
         return {"reply": f"HomeHub received the inbound {channel} message, but the message resolver is not available."}
@@ -913,6 +937,7 @@ class Feature(HomeHubFeature):
                             "content": content[:4000],
                             "attachments": item.get("attachments", []),
                             "route": resolution.get("route", {}),
+                            "effectiveLocale": resolution.get("effectiveLocale", locale),
                             "resolutionStrategy": resolution.get("resolutionStrategy", ""),
                             "attachmentRouting": resolution.get("attachmentRouting", []),
                             "executedTasks": resolution.get("executedTasks", []),
@@ -1130,6 +1155,7 @@ class Feature(HomeHubFeature):
                     "event": event,
                     "content": content[:4000],
                     "route": resolution.get("route", {}),
+                    "effectiveLocale": resolution.get("effectiveLocale", locale),
                     "resolutionStrategy": resolution.get("resolutionStrategy", ""),
                     "reply": reply_text,
                     "artifacts": resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
@@ -1217,6 +1243,7 @@ class Feature(HomeHubFeature):
                     "content": content[:4000],
                     "attachments": item.get("attachments", []),
                     "route": resolution.get("route", {}),
+                    "effectiveLocale": resolution.get("effectiveLocale", locale),
                     "resolutionStrategy": resolution.get("resolutionStrategy", ""),
                     "attachmentRouting": resolution.get("attachmentRouting", []),
                     "executedTasks": resolution.get("executedTasks", []),
