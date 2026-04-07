@@ -688,26 +688,28 @@
       "title": "Reminder: 紀伊國屋書店ウェブストア/ポイントサービス登録確認",
       "triggerAt": "2026-04-07T09:30",
       "eventId": "evt-20260406170301-513",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:03"
+      "createdAt": "2026-04-06T17:03",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406174109-412",
       "title": "Reminder: 会員登録完了リンクの確認",
       "triggerAt": "2026-04-07T02:11",
       "eventId": "evt-20260406174109-269",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:41"
+      "createdAt": "2026-04-06T17:41",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406174131-200",
@@ -742,13 +744,14 @@
       "title": "Reminder: メルペイの7月分のお支払い確認",
       "triggerAt": "2026-04-07T02:14",
       "eventId": "evt-20260406174405-741",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:44"
+      "createdAt": "2026-04-06T17:44",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406174518-416",
@@ -769,39 +772,42 @@
       "title": "Reminder: 紀伊國屋書店ウェブストア/ポイントサービスの利用方法確認",
       "triggerAt": "2026-04-07T09:30",
       "eventId": "evt-20260406174549-712",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:45"
+      "createdAt": "2026-04-06T17:45",
+      "completedAt": "2026-04-07T13:03"
     },
     {
       "id": "rem-20260406174615-866",
       "title": "Reminder: 紀伊國屋ポイントアプリの会員登録手続き",
       "triggerAt": "2026-04-07T02:16",
       "eventId": "evt-20260406174615-940",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:46"
+      "createdAt": "2026-04-06T17:46",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406174852-956",
       "title": "Reminder: 小栖已收到",
       "triggerAt": "2026-04-07T02:48",
       "eventId": "evt-20260406174852-906",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:48"
+      "createdAt": "2026-04-06T17:48",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406175209-965",
@@ -822,26 +828,28 @@
       "title": "Reminder: Facebook账户注册验证码提醒",
       "triggerAt": "2026-04-07T02:26",
       "eventId": "evt-20260406175611-214",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:56"
+      "createdAt": "2026-04-06T17:56",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406175703-729",
       "title": "Reminder: 会員登録完了リンクの確認",
       "triggerAt": "2026-04-07T02:26",
       "eventId": "evt-20260406175703-924",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T17:57"
+      "createdAt": "2026-04-06T17:57",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406175727-432",
@@ -876,39 +884,42 @@
       "title": "Reminder: メルカリ取引実績を確認する",
       "triggerAt": "2026-04-07T02:31",
       "eventId": "evt-20260406180136-205",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T18:01"
+      "createdAt": "2026-04-06T18:01",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406180203-827",
       "title": "Reminder: 紀伊國屋書店ウェブストア/ポイントサービス登録確認",
       "triggerAt": "2026-04-07T09:30",
       "eventId": "evt-20260406180203-505",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T18:02"
+      "createdAt": "2026-04-06T18:02",
+      "completedAt": "2026-04-07T13:03"
     },
     {
       "id": "rem-20260406182514-596",
       "title": "Reminder: Business ID Sign-up Reminder",
       "triggerAt": "2026-04-07T02:55",
       "eventId": "evt-20260406182514-854",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T18:25"
+      "createdAt": "2026-04-06T18:25",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406183034-587",
@@ -929,100 +940,102 @@
       "title": "Reminder: 你好，能收到信息吗？",
       "triggerAt": "2026-04-07T06:25",
       "eventId": "evt-20260406215509-181",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T21:55"
+      "createdAt": "2026-04-06T21:55",
+      "completedAt": "2026-04-07T13:02"
     },
     {
       "id": "rem-20260406215931-674",
       "title": "Reminder: 记录食材消费",
       "triggerAt": "2026-04-06T22:29",
       "eventId": "evt-20260406215931-144",
-      "status": "pending",
+      "status": "done",
       "channels": [
         "voice",
         "tv",
         "mobile"
       ],
-      "createdAt": "2026-04-06T21:59"
+      "createdAt": "2026-04-06T21:59",
+      "completedAt": "2026-04-07T13:02"
     }
   ],
   "recentActions": [
     {
-      "id": "act-20260406215931-625",
-      "kind": "create-event",
-      "summary": "Created schedule '记录食材消费' for 2026-04-06T22:59.",
-      "createdAt": "2026-04-06T21:59"
-    },
-    {
-      "id": "act-20260406215509-559",
-      "kind": "create-event",
-      "summary": "Created schedule '你好，能收到信息吗？' for 2026-04-07T06:55.",
-      "createdAt": "2026-04-06T21:55"
-    },
-    {
-      "id": "act-20260406191656-169",
+      "id": "act-20260407130301-450",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'Reminder: 家庭账单明细Excel'.",
-      "createdAt": "2026-04-06T19:16"
+      "summary": "Completed reminder 'Reminder: 紀伊國屋書店ウェブストア/ポイントサービス登録確認'.",
+      "createdAt": "2026-04-07T13:03"
     },
     {
-      "id": "act-20260406183034-872",
-      "kind": "create-event",
-      "summary": "Created schedule '家庭账单明细Excel' for 2026-04-06T18:30.",
-      "createdAt": "2026-04-06T18:30"
-    },
-    {
-      "id": "act-20260406182514-473",
-      "kind": "create-event",
-      "summary": "Created schedule 'Business ID Sign-up Reminder' for 2026-04-07T03:25.",
-      "createdAt": "2026-04-06T18:25"
-    },
-    {
-      "id": "act-20260406180211-718",
+      "id": "act-20260407130300-248",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'Reminder: 商品取引完了通知'.",
-      "createdAt": "2026-04-06T18:02"
+      "summary": "Completed reminder 'Reminder: 紀伊國屋書店ウェブストア/ポイントサービスの利用方法確認'.",
+      "createdAt": "2026-04-07T13:03"
     },
     {
-      "id": "act-20260406180209-249",
+      "id": "act-20260407130259-705",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'Reminder: 売上が反映されました: かしこい子がつけている圧倒的基礎学力'.",
-      "createdAt": "2026-04-06T18:02"
+      "summary": "Completed reminder 'Reminder: 紀伊國屋書店ウェブストア/ポイントサービス登録確認'.",
+      "createdAt": "2026-04-07T13:02"
     },
     {
-      "id": "act-20260406180207-789",
+      "id": "act-20260407130257-963",
       "kind": "complete-reminder",
-      "summary": "Completed reminder 'Reminder: 查看家庭账单总金额及明细'.",
-      "createdAt": "2026-04-06T18:02"
+      "summary": "Completed reminder 'Reminder: 你好，能收到信息吗？'.",
+      "createdAt": "2026-04-07T13:02"
     },
     {
-      "id": "act-20260406180203-440",
-      "kind": "create-event",
-      "summary": "Created schedule '紀伊國屋書店ウェブストア/ポイントサービス登録確認' for 2026-04-07T10:00.",
-      "createdAt": "2026-04-06T18:02"
+      "id": "act-20260407130257-245",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: Business ID Sign-up Reminder'.",
+      "createdAt": "2026-04-07T13:02"
     },
     {
-      "id": "act-20260406180136-712",
-      "kind": "create-event",
-      "summary": "Created schedule 'メルカリ取引実績を確認する' for 2026-04-07T03:01.",
-      "createdAt": "2026-04-06T18:01"
+      "id": "act-20260407130256-909",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 小栖已收到'.",
+      "createdAt": "2026-04-07T13:02"
     },
     {
-      "id": "act-20260406180113-424",
-      "kind": "create-event",
-      "summary": "Created schedule '契約書面の詳細確認' for 2026-04-06T18:01.",
-      "createdAt": "2026-04-06T18:01"
+      "id": "act-20260407130256-719",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: メルカリ取引実績を確認する'.",
+      "createdAt": "2026-04-07T13:02"
     },
     {
-      "id": "act-20260406180050-720",
-      "kind": "create-event",
-      "summary": "Created schedule 'メルカリモバイルのかけ放題プランをチェックする' for 2026-04-06T18:00.",
-      "createdAt": "2026-04-06T18:00"
+      "id": "act-20260407130255-146",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 会員登録完了リンクの確認'.",
+      "createdAt": "2026-04-07T13:02"
+    },
+    {
+      "id": "act-20260407130254-609",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: Facebook账户注册验证码提醒'.",
+      "createdAt": "2026-04-07T13:02"
+    },
+    {
+      "id": "act-20260407130254-186",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 紀伊國屋ポイントアプリの会員登録手続き'.",
+      "createdAt": "2026-04-07T13:02"
+    },
+    {
+      "id": "act-20260407130253-498",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: メルペイの7月分のお支払い確認'.",
+      "createdAt": "2026-04-07T13:02"
+    },
+    {
+      "id": "act-20260407130252-934",
+      "kind": "complete-reminder",
+      "summary": "Completed reminder 'Reminder: 会員登録完了リンクの確認'.",
+      "createdAt": "2026-04-07T13:02"
     }
   ]
 }

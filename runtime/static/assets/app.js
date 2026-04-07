@@ -2108,12 +2108,24 @@ function bootstrapCopy(snapshot) {
   const inProgress = Boolean(snapshot?.inProgress);
   const blocking = Boolean(snapshot?.blocking);
   const completed = Boolean(snapshot?.completed);
+  const stale = Boolean(snapshot?.stale);
+  const installingPackage = snapshot?.installingPythonPackage || "";
+  const failedPackages = Array.isArray(snapshot?.failedPythonModules) ? snapshot.failedPythonModules : [];
+  const missingPackages = Array.isArray(snapshot?.missingPythonModules) ? snapshot.missingPythonModules : [];
+  const restartRequired = Boolean(snapshot?.restartRequired);
   if (currentLocale === "zh-CN") {
     if (!approved) {
       return {
         title: "首次安装准备",
         text: "HomeHub 第一次运行时需要一次性确认安装权限。确认后，后续启动将自动检查，不会重复要求你再次承认。",
         button: "确认并开始安装"
+      };
+    }
+    if (stale) {
+      return {
+        title: "安装已中断",
+        text: "HomeHub 的首次安装看起来已经卡住。现在可以先进入系统，剩余依赖稍后再手动补齐。",
+        button: ""
       };
     }
     if (inProgress) {
@@ -2139,9 +2151,11 @@ function bootstrapCopy(snapshot) {
     };
   }
   return {
-    title: !approved ? "First-Run Setup" : inProgress ? "Installing HomeHub" : completed ? "Setup Complete" : "Preparing HomeHub",
+    title: !approved ? "First-Run Setup" : stale ? "Setup Interrupted" : inProgress ? "Installing HomeHub" : completed ? "Setup Complete" : "Preparing HomeHub",
     text: !approved
       ? "Approve one-time setup once, and HomeHub will reuse that decision on future launches."
+      : stale
+        ? "HomeHub setup appears stalled. You can continue using the app and install the remaining dependencies manually later."
       : inProgress
         ? "HomeHub is installing local tools, document support, and models."
         : completed
@@ -2174,7 +2188,12 @@ function renderBootstrapOverlay(snapshot) {
   const copy = bootstrapCopy(snapshot || {});
   title.textContent = copy.title;
   text.textContent = copy.text;
-  status.textContent = snapshot?.message || "";
+  const packageBits = [];
+  if (snapshot?.installingPythonPackage) packageBits.push(`?????${snapshot.installingPythonPackage}`);
+  if (Array.isArray(snapshot?.failedPythonModules) && snapshot.failedPythonModules.length) packageBits.push(`????${snapshot.failedPythonModules.join("?")}`);
+  if (Array.isArray(snapshot?.missingPythonModules) && snapshot.missingPythonModules.length) packageBits.push(`????${snapshot.missingPythonModules.join("?")}`);
+  if (snapshot?.restartRequired) packageBits.push("????????? HomeHub");
+  status.textContent = [snapshot?.message || "", ...packageBits].filter(Boolean).join(" | ");
   button.textContent = copy.button;
   button.hidden = approved;
   if ((inProgress || approved) && !bootstrapPollTimer) {

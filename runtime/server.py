@@ -13,25 +13,23 @@ import urllib.error
 import urllib.request
 import wave
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
-try:
-    from features.base import RuntimeBridge
-    from features.loader import FeatureManager
-    from server_components.greetings import build_initial_conversation, build_welcome_message
-    from server_components.language_detector import detect_text_locale, normalize_locale
-    from server_components.task_router import build_task_spec, infer_task_spec_with_openai
-except ModuleNotFoundError:
-    from runtime.features.base import RuntimeBridge
-    from runtime.features.loader import FeatureManager
-    from runtime.server_components.greetings import build_initial_conversation, build_welcome_message
-    from runtime.server_components.language_detector import detect_text_locale, normalize_locale
-    from runtime.server_components.task_router import build_task_spec, infer_task_spec_with_openai
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT_DIR = CURRENT_DIR.parent
+if str(PROJECT_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT_DIR))
 
-ROOT = Path(__file__).resolve().parent
+from runtime.features.base import RuntimeBridge
+from runtime.features.loader import FeatureManager
+from runtime.server_components.greetings import build_initial_conversation, build_welcome_message
+from runtime.server_components.language_detector import detect_text_locale, normalize_locale
+from runtime.server_components.task_router import build_task_spec, infer_task_spec_with_openai
+
+ROOT = CURRENT_DIR
 STATIC_DIR = ROOT / "static"
 GENERATED_DIR = ROOT / "generated"
 SETTINGS_FILE = ROOT / "settings.json"
@@ -48,6 +46,7 @@ FEATURES_DIR = ROOT / "features"
 PROJECT_ROOT = ROOT.parent
 BOOTSTRAP_SCRIPT = PROJECT_ROOT / "tools" / "bootstrap_homehub.py"
 BOOTSTRAP_PROCESS = None
+BOOTSTRAP_STALE_SECONDS = 300
 OLLAMA_INVENTORY_CACHE = {"value": None, "updated_at": 0.0}
 OLLAMA_INVENTORY_TTL_SECONDS = 15.0
 EMAIL_SYNC_INTERVAL_SECONDS = int(os.environ.get("HOMEHUB_EMAIL_SYNC_INTERVAL", "60"))
@@ -1470,20 +1469,38 @@ def save_bootstrap_status(payload):
 def bootstrap_snapshot():
     refresh_bootstrap_process_state()
     status = load_bootstrap_status()
+    stage = status.get("stage", "idle")
+    stale = False
+    if stage in {"starting", "installing-tools", "installing-python", "installing-models"} and BOOTSTRAP_PROCESS is None:
+        try:
+            age_seconds = max(0.0, time.time() - BOOTSTRAP_STATUS_FILE.stat().st_mtime)
+        except OSError:
+            age_seconds = 0.0
+        stale = age_seconds > BOOTSTRAP_STALE_SECONDS
+        if stale:
+            stage = "stalled"
+            status["message"] = (
+                "Bootstrap appears to be stuck. You can continue using HomeHub and install the remaining dependencies manually."
+            )
     approved = bool(PERSISTED_SETTINGS.get("bootstrapConsent", False))
     completed = bool(PERSISTED_SETTINGS.get("bootstrapCompleted", False))
-    in_progress = bool(status.get("stage") in {"starting", "installing-tools", "installing-python", "installing-models"})
-    blocking = bool(status.get("stage") in {"starting", "installing-tools", "installing-python"})
+    in_progress = bool(stage in {"starting", "installing-tools", "installing-python", "installing-models"})
+    blocking = bool(stage in {"starting", "installing-tools", "installing-python"})
     return {
         "approved": approved,
         "completed": completed,
         "inProgress": in_progress,
         "blocking": blocking,
-        "stage": status.get("stage", "idle"),
+        "stage": stage,
+        "stale": stale,
         "message": status.get("message", ""),
         "missingCommands": status.get("missingCommands", []),
         "missingPythonModules": status.get("missingPythonModules", []),
+        "installedPythonModules": status.get("installedPythonModules", []),
+        "failedPythonModules": status.get("failedPythonModules", []),
+        "installingPythonPackage": status.get("installingPythonPackage", ""),
         "missingOllamaModels": status.get("missingOllamaModels", []),
+        "restartRequired": bool(status.get("restartRequired", False)),
     }
 
 
@@ -1546,10 +1563,54 @@ def log_external_usage(provider, model, operation, locale, text_value="", transc
         log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def default_home_memory():
+    now_value = datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
+    return {
+        "events": [],
+        "reminders": [],
+        "recentActions": [
+            {
+                "id": "act-local-memory-ready",
+                "kind": "init",
+                "summary": "HomeHub local memory is ready for schedule and reminder requests.",
+                "createdAt": now_value,
+            }
+        ],
+    }
+
+
+def load_home_memory():
+    if not (ROOT / "home_memory.json").exists():
+        memory = default_home_memory()
+        save_home_memory(memory)
+        return memory
+    try:
+        data = json.loads((ROOT / "home_memory.json").read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        memory = default_home_memory()
+        save_home_memory(memory)
+        return memory
+    if not isinstance(data, dict):
+        return default_home_memory()
+    return {
+        "events": data.get("events", []) if isinstance(data.get("events", []), list) else [],
+        "reminders": data.get("reminders", []) if isinstance(data.get("reminders", []), list) else [],
+        "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions", []), list) else [],
+    }
+
+
+def save_home_memory(memory):
+    (ROOT / "home_memory.json").write_text(
+        json.dumps(memory, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 PERSISTED_SETTINGS = load_persisted_settings()
 SECRETS = get_effective_secrets()
 SECRET_SOURCES = get_secret_sources()
 maybe_start_bootstrap_install()
+HOME_MEMORY = load_home_memory()
 
 
 WEATHER = {
@@ -2836,63 +2897,6 @@ def detect_local_assistant_action(user_text, locale):
     return {"action": "none"}
 
 
-def generate_assistant_reply(user_text, locale):
-    action = detect_local_assistant_action(user_text, locale)
-    action_name = action.get("action", "none")
-    if action_name == "show_schedule":
-        return summarize_schedule(locale)
-
-    if action_name == "create_event":
-        start_at = parse_iso_datetime(action.get("startAt"))
-        end_at = parse_iso_datetime(action.get("endAt")) or (start_at + timedelta(minutes=60) if start_at else None)
-        if not start_at or not end_at:
-            return "我还没完全听清时间，你可以再说一次具体几点吗？" if locale == "zh-CN" else "I still need a specific time."
-        title = str(action.get("title", "")).strip() or infer_title_from_text(user_text)
-        reminder_offset = action.get("reminderOffsetMinutes")
-        if reminder_offset is not None:
-            try:
-                reminder_offset = int(reminder_offset)
-            except (TypeError, ValueError):
-                reminder_offset = None
-        event, reminder = create_local_event(
-            title,
-            start_at,
-            end_at,
-            participants=action.get("participants") or [],
-            location=str(action.get("location", "")).strip(),
-            reminder_offset_minutes=reminder_offset,
-            notes=f"Original request: {user_text}",
-        )
-        if locale == "zh-CN":
-            if reminder:
-                return (
-                    f"已经帮你把“{event['title']}”加入 HomeHub 本地日程，时间是 {format_datetime_local(event['startAt'], locale)}。"
-                    f" 我也加了一个提前 {reminder_offset} 分钟的提醒，会在电视、语音和手机端一起显示。"
-                )
-            return f"已经帮你把“{event['title']}”加入 HomeHub 本地日程，时间是 {format_datetime_local(event['startAt'], locale)}。"
-        if locale == "ja-JP":
-            return f"ローカル予定に「{event['title']}」を追加しました。"
-        return f"I added '{event['title']}' to HomeHub local schedule for {format_datetime_local(event['startAt'], locale)}."
-
-    if action_name == "create_reminder":
-        trigger_at = parse_iso_datetime(action.get("startAt"))
-        if not trigger_at:
-            return "我还需要一个更具体的提醒时间。" if locale == "zh-CN" else "I still need a reminder time."
-        title = str(action.get("title", "")).strip() or infer_title_from_text(user_text)
-        reminder = create_local_reminder(title, trigger_at, notes=f"Original request: {user_text}")
-        if locale == "zh-CN":
-            return f"已经创建提醒“{reminder['title']}”，触发时间是 {format_datetime_local(reminder['triggerAt'], locale)}。"
-        if locale == "ja-JP":
-            return f"リマインダー「{reminder['title']}」を追加しました。"
-        return f"I created reminder '{reminder['title']}' for {format_datetime_local(reminder['triggerAt'], locale)}."
-
-    if locale == "zh-CN":
-        return "我已收到你的语音，也可以继续直接说“帮我创建明天下午三点的日程，提前半小时提醒”。"
-    if locale == "ja-JP":
-        return "音声を受け取りました。予定やリマインダーも追加できます。"
-    return "I received your voice. You can also ask me to create a schedule item or reminder."
-
-
 def append_conversation_turn(speaker, text_value, artifacts=None):
     CURRENT_CONVERSATION.append(
         {
@@ -2950,127 +2954,6 @@ def build_household_modules(locale):
                 module["actionLabel"] = "View Reminders"
             module["state"] = "attention" if due_reminders else "active"
     return modules
-
-
-def build_assistant_memory_snapshot():
-    upcoming_events = get_upcoming_events(limit=5)
-    pending_reminders = get_pending_reminders(limit=5)
-    due_reminders = get_due_reminders(limit=3)
-    return {
-        "upcomingEvents": upcoming_events,
-        "pendingReminders": pending_reminders,
-        "dueReminders": due_reminders,
-        "recentActions": HOME_MEMORY.get("recentActions", [])[:5],
-    }
-
-
-def build_dashboard():
-    provider_catalog = get_audio_provider_catalog()
-    local_inventory = load_ollama_inventory()
-    agents = deepcopy(BASE_AGENTS)
-    for agent in agents:
-        delta = random.randint(-4, 6)
-        agent["progress"] = max(12, min(100, agent["progress"] + delta))
-        if agent["progress"] > 92:
-            agent["status"] = "complete"
-            agent["lastUpdate"] = "Task finished and result published to the TV shell."
-        elif agent["progress"] < 45 and agent["id"] == "lifestyle":
-            agent["status"] = "planning"
-        else:
-            agent["status"] = "running"
-
-    timeline = deepcopy(BASE_TIMELINE)
-    timeline.append(
-        {
-            "id": f"live-{datetime.now().strftime('%H%M%S')}",
-            "time": datetime.now().strftime("%H:%M"),
-            "title": "Live Box Update",
-            "detail": random.choice(
-                [
-                    "Companion app heartbeat confirmed.",
-                    "Travel checklist refreshed from latest family note.",
-                    "Voice pipeline pushed a partial transcript to the screen.",
-                    "Relay message delivered and removed from transient storage.",
-                ]
-            ),
-            "stream": random.choice(["system", "implementation", "family", "voice"]),
-        }
-    )
-
-    stt_provider_id = PERSISTED_SETTINGS["sttProvider"]
-    tts_provider_id = PERSISTED_SETTINGS["ttsProvider"]
-    stt_provider = provider_catalog[stt_provider_id]
-    tts_provider = provider_catalog[tts_provider_id]
-
-    return {
-        "hero": {
-            "title": "HomeHub",
-            "subtitle": "AI Box for the Living Room",
-            "tagline": "Boot like a TV box, collaborate like a multi-agent team.",
-        },
-        "boxProfile": BOX_PROFILE,
-        "householdModules": build_household_modules(PERSISTED_SETTINGS["language"]),
-        "activeAgents": agents,
-        "timelineEvents": timeline,
-        "modelProviders": MODEL_PROVIDERS,
-        "skillCatalog": SKILLS,
-        "pairingSession": PAIRING,
-        "relayMessages": RELAY_MESSAGES,
-        "assistantMemory": build_assistant_memory_snapshot(),
-        "voiceProfile": {
-            **VOICE_PROFILE,
-            "sttProvider": f"{stt_provider['label']} / {stt_provider['stt']['defaultModel']}",
-            "ttsProvider": f"{tts_provider['label']} / {tts_provider['tts']['defaultModel']}",
-            "locale": PERSISTED_SETTINGS["language"],
-        },
-        "audioStack": {
-            **AUDIO_STACK,
-            "stt": {
-                **AUDIO_STACK["stt"],
-                "provider": stt_provider["label"],
-                "primaryModel": stt_provider["stt"]["defaultModel"],
-                "fallbackModel": stt_provider["stt"]["fallbackModel"],
-            },
-            "tts": {
-                **AUDIO_STACK["tts"],
-                "provider": tts_provider["label"],
-                "primaryModel": tts_provider["tts"]["defaultModel"],
-                "fallbackModel": tts_provider["tts"]["fallbackModel"],
-            },
-        },
-        "audioProviders": {
-            "selected": {
-                "stt": stt_provider_id,
-                "tts": tts_provider_id,
-            },
-            "catalog": provider_catalog,
-            "secrets": {
-                "googleConfigured": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
-                "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
-                "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
-                "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
-            },
-            "counts": {
-                "total": len(provider_catalog),
-                "editable": sum(1 for provider in provider_catalog.values() if provider.get("editable")),
-            },
-        },
-        "networkLookup": {
-            "policies": list(NETWORK_LOOKUP_POLICIES.values()),
-        },
-        "modelCatalog": build_ai_capability_catalog(
-            provider_catalog,
-            {"stt": stt_provider_id, "tts": tts_provider_id},
-        ),
-        "runtimeProfile": build_runtime_strategy(local_inventory),
-        "languageSettings": {
-            **LANGUAGE_SETTINGS,
-            "current": PERSISTED_SETTINGS["language"],
-        },
-        "weather": WEATHER,
-        "systemStatus": SYSTEM_STATUS,
-        "conversation": CURRENT_CONVERSATION,
-    }
 
 
 def build_feature_household_modules(locale):

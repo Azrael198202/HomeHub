@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 
 def build_welcome_message(locale: str | None = None, now: datetime | None = None) -> str:
@@ -32,7 +33,7 @@ def build_welcome_message(locale: str | None = None, now: datetime | None = None
     return "It's late, but HomeHub is still ready. What do you want to do?"
 
 
-def build_initial_conversation(locale: str | None = None, now: datetime | None = None) -> list[dict[str, str]]:
+def build_initial_conversation(locale: str | None = None, now: datetime | None = None) -> list[dict[str, str | list[Any]]]:
     current = now or datetime.now()
     return [
         {

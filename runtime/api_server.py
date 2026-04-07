@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
 import os
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
-try:
-    from server import Handler as HomeHubHandler
-    from server import ThreadingHTTPServer, run_background_email_sync, threading
-except ModuleNotFoundError:
-    from runtime.server import Handler as HomeHubHandler
-    from runtime.server import ThreadingHTTPServer, run_background_email_sync, threading
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT_DIR = CURRENT_DIR.parent
+if str(PROJECT_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT_DIR))
+
+from runtime.server import Handler as HomeHubHandler
+from runtime.server import ThreadingHTTPServer, run_background_email_sync, threading
 
 
 API_RUNTIME_HOST = os.environ.get("HOMEHUB_API_HOST", "0.0.0.0")

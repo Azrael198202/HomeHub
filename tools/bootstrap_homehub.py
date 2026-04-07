@@ -18,6 +18,7 @@ SETTINGS_FILE = RUNTIME_DIR / "settings.json"
 SECRETS_LOCAL_FILE = RUNTIME_DIR / "secrets.local.json"
 SECRETS_PROD_TEMPLATE = RUNTIME_DIR / "secrets.prod.example.json"
 BOOTSTRAP_REQUIREMENTS = RUNTIME_DIR / "requirements.bootstrap.txt"
+PIP_INSTALL_TIMEOUT_SECONDS = 240
 
 REQUIRED_COMMANDS = [
     {
@@ -80,7 +81,7 @@ def write_status(status_file: str, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run_command(command: list[str], quiet: bool = False) -> bool:
+def run_command(command: list[str], quiet: bool = False, timeout: int | None = None) -> bool:
     try:
         result = subprocess.run(
             command,
@@ -89,8 +90,9 @@ def run_command(command: list[str], quiet: bool = False) -> bool:
             stdout=subprocess.PIPE if quiet else None,
             stderr=subprocess.PIPE if quiet else None,
             text=True,
+            timeout=timeout,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
 
@@ -174,10 +176,51 @@ def module_available(module_name: str) -> bool:
         return False
 
 
-def install_python_modules(packages: list[str], quiet: bool = False) -> bool:
+def install_python_modules(packages: list[str], quiet: bool = False, status_file: str = "") -> dict:
+    installed: list[str] = []
+    failed: list[str] = []
     if not packages:
-        return True
-    return run_command([sys.executable, "-m", "pip", "install", "-r", str(BOOTSTRAP_REQUIREMENTS)], quiet=quiet)
+        return {"ok": True, "installed": installed, "failed": failed}
+    for package_name in packages:
+        remaining_before = [item for item in packages if item not in installed and item != package_name] + [package_name]
+        write_status(
+            status_file,
+            {
+                "stage": "installing-python",
+                "message": f"Installing Python package: {package_name}",
+                "completed": False,
+                "installingPythonPackage": package_name,
+                "missingPythonModules": remaining_before,
+                "installedPythonModules": installed,
+                "failedPythonModules": failed,
+            },
+        )
+        ok = run_command(
+            [sys.executable, "-m", "pip", "install", package_name],
+            quiet=quiet,
+            timeout=PIP_INSTALL_TIMEOUT_SECONDS,
+        )
+        module_name = next((module for module, pkg in PYTHON_MODULES if pkg == package_name), package_name)
+        if ok and module_available(module_name):
+            installed.append(package_name)
+        else:
+            failed.append(package_name)
+        remaining = detect_missing_python_modules()
+        write_status(
+            status_file,
+            {
+                "stage": "installing-python" if remaining else "completed",
+                "message": (
+                    f"Installed Python package: {package_name}" if ok else f"Failed to install Python package: {package_name}"
+                ),
+                "completed": not remaining,
+                "installingPythonPackage": "",
+                "missingPythonModules": remaining,
+                "installedPythonModules": installed,
+                "failedPythonModules": failed,
+            },
+        )
+    return {"ok": not failed and not detect_missing_python_modules(), "installed": installed, "failed": failed}
 
 
 def read_ollama_models() -> set[str]:
@@ -316,10 +359,10 @@ def main() -> int:
         missing_commands = detect_missing_commands()
 
     missing_modules = detect_missing_python_modules()
-    installed_modules = False
+    python_install_result = {"ok": True, "installed": [], "failed": []}
     if args.apply and missing_modules:
-        write_status(args.status_file, {"stage": "installing-python", "message": "Installing document and OCR Python libraries.", "completed": False, "missingPythonModules": missing_modules})
-        installed_modules = install_python_modules(missing_modules, quiet=args.quiet)
+        write_status(args.status_file, {"stage": "installing-python", "message": "Installing document and OCR Python libraries.", "completed": False, "missingPythonModules": missing_modules, "installedPythonModules": [], "failedPythonModules": [], "installingPythonPackage": ""})
+        python_install_result = install_python_modules(missing_modules, quiet=args.quiet, status_file=args.status_file)
         missing_modules = detect_missing_python_modules()
 
     ensure_ollama_service(quiet=args.quiet)
@@ -333,8 +376,10 @@ def main() -> int:
     report = {
         "ok": not missing_commands and not missing_modules and not missing_models,
         "installedCommands": installed_commands,
-        "installedPythonModules": [] if not installed_modules else ["requirements.bootstrap.txt"],
+        "installedPythonModules": python_install_result["installed"],
+        "failedPythonModules": python_install_result["failed"],
         "installedOllamaModels": installed_models,
+        "restartRequired": False,
         **build_report(quiet=args.quiet),
     }
     write_status(

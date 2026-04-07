@@ -1,16 +1,49 @@
-﻿{
+{
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug HomeHub Runtime",
-      "type": "debugpy",
+      "name": "HomeHub Runtime",
+      "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/runtime/server.py",
-      "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "justMyCode": true,
+      "console": "integratedTerminal",
+      "justMyCode": false,
       "env": {
-        "PYTHONUTF8": "1"
+        "PYTHONUTF8": "1",
+        "PYTHONPATH": "${workspaceFolder}",
+        "HOMEHUB_HOST": "127.0.0.1",
+        "HOMEHUB_PORT": "8787"
+      }
+    },
+    {
+      "name": "HomeHub API Only",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/runtime/api_server.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONPATH": "${workspaceFolder}",
+        "HOMEHUB_API_HOST": "127.0.0.1",
+        "HOMEHUB_API_PORT": "8787"
+      }
+    },
+    {
+      "name": "HomeHub Runtime Module",
+      "type": "python",
+      "request": "launch",
+      "module": "runtime.server",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONPATH": "${workspaceFolder}",
+        "HOMEHUB_HOST": "127.0.0.1",
+        "HOMEHUB_PORT": "8787"
       }
     }
   ]

@@ -1,4 +1,4 @@
-import { activeAgents, timelineEvents } from "../../packages/shared/src/demo-data.js";
+import { activeAgents, timelineEvents } from "../../../packages/shared/src/demo-data.js";
 
 export function getAgentDashboard() {
   return {

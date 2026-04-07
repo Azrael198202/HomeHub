@@ -1,4 +1,4 @@
-import { modelProviders } from "../../packages/shared/src/demo-data.js";
+import { modelProviders } from "../../../packages/shared/src/demo-data.js";
 
 export function listModelProviders() {
   return modelProviders;

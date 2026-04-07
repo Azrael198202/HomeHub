@@ -1,4 +1,4 @@
-import { skillCatalog } from "../../packages/shared/src/demo-data.js";
+import { skillCatalog } from "../../../packages/shared/src/demo-data.js";
 
 export function loadSkills() {
   return skillCatalog.map((descriptor) => ({

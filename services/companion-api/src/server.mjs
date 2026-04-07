@@ -6,7 +6,7 @@ import {
   relayMessages,
   timelineEvents,
   voiceProfile
-} from "../../packages/shared/src/demo-data.js";
+} from "../../../packages/shared/src/demo-data.js";
 
 const port = Number(process.env.PORT || 4200);
 

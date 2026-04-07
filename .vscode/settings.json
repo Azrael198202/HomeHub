@@ -1,5 +1,17 @@
 {
   "python.defaultInterpreterPath": "D:/Programs/Python/Python313/python.exe",
   "files.encoding": "utf8",
-  "task.allowAutomaticTasks": "on"
+  "task.allowAutomaticTasks": "on",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/tmp*": true
+  },
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/tmp*": true
+  },
+  "python.analysis.exclude": [
+    "**/__pycache__",
+    "**/tmp*"
+  ]
 }
