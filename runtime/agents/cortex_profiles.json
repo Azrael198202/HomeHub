@@ -1307,7 +1307,7 @@
         },
         "workingStyle": {
           "proactive": 0,
-          "structured": 1791,
+          "structured": 1799,
           "cautious": 0
         }
       },
@@ -2573,8 +2573,8 @@
           "network": 0
         },
         "workingStyle": {
-          "proactive": 1790,
-          "structured": 1790,
+          "proactive": 1798,
+          "structured": 1798,
           "cautious": 0
         }
       },
