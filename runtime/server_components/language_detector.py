@@ -20,19 +20,26 @@ def normalize_locale(locale: str | None, fallback: str = "en-US") -> str:
     return fallback
 
 
+def contains_hiragana_or_katakana(text: str) -> bool:
+    return bool(re.search(r"[\u3040-\u30ff]", text))
+
+
+def contains_cjk_ideographs(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text))
+
+
 def detect_text_locale(text: str, fallback: str = "en-US") -> str:
     raw = str(text or "").strip()
     if not raw:
         return normalize_locale(fallback, "en-US")
-    if re.search(r"[\u3040-\u30ff]", raw):
+    lowered = raw.lower()
+    if contains_hiragana_or_katakana(raw):
         return "ja-JP"
-    if any(token in raw for token in ["合計", "現計", "お買上", "お買い上げ", "内消費税", "ご利用額", "税込", "税率", "レシート番号", "問い合わせ"]):
-        return "ja-JP"
-    if re.search(r"[\u4e00-\u9fff]", raw):
-        if any(token in raw for token in ["消费", "账单", "金额", "提醒", "日程", "费用", "记录", "总额", "识别"]):
-            return "zh-CN"
-        if any(token in raw for token in ["你好", "您好", "在吗", "收到", "能收到", "可以", "请", "帮我", "告诉我", "多少", "什么", "明细", "处理", "回复"]):
-            return "zh-CN"
+    if re.search(r"[a-zA-Z]", raw) and not contains_cjk_ideographs(raw):
+        return "en-US"
+    if any(token in lowered for token in ["receipt", "invoice", "schedule", "voice", "weather", "ocr"]):
+        return normalize_locale(fallback, "en-US") if not contains_cjk_ideographs(raw) else "zh-CN"
+    if contains_cjk_ideographs(raw):
         return "zh-CN"
     return normalize_locale(fallback, "en-US")
 
@@ -41,11 +48,10 @@ def detect_document_locale(text: str, fallback: str = "en-US") -> str:
     raw = str(text or "").strip()
     if not raw:
         return normalize_locale(fallback, "en-US")
-    if re.search(r"[\u3040-\u30ff]", raw):
+    if contains_hiragana_or_katakana(raw):
         return "ja-JP"
-    if any(token in raw for token in ["合計", "現計", "お買上", "お買い上げ", "内消費税", "ご利用額", "税込", "税率", "レシート番号", "店舗", "取引番号"]):
-        return "ja-JP"
-    if re.search(r"[\u4e00-\u9fff]", raw):
-        if any(token in raw for token in ["消费", "账单", "金额", "收据", "发票", "总额"]):
-            return "zh-CN"
+    if re.search(r"[a-zA-Z]", raw) and not contains_cjk_ideographs(raw):
+        return "en-US"
+    if contains_cjk_ideographs(raw):
+        return "zh-CN"
     return normalize_locale(fallback, "en-US")

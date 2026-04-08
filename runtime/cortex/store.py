@@ -17,15 +17,29 @@ class CortexStore:
     def load(self) -> dict:
         path = self.storage_path
         if not path.exists():
-            return {"items": {}}
+            return {"meta": self.default_meta(), "items": {}}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return {"items": {}}
+            return {"meta": self.default_meta(), "items": {}}
         if not isinstance(data, dict):
-            return {"items": {}}
+            return {"meta": self.default_meta(), "items": {}}
+        meta = data.get("meta", {})
         items = data.get("items", {})
-        return {"items": items if isinstance(items, dict) else {}}
+        return {
+            "meta": meta if isinstance(meta, dict) else self.default_meta(),
+            "items": items if isinstance(items, dict) else {},
+        }
 
     def save(self, payload: dict) -> None:
-        self.storage_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        body = {
+            "meta": payload.get("meta", self.default_meta()) if isinstance(payload, dict) else self.default_meta(),
+            "items": payload.get("items", {}) if isinstance(payload, dict) else {},
+        }
+        self.storage_path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def default_meta(self) -> dict:
+        return {
+            "schemaVersion": "2.0",
+            "brainFamily": "homehub-exec-brain",
+        }

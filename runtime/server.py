@@ -1,9 +1,7 @@
 ﻿import base64
-import io
 import json
 import mimetypes
 import os
-import random
 import re
 import subprocess
 import sys
@@ -11,12 +9,11 @@ import threading
 import time
 import urllib.error
 import urllib.request
-import wave
 from copy import deepcopy
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.parse import urlparse
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT_DIR = CURRENT_DIR.parent
@@ -25,8 +22,65 @@ if str(PROJECT_ROOT_DIR) not in sys.path:
 
 from runtime.features.base import RuntimeBridge
 from runtime.features.loader import FeatureManager
+from runtime.server_dashboard import build_dashboard as build_dashboard_payload
+from runtime.server_audio import (
+    synthesize_speech as synthesize_speech_payload,
+    transcribe_audio as transcribe_audio_payload,
+)
+from runtime.server_config import (
+    bootstrap_snapshot as bootstrap_snapshot_payload,
+    get_effective_secrets as get_effective_secrets_payload,
+    get_google_cloud_headers as get_google_cloud_headers_payload,
+    get_google_service_account_file as get_google_service_account_file_payload,
+    get_secret_sources as get_secret_sources_payload,
+    get_secrets_file as get_secrets_file_payload,
+    load_bootstrap_status as load_bootstrap_status_payload,
+    load_persisted_settings as load_persisted_settings_payload,
+    load_secrets_file as load_secrets_file_payload,
+    refresh_bootstrap_process_state as refresh_bootstrap_process_state_payload,
+    save_bootstrap_status as save_bootstrap_status_payload,
+    save_persisted_settings as save_persisted_settings_payload,
+    save_secrets as save_secrets_payload,
+    start_bootstrap_install as start_bootstrap_install_payload,
+)
+from runtime.server_voice import (
+    build_last_voice_route as build_last_voice_route_payload,
+    build_voice_router_snapshot as build_voice_router_snapshot_payload,
+    default_last_voice_route,
+    generate_assistant_reply as generate_assistant_reply_payload,
+    resolve_voice_request as resolve_voice_request_payload,
+)
+from runtime.server_memory import (
+    build_household_modules as build_household_modules_payload,
+    create_local_event as create_local_event_payload,
+    create_local_reminder as create_local_reminder_payload,
+    default_home_memory as default_home_memory_payload,
+    detect_local_assistant_action as detect_local_assistant_action_payload,
+    format_datetime_local as format_datetime_local_payload,
+    get_due_reminders as get_due_reminders_payload,
+    get_pending_reminders as get_pending_reminders_payload,
+    get_upcoming_events as get_upcoming_events_payload,
+    load_home_memory as load_home_memory_payload,
+    now_hhmm as now_hhmm_payload,
+    now_local as now_local_payload,
+    parse_iso_datetime as parse_iso_datetime_payload,
+    save_home_memory as save_home_memory_payload,
+    summarize_schedule as summarize_schedule_payload,
+)
 from runtime.server_components.greetings import build_initial_conversation, build_welcome_message
 from runtime.server_components.language_detector import detect_text_locale, normalize_locale
+from runtime.server_components.semantic_memory import (
+    export_training_pairs,
+    query_semantic_memory,
+    record_semantic_example,
+    semantic_backend_snapshot,
+)
+from runtime.server_network import (
+    build_network_lookup_reply,
+    perform_controlled_network_lookup as perform_controlled_network_lookup_impl,
+    perform_network_lookup as perform_network_lookup_impl,
+)
+from runtime.server_routes import handle_get_route, handle_post_route
 from runtime.server_components.task_router import build_task_spec, infer_task_spec_with_openai
 
 ROOT = CURRENT_DIR
@@ -35,6 +89,7 @@ GENERATED_DIR = ROOT / "generated"
 SETTINGS_FILE = ROOT / "settings.json"
 CUSTOM_AUDIO_PROVIDERS_FILE = ROOT / "custom_audio_providers.json"
 BOOTSTRAP_STATUS_FILE = ROOT / "bootstrap_status.json"
+HOME_MEMORY_FILE = ROOT / "home_memory.json"
 SECRETS_LOCAL_FILE = ROOT / "secrets.local.json"
 SECRETS_PROD_FILE = ROOT / "secrets.prod.json"
 USAGE_LOG_FILE = ROOT / "usage-cost-log.jsonl"
@@ -54,9 +109,7 @@ BRIDGE_PULL_INTERVAL_SECONDS = int(os.environ.get("HOMEHUB_BRIDGE_PULL_INTERVAL"
 
 
 def get_secrets_file():
-    if RUNTIME_ENV == "prod":
-        return SECRETS_PROD_FILE
-    return SECRETS_LOCAL_FILE
+    return get_secrets_file_payload(RUNTIME_ENV, SECRETS_LOCAL_FILE, SECRETS_PROD_FILE)
 
 
 MODEL_PROVIDERS = [
@@ -1192,117 +1245,19 @@ def select_model_route(task_spec, runtime_strategy, local_inventory):
 
 
 def load_secrets_file():
-    secrets_file = get_secrets_file()
-    if not secrets_file.exists():
-        return default_secrets()
-
-    try:
-        data = json.loads(secrets_file.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return default_secrets()
-
-    return {
-        "googleApiKey": data.get("googleApiKey", ""),
-        "googleAccessToken": data.get("googleAccessToken", ""),
-        "openaiApiKey": data.get("openaiApiKey", ""),
-        "mailAddress": data.get("mailAddress", ""),
-        "mailPassword": data.get("mailPassword", ""),
-        "mailSmtpHost": data.get("mailSmtpHost", ""),
-        "mailSmtpPort": data.get("mailSmtpPort", ""),
-        "mailImapHost": data.get("mailImapHost", ""),
-        "mailImapPort": data.get("mailImapPort", ""),
-        "wechatOfficialToken": data.get("wechatOfficialToken", ""),
-        "wechatOfficialAppId": data.get("wechatOfficialAppId", ""),
-        "wechatOfficialAppSecret": data.get("wechatOfficialAppSecret", ""),
-        "wechatOfficialEncodingAesKey": data.get("wechatOfficialEncodingAesKey", ""),
-        "lineChannelSecret": data.get("lineChannelSecret", ""),
-        "lineChannelAccessToken": data.get("lineChannelAccessToken", ""),
-        "externalBridgeUrl": data.get("externalBridgeUrl", ""),
-        "externalBridgeToken": data.get("externalBridgeToken", ""),
-    }
+    return load_secrets_file_payload(get_secrets_file(), default_secrets)
 
 
 def get_effective_secrets():
-    file_secrets = load_secrets_file()
-    google_api_key = (
-        os.environ.get("HOMEHUB_GOOGLE_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or file_secrets.get("googleApiKey", "")
-    )
-    google_access_token = (
-        os.environ.get("HOMEHUB_GOOGLE_ACCESS_TOKEN")
-        or os.environ.get("GOOGLE_ACCESS_TOKEN")
-        or file_secrets.get("googleAccessToken", "")
-    )
-    openai_api_key = (
-        os.environ.get("HOMEHUB_OPENAI_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or file_secrets.get("openaiApiKey", "")
-    )
-    mail_address = os.environ.get("HOMEHUB_MAIL_ADDRESS") or file_secrets.get("mailAddress", "")
-    mail_password = os.environ.get("HOMEHUB_MAIL_PASSWORD") or file_secrets.get("mailPassword", "")
-    mail_smtp_host = os.environ.get("HOMEHUB_MAIL_SMTP_HOST") or file_secrets.get("mailSmtpHost", "")
-    mail_smtp_port = os.environ.get("HOMEHUB_MAIL_SMTP_PORT") or file_secrets.get("mailSmtpPort", "")
-    mail_imap_host = os.environ.get("HOMEHUB_MAIL_IMAP_HOST") or file_secrets.get("mailImapHost", "")
-    mail_imap_port = os.environ.get("HOMEHUB_MAIL_IMAP_PORT") or file_secrets.get("mailImapPort", "")
-    wechat_official_token = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_TOKEN") or file_secrets.get("wechatOfficialToken", "")
-    wechat_official_app_id = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") or file_secrets.get("wechatOfficialAppId", "")
-    wechat_official_app_secret = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") or file_secrets.get("wechatOfficialAppSecret", "")
-    wechat_official_encoding_aes_key = os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") or file_secrets.get("wechatOfficialEncodingAesKey", "")
-    line_channel_secret = os.environ.get("HOMEHUB_LINE_CHANNEL_SECRET") or file_secrets.get("lineChannelSecret", "")
-    line_channel_access_token = os.environ.get("HOMEHUB_LINE_CHANNEL_ACCESS_TOKEN") or file_secrets.get("lineChannelAccessToken", "")
-    external_bridge_url = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") or file_secrets.get("externalBridgeUrl", "")
-    external_bridge_token = os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") or file_secrets.get("externalBridgeToken", "")
-    return {
-        "googleApiKey": google_api_key,
-        "googleAccessToken": google_access_token,
-        "openaiApiKey": openai_api_key,
-        "mailAddress": mail_address,
-        "mailPassword": mail_password,
-        "mailSmtpHost": mail_smtp_host,
-        "mailSmtpPort": mail_smtp_port,
-        "mailImapHost": mail_imap_host,
-        "mailImapPort": mail_imap_port,
-        "wechatOfficialToken": wechat_official_token,
-        "wechatOfficialAppId": wechat_official_app_id,
-        "wechatOfficialAppSecret": wechat_official_app_secret,
-        "wechatOfficialEncodingAesKey": wechat_official_encoding_aes_key,
-        "lineChannelSecret": line_channel_secret,
-        "lineChannelAccessToken": line_channel_access_token,
-        "externalBridgeUrl": external_bridge_url,
-        "externalBridgeToken": external_bridge_token,
-    }
+    return get_effective_secrets_payload(load_secrets_file())
 
 
 def get_secret_sources():
-    file_secrets = load_secrets_file()
-    return {
-        "googleApiKey": "env" if (os.environ.get("HOMEHUB_GOOGLE_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else ("file" if file_secrets.get("googleApiKey") else "missing"),
-        "googleAccessToken": "env" if (os.environ.get("HOMEHUB_GOOGLE_ACCESS_TOKEN") or os.environ.get("GOOGLE_ACCESS_TOKEN")) else ("file" if file_secrets.get("googleAccessToken") else "missing"),
-        "openaiApiKey": "env" if (os.environ.get("HOMEHUB_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")) else ("file" if file_secrets.get("openaiApiKey") else "missing"),
-        "mailAddress": "env" if os.environ.get("HOMEHUB_MAIL_ADDRESS") else ("file" if file_secrets.get("mailAddress") else "missing"),
-        "mailPassword": "env" if os.environ.get("HOMEHUB_MAIL_PASSWORD") else ("file" if file_secrets.get("mailPassword") else "missing"),
-        "mailSmtpHost": "env" if os.environ.get("HOMEHUB_MAIL_SMTP_HOST") else ("file" if file_secrets.get("mailSmtpHost") else "missing"),
-        "mailSmtpPort": "env" if os.environ.get("HOMEHUB_MAIL_SMTP_PORT") else ("file" if file_secrets.get("mailSmtpPort") else "missing"),
-        "mailImapHost": "env" if os.environ.get("HOMEHUB_MAIL_IMAP_HOST") else ("file" if file_secrets.get("mailImapHost") else "missing"),
-        "mailImapPort": "env" if os.environ.get("HOMEHUB_MAIL_IMAP_PORT") else ("file" if file_secrets.get("mailImapPort") else "missing"),
-        "wechatOfficialToken": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_TOKEN") else ("file" if file_secrets.get("wechatOfficialToken") else "missing"),
-        "wechatOfficialAppId": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_ID") else ("file" if file_secrets.get("wechatOfficialAppId") else "missing"),
-        "wechatOfficialAppSecret": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_APP_SECRET") else ("file" if file_secrets.get("wechatOfficialAppSecret") else "missing"),
-        "wechatOfficialEncodingAesKey": "env" if os.environ.get("HOMEHUB_WECHAT_OFFICIAL_ENCODING_AES_KEY") else ("file" if file_secrets.get("wechatOfficialEncodingAesKey") else "missing"),
-        "lineChannelSecret": "env" if os.environ.get("HOMEHUB_LINE_CHANNEL_SECRET") else ("file" if file_secrets.get("lineChannelSecret") else "missing"),
-        "lineChannelAccessToken": "env" if os.environ.get("HOMEHUB_LINE_CHANNEL_ACCESS_TOKEN") else ("file" if file_secrets.get("lineChannelAccessToken") else "missing"),
-        "externalBridgeUrl": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_URL") else ("file" if file_secrets.get("externalBridgeUrl") else "missing"),
-        "externalBridgeToken": "env" if os.environ.get("HOMEHUB_EXTERNAL_BRIDGE_TOKEN") else ("file" if file_secrets.get("externalBridgeToken") else "missing"),
-    }
+    return get_secret_sources_payload(load_secrets_file())
 
 
 def save_secrets(secrets):
-    secrets_file = get_secrets_file()
-    secrets_file.write_text(
-        json.dumps(secrets, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_secrets_payload(get_secrets_file(), secrets)
 
 
 GOOGLE_TOKEN_CACHE = {
@@ -1312,10 +1267,7 @@ GOOGLE_TOKEN_CACHE = {
 
 
 def get_google_service_account_file():
-    path_value = os.environ.get("HOMEHUB_GOOGLE_SERVICE_ACCOUNT_JSON") or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if path_value:
-        return Path(path_value)
-    return GOOGLE_SERVICE_ACCOUNT_FILE
+    return get_google_service_account_file_payload(GOOGLE_SERVICE_ACCOUNT_FILE)
 
 
 def mint_google_access_token_from_service_account(service_account_path: Path):
@@ -1359,185 +1311,53 @@ $resp | ConvertTo-Json -Compress
 
 
 def get_google_cloud_headers():
-    access_token = SECRETS.get("googleAccessToken", "")
-    api_key = SECRETS.get("googleApiKey", "")
-    service_account_file = get_google_service_account_file()
-    if not access_token and service_account_file.exists():
-        if GOOGLE_TOKEN_CACHE["access_token"] and GOOGLE_TOKEN_CACHE["expires_at"] > int(datetime.now().timestamp()):
-            access_token = GOOGLE_TOKEN_CACHE["access_token"]
-        else:
-            access_token = mint_google_access_token_from_service_account(service_account_file)
-    if not access_token:
-        if api_key:
-            return {"x-goog-api-key": api_key}
-        raise RuntimeError(
-            "Google Cloud credentials are not configured. "
-            "Set HOMEHUB_GOOGLE_ACCESS_TOKEN / GOOGLE_ACCESS_TOKEN, "
-            "or provide HOMEHUB_GOOGLE_API_KEY / GOOGLE_API_KEY, "
-            "or place a service account JSON at runtime/google-cloud-service-account.json."
-        )
-    return {"Authorization": f"Bearer {access_token}"}
+    return get_google_cloud_headers_payload(SECRETS, GOOGLE_TOKEN_CACHE, get_google_service_account_file())
 
 
 def load_persisted_settings():
-    provider_catalog = get_audio_provider_catalog()
-    if not SETTINGS_FILE.exists():
-        return {
-            "language": LANGUAGE_SETTINGS["current"],
-            "sttProvider": "google",
-            "ttsProvider": "google",
-            "runtimeProfile": "low-memory",
-            "bootstrapConsent": False,
-            "bootstrapCompleted": False,
-        }
-
-    try:
-        data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {
-            "language": LANGUAGE_SETTINGS["current"],
-            "sttProvider": "google",
-            "ttsProvider": "google",
-            "runtimeProfile": "low-memory",
-            "bootstrapConsent": False,
-            "bootstrapCompleted": False,
-        }
-
-    supported_codes = {item["code"] for item in LANGUAGE_SETTINGS["supported"]}
-    language = data.get("language", LANGUAGE_SETTINGS["current"])
-    if language not in supported_codes:
-        language = LANGUAGE_SETTINGS["current"]
-
-    supported_providers = set(provider_catalog.keys())
-    stt_provider = data.get("sttProvider", "google")
-    tts_provider = data.get("ttsProvider", "google")
-    if stt_provider not in supported_providers:
-        stt_provider = "google"
-    if tts_provider not in supported_providers:
-        tts_provider = "google"
-
-    supported_profiles = {item["id"] for item in RUNTIME_PROFILES}
-    runtime_profile = data.get("runtimeProfile", "low-memory")
-    if runtime_profile not in supported_profiles:
-        runtime_profile = "low-memory"
-
-    return {
-        "language": language,
-        "sttProvider": stt_provider,
-        "ttsProvider": tts_provider,
-        "runtimeProfile": runtime_profile,
-        "bootstrapConsent": bool(data.get("bootstrapConsent", False)),
-        "bootstrapCompleted": bool(data.get("bootstrapCompleted", False)),
-    }
+    return load_persisted_settings_payload(SETTINGS_FILE, LANGUAGE_SETTINGS, get_audio_provider_catalog(), RUNTIME_PROFILES)
 
 
 def save_persisted_settings(settings):
-    SETTINGS_FILE.write_text(
-        json.dumps(settings, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_persisted_settings_payload(SETTINGS_FILE, settings)
 
 
 def load_bootstrap_status():
-    if not BOOTSTRAP_STATUS_FILE.exists():
-        return {
-            "stage": "idle",
-            "message": "",
-            "completed": False,
-        }
-    try:
-        data = json.loads(BOOTSTRAP_STATUS_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {
-            "stage": "idle",
-            "message": "",
-            "completed": False,
-        }
-    if not isinstance(data, dict):
-        return {
-            "stage": "idle",
-            "message": "",
-            "completed": False,
-        }
-    return data
+    return load_bootstrap_status_payload(BOOTSTRAP_STATUS_FILE)
 
 
 def save_bootstrap_status(payload):
-    BOOTSTRAP_STATUS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_bootstrap_status_payload(BOOTSTRAP_STATUS_FILE, payload)
 
 
 def bootstrap_snapshot():
-    refresh_bootstrap_process_state()
-    status = load_bootstrap_status()
-    stage = status.get("stage", "idle")
-    stale = False
-    if stage in {"starting", "installing-tools", "installing-python", "installing-models"} and BOOTSTRAP_PROCESS is None:
-        try:
-            age_seconds = max(0.0, time.time() - BOOTSTRAP_STATUS_FILE.stat().st_mtime)
-        except OSError:
-            age_seconds = 0.0
-        stale = age_seconds > BOOTSTRAP_STALE_SECONDS
-        if stale:
-            stage = "stalled"
-            status["message"] = (
-                "Bootstrap appears to be stuck. You can continue using HomeHub and install the remaining dependencies manually."
-            )
-    approved = bool(PERSISTED_SETTINGS.get("bootstrapConsent", False))
-    completed = bool(PERSISTED_SETTINGS.get("bootstrapCompleted", False))
-    in_progress = bool(stage in {"starting", "installing-tools", "installing-python", "installing-models"})
-    blocking = bool(stage in {"starting", "installing-tools", "installing-python"})
-    return {
-        "approved": approved,
-        "completed": completed,
-        "inProgress": in_progress,
-        "blocking": blocking,
-        "stage": stage,
-        "stale": stale,
-        "message": status.get("message", ""),
-        "missingCommands": status.get("missingCommands", []),
-        "missingPythonModules": status.get("missingPythonModules", []),
-        "installedPythonModules": status.get("installedPythonModules", []),
-        "failedPythonModules": status.get("failedPythonModules", []),
-        "installingPythonPackage": status.get("installingPythonPackage", ""),
-        "missingOllamaModels": status.get("missingOllamaModels", []),
-        "restartRequired": bool(status.get("restartRequired", False)),
-    }
+    global BOOTSTRAP_PROCESS, PERSISTED_SETTINGS
+    snapshot, BOOTSTRAP_PROCESS, PERSISTED_SETTINGS = bootstrap_snapshot_payload(
+        BOOTSTRAP_PROCESS,
+        BOOTSTRAP_STALE_SECONDS,
+        BOOTSTRAP_STATUS_FILE,
+        PERSISTED_SETTINGS,
+        load_bootstrap_status,
+        lambda process, settings: refresh_bootstrap_process_state_payload(process, load_bootstrap_status, settings, save_persisted_settings),
+    )
+    return snapshot
 
 
 def refresh_bootstrap_process_state():
     global BOOTSTRAP_PROCESS, PERSISTED_SETTINGS
-    if BOOTSTRAP_PROCESS is None:
-        return
-    code = BOOTSTRAP_PROCESS.poll()
-    if code is None:
-        return
-    BOOTSTRAP_PROCESS = None
-    status = load_bootstrap_status()
-    if status.get("completed"):
-        PERSISTED_SETTINGS["bootstrapCompleted"] = True
-        save_persisted_settings(PERSISTED_SETTINGS)
+    BOOTSTRAP_PROCESS, PERSISTED_SETTINGS = refresh_bootstrap_process_state_payload(
+        BOOTSTRAP_PROCESS,
+        load_bootstrap_status,
+        PERSISTED_SETTINGS,
+        save_persisted_settings,
+    )
 
 
 def start_bootstrap_install():
     global BOOTSTRAP_PROCESS
     refresh_bootstrap_process_state()
-    if BOOTSTRAP_PROCESS is not None and BOOTSTRAP_PROCESS.poll() is None:
-        return False
-    save_bootstrap_status({"stage": "starting", "message": "Preparing first-run bootstrap.", "completed": False})
-    BOOTSTRAP_PROCESS = subprocess.Popen(
-        [
-            sys.executable,
-            str(BOOTSTRAP_SCRIPT),
-            "--apply",
-            "--quiet",
-            "--status-file",
-            str(BOOTSTRAP_STATUS_FILE),
-        ],
-        cwd=str(PROJECT_ROOT),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return True
+    BOOTSTRAP_PROCESS, started = start_bootstrap_install_payload(BOOTSTRAP_PROCESS, PROJECT_ROOT, BOOTSTRAP_SCRIPT, BOOTSTRAP_STATUS_FILE)
+    return started
 
 
 def maybe_start_bootstrap_install():
@@ -1564,46 +1384,15 @@ def log_external_usage(provider, model, operation, locale, text_value="", transc
 
 
 def default_home_memory():
-    now_value = datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
-    return {
-        "events": [],
-        "reminders": [],
-        "recentActions": [
-            {
-                "id": "act-local-memory-ready",
-                "kind": "init",
-                "summary": "HomeHub local memory is ready for schedule and reminder requests.",
-                "createdAt": now_value,
-            }
-        ],
-    }
+    return default_home_memory_payload()
 
 
 def load_home_memory():
-    if not (ROOT / "home_memory.json").exists():
-        memory = default_home_memory()
-        save_home_memory(memory)
-        return memory
-    try:
-        data = json.loads((ROOT / "home_memory.json").read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        memory = default_home_memory()
-        save_home_memory(memory)
-        return memory
-    if not isinstance(data, dict):
-        return default_home_memory()
-    return {
-        "events": data.get("events", []) if isinstance(data.get("events", []), list) else [],
-        "reminders": data.get("reminders", []) if isinstance(data.get("reminders", []), list) else [],
-        "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions", []), list) else [],
-    }
+    return load_home_memory_payload(HOME_MEMORY_FILE)
 
 
 def save_home_memory(memory):
-    (ROOT / "home_memory.json").write_text(
-        json.dumps(memory, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_home_memory_payload(HOME_MEMORY_FILE, memory)
 
 
 PERSISTED_SETTINGS = load_persisted_settings()
@@ -1834,350 +1623,28 @@ def json_get(url, headers=None, timeout=30):
         return body.decode("utf-8", errors="ignore")
 
 
-def normalize_domain(value):
-    host = str(value or "").strip().lower()
-    if not host:
-        return ""
-    if "://" in host:
-        host = urlparse(host).netloc.lower()
-    if host.startswith("www."):
-        host = host[4:]
-    return host.split(":")[0]
-
-
-def domain_allowed(host, allowed_domains):
-    normalized = normalize_domain(host)
-    return any(normalized == item or normalized.endswith(f".{item}") for item in allowed_domains)
-
-
-def extract_urls_from_text(text):
-    return re.findall(r"https?://[^\s)>\"]+", str(text or ""))
-
-
-def strip_html_excerpt(html_text, limit=420):
-    text = re.sub(r"(?is)<script.*?>.*?</script>", " ", html_text)
-    text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
-    title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", text)
-    title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", title_match.group(1))).strip() if title_match else ""
-    plain = re.sub(r"(?s)<[^>]+>", " ", text)
-    plain = re.sub(r"\s+", " ", plain).strip()
-    return {"title": title, "excerpt": plain[:limit]}
-
-
-def fetch_allowed_url(url, allowed_domains):
-    host = normalize_domain(url)
-    if not domain_allowed(host, allowed_domains):
-        return {"ok": False, "error": f"domain_not_allowed:{host}"}
-    try:
-        content = json_get(url, headers={"User-Agent": "HomeHub/0.1"})
-    except Exception as exc:
-        return {"ok": False, "error": f"fetch_failed:{exc}"}
-    if isinstance(content, dict):
-        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": json.dumps(content, ensure_ascii=False)[:420]}
-    parsed = strip_html_excerpt(str(content))
-    return {"ok": True, "url": url, "title": parsed.get("title", ""), "excerpt": parsed.get("excerpt", "")}
-
-
-def wikipedia_lookup(query, locale):
-    language = "zh" if str(locale).startswith("zh") else ("ja" if str(locale).startswith("ja") else "en")
-    params = urlencode({"action": "opensearch", "search": query, "limit": 1, "namespace": 0, "format": "json"})
-    search_url = f"https://{language}.wikipedia.org/w/api.php?{params}"
-    try:
-        response = json_get(search_url, headers={"User-Agent": "HomeHub/0.1"})
-    except Exception as exc:
-        return {"ok": False, "error": f"wikipedia_search_failed:{exc}"}
-    if not isinstance(response, list) or len(response) < 4 or not response[1]:
-        return {"ok": False, "error": "no_wikipedia_match"}
-    title = str(response[1][0]).strip()
-    summary_url = f"https://{language}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
-    try:
-        summary = json_get(summary_url, headers={"User-Agent": "HomeHub/0.1"})
-    except Exception as exc:
-        return {"ok": False, "error": f"wikipedia_summary_failed:{exc}"}
-    if not isinstance(summary, dict):
-        return {"ok": False, "error": "invalid_wikipedia_summary"}
-    return {
-        "ok": True,
-        "url": str(summary.get("content_urls", {}).get("desktop", {}).get("page", "")).strip() or summary_url,
-        "title": str(summary.get("title", title)).strip(),
-        "excerpt": str(summary.get("extract", "")).strip(),
-    }
-
-
-def build_network_lookup_reply(result, locale):
-    if not result.get("ok"):
-        if locale == "zh-CN":
-            return f"这次受控联网查询没有拿到结果：{result.get('error', 'unknown error')}。"
-        if locale == "ja-JP":
-            return f"制御付きネット検索は結果を返せませんでした: {result.get('error', 'unknown error')}."
-        return f"The controlled network lookup did not return a usable result: {result.get('error', 'unknown error')}."
-    answer = str(result.get("answer", "")).strip()
-    sources = result.get("sources", [])
-    if locale == "zh-CN":
-        if sources:
-            return f"{answer}\n来源：{'；'.join(str(item.get('url', '')) for item in sources[:3])}"
-        return answer
-    if sources:
-        return f"{answer}\nSources: {'; '.join(str(item.get('url', '')) for item in sources[:3])}"
-    return answer
-
-
 def perform_controlled_network_lookup(query, locale, policy_id="safe-general", preferred_sources=None, allowed_domains=None):
-    policy = NETWORK_LOOKUP_POLICIES.get(policy_id) or NETWORK_LOOKUP_POLICIES["safe-general"]
-    merged_domains = [normalize_domain(item) for item in policy.get("allowedDomains", [])]
-    for item in preferred_sources or []:
-        normalized = normalize_domain(item)
-        if normalized and "." in normalized and normalized not in merged_domains:
-            merged_domains.append(normalized)
-    for item in allowed_domains or []:
-        normalized = normalize_domain(item)
-        if normalized and normalized not in merged_domains:
-            merged_domains.append(normalized)
-
-    sources = []
-    direct_urls = extract_urls_from_text(query)
-    for url in direct_urls[: policy.get("maxSources", 3)]:
-        fetched = fetch_allowed_url(url, merged_domains)
-        if fetched.get("ok"):
-            sources.append(fetched)
-    if not sources and domain_allowed("wikipedia.org", merged_domains):
-        wiki = wikipedia_lookup(query, locale)
-        if wiki.get("ok"):
-            sources.append(wiki)
-    if not sources:
-        return {
-            "ok": False,
-            "error": "no_allowed_source_found",
-            "policy": policy["id"],
-            "allowedDomains": merged_domains,
-            "sources": [],
-        }
-
-    answer = sources[0].get("excerpt", "").strip()
-    if len(answer) > 320:
-        answer = answer[:320].rstrip() + "..."
-    title = str(sources[0].get("title", "")).strip()
-    if title:
-        answer = f"{title}: {answer}" if answer else title
-    return {
-        "ok": True,
-        "policy": policy["id"],
-        "allowedDomains": merged_domains,
-        "answer": answer,
-        "sources": sources[: policy.get("maxSources", 3)],
-    }
-
-
-def build_wav_from_pcm(pcm_bytes, channels=1, rate=24000, sample_width=2):
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(rate)
-        wav_file.writeframes(pcm_bytes)
-    return buffer.getvalue()
-
-
-def build_google_stt_config(mime_type, locale):
-    mime = (mime_type or "").lower()
-    config = {
-        "languageCode": locale,
-        "enableAutomaticPunctuation": True,
-    }
-    # Google Cloud Speech models are language-dependent.
-    # `latest_long` is not accepted for some locales such as zh-CN.
-    if locale.startswith("en"):
-        config["model"] = "latest_long"
-    if "webm" in mime:
-        config["encoding"] = "WEBM_OPUS"
-        config["sampleRateHertz"] = 48000
-    elif "ogg" in mime or "opus" in mime:
-        config["encoding"] = "OGG_OPUS"
-        config["sampleRateHertz"] = 48000
-    elif "wav" in mime or "wave" in mime:
-        config["encoding"] = "LINEAR16"
-        config["sampleRateHertz"] = 48000
-    return config
-
-
-def google_transcribe_audio(audio_base64, mime_type, locale):
-    provider_catalog = get_audio_provider_catalog()
-    selected_provider = provider_catalog.get(PERSISTED_SETTINGS.get("sttProvider", "google"), provider_catalog["google"])
-    headers = get_google_cloud_headers()
-    payload = {
-        "config": build_google_stt_config(mime_type, locale),
-        "audio": {
-            "content": audio_base64,
-        },
-    }
-    response_json = json_post(
-        "https://speech.googleapis.com/v1/speech:recognize",
-        payload,
-        headers=headers,
-    )
-    transcript = " ".join(
-        result.get("alternatives", [{}])[0].get("transcript", "")
-        for result in response_json.get("results", [])
-    ).strip()
-    log_external_usage(
-        "google",
-        selected_provider["stt"]["defaultModel"],
-        "stt",
+    return perform_controlled_network_lookup_impl(
+        query,
         locale,
-        transcript=transcript,
-        audio_base64=audio_base64,
+        NETWORK_LOOKUP_POLICIES,
+        json_get,
+        policy_id=policy_id,
+        preferred_sources=preferred_sources,
+        allowed_domains=allowed_domains,
     )
-    return {
-        "provider": "google",
-        "model": selected_provider["stt"]["defaultModel"],
-        "transcript": transcript,
-    }
 
 
-def google_synthesize_speech(text_value, locale, voice_name="Kore"):
-    provider_catalog = get_audio_provider_catalog()
-    selected_provider = provider_catalog.get(PERSISTED_SETTINGS.get("ttsProvider", "google"), provider_catalog["google"])
-    headers = get_google_cloud_headers()
-    payload = {
-        "input": {"text": text_value},
-        "voice": {
-            "languageCode": locale,
-            "name": voice_name if locale.startswith("en") else "",
-        },
-        "audioConfig": {
-            "audioEncoding": "LINEAR16",
-        },
-    }
-    response_json = json_post(
-        "https://texttospeech.googleapis.com/v1/text:synthesize",
-        payload,
-        headers=headers,
-    )
-    audio_b64 = response_json.get("audioContent")
-    if not audio_b64:
-        raise RuntimeError("Google TTS did not return audio data.")
-    log_external_usage(
-        "google",
-        selected_provider["tts"]["defaultModel"],
-        "tts",
+def perform_network_lookup(query, locale, policy_id="official-only", preferred_sources=None, allowed_domains=None):
+    return perform_network_lookup_impl(
+        query,
         locale,
-        text_value=text_value,
+        NETWORK_LOOKUP_POLICIES,
+        json_get,
+        policy_id=policy_id,
+        preferred_sources=preferred_sources,
+        allowed_domains=allowed_domains,
     )
-    return {
-        "provider": "google",
-        "model": selected_provider["tts"]["defaultModel"],
-        "audioBase64": audio_b64,
-        "mimeType": "audio/wav",
-    }
-
-
-def build_multipart_form(fields, file_field, filename, file_bytes, mime_type):
-    boundary = "----HomeHubBoundary7MA4YWxkTrZu0gW"
-    lines = []
-    for key, value in fields.items():
-        lines.append(f"--{boundary}\r\n".encode("utf-8"))
-        lines.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
-        lines.append(f"{value}\r\n".encode("utf-8"))
-    lines.append(f"--{boundary}\r\n".encode("utf-8"))
-    lines.append(f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode("utf-8"))
-    lines.append(f"Content-Type: {mime_type}\r\n\r\n".encode("utf-8"))
-    lines.append(file_bytes)
-    lines.append(b"\r\n")
-    lines.append(f"--{boundary}--\r\n".encode("utf-8"))
-    body = b"".join(lines)
-    return boundary, body
-
-
-def openai_transcribe_audio(audio_base64, mime_type, locale, model_name):
-    api_key = SECRETS.get("openaiApiKey", "")
-    if not api_key:
-        raise RuntimeError("OpenAI API key is not configured.")
-
-    audio_bytes = base64.b64decode(audio_base64)
-    boundary, body = build_multipart_form(
-        {"model": model_name},
-        "file",
-        "input.wav",
-        audio_bytes,
-        mime_type,
-    )
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/audio/transcriptions",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Network error: {exc}") from exc
-
-    transcript = payload.get("text", "")
-    log_external_usage(
-        "openai",
-        model_name,
-        "stt",
-        locale,
-        transcript=transcript,
-        audio_base64=audio_base64,
-    )
-    return {
-        "provider": "openai",
-        "model": model_name,
-        "transcript": transcript,
-    }
-
-
-def openai_synthesize_speech(text_value, locale, model_name):
-    api_key = SECRETS.get("openaiApiKey", "")
-    if not api_key:
-        raise RuntimeError("OpenAI API key is not configured.")
-
-    payload = {
-        "model": model_name,
-        "input": text_value,
-        "voice": "alloy",
-        "response_format": "wav",
-        "instructions": f"Speak naturally in locale {locale}.",
-    }
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/audio/speech",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            wav_bytes = response.read()
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Network error: {exc}") from exc
-
-    log_external_usage(
-        "openai",
-        model_name,
-        "tts",
-        locale,
-        text_value=text_value,
-    )
-    return {
-        "provider": "openai",
-        "model": model_name,
-        "audioBase64": base64.b64encode(wav_bytes).decode("utf-8"),
-        "mimeType": "audio/wav",
-    }
 
 
 def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
@@ -2221,7 +1688,7 @@ def build_runtime_bridge():
         get_secret=lambda key, default=None: SECRETS.get(key, default),
         openai_json=openai_chat_json,
         analyze_image=analyze_image_with_homehub,
-        network_lookup=perform_controlled_network_lookup,
+        network_lookup=perform_network_lookup,
         log=lambda message: print(f"[features] {message}"),
     )
     runtime.invoke_feature = lambda feature_id, payload, locale: FEATURE_MANAGER.invoke_feature(feature_id, payload, locale, runtime)
@@ -2519,382 +1986,84 @@ def analyze_image_with_homehub(prompt, image_base64, mime_type="image/png", pref
     return local_result
 
 
+def _audio_context():
+    return {
+        "get_google_cloud_headers": get_google_cloud_headers,
+        "get_google_service_account_file": get_google_service_account_file,
+        "json_post": json_post,
+        "log_external_usage": log_external_usage,
+        "persisted_settings": PERSISTED_SETTINGS,
+        "provider_catalog": PROVIDER_CATALOG,
+        "secrets": SECRETS,
+    }
+
+
+def _memory_context():
+    return {
+        "secrets": SECRETS,
+    }
+
+
 def transcribe_audio(provider_id, audio_base64, mime_type, locale):
-    catalog = get_audio_provider_catalog()
-    provider = catalog.get(provider_id)
-    if not provider:
-        raise RuntimeError(f"Unsupported STT provider: {provider_id}")
-    runtime = provider["stt"].get("runtime", "catalog")
-    model_name = provider["stt"].get("defaultModel", "unknown")
-    if runtime == "google":
-        return google_transcribe_audio(audio_base64, mime_type, locale)
-    if runtime == "openai":
-        return openai_transcribe_audio(audio_base64, mime_type, locale, model_name)
-    raise RuntimeError(f"Provider {provider['label']} is listed in the catalog but its STT runtime is not wired yet.")
+    return transcribe_audio_payload(provider_id, audio_base64, mime_type, locale, _audio_context())
 
 
 def synthesize_speech(provider_id, text_value, locale):
-    catalog = get_audio_provider_catalog()
-    provider = catalog.get(provider_id)
-    if not provider:
-        raise RuntimeError(f"Unsupported TTS provider: {provider_id}")
-    runtime = provider["tts"].get("runtime", "catalog")
-    model_name = provider["tts"].get("defaultModel", "unknown")
-    if runtime == "google":
-        return google_synthesize_speech(text_value, locale)
-    if runtime == "openai":
-        return openai_synthesize_speech(text_value, locale, model_name)
-    raise RuntimeError(f"Provider {provider['label']} is listed in the catalog but its TTS runtime is not wired yet.")
+    return synthesize_speech_payload(provider_id, text_value, locale, _audio_context())
 
 
 def now_local():
-    return datetime.now().replace(second=0, microsecond=0)
+    return now_local_payload()
 
 
 def now_hhmm():
-    return datetime.now().strftime("%H:%M")
+    return now_hhmm_payload()
 
 
 def parse_iso_datetime(value):
-    try:
-        return datetime.fromisoformat(str(value))
-    except (TypeError, ValueError):
-        return None
-
-
-def make_memory_id(prefix):
-    return f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{random.randint(100, 999)}"
+    return parse_iso_datetime_payload(value)
 
 
 def format_datetime_local(value, locale):
-    dt = parse_iso_datetime(value)
-    if not dt:
-        return str(value)
-    if locale == "zh-CN":
-        return dt.strftime("%m月%d日 %H:%M")
-    if locale == "ja-JP":
-        return dt.strftime("%m月%d日 %H:%M")
-    return dt.strftime("%b %d %H:%M")
-
-
-def sort_records_by_datetime(items, key_name):
-    return sorted(
-        items,
-        key=lambda item: parse_iso_datetime(item.get(key_name)) or datetime.max,
-    )
+    return format_datetime_local_payload(value, locale)
 
 
 def get_upcoming_events(limit=5):
-    now_value = now_local()
-    events = []
-    for event in HOME_MEMORY.get("events", []):
-        start_at = parse_iso_datetime(event.get("startAt"))
-        if start_at and start_at >= now_value - timedelta(hours=1):
-            events.append(event)
-    return sort_records_by_datetime(events, "startAt")[:limit]
+    return get_upcoming_events_payload(HOME_MEMORY, limit=limit)
 
 
 def get_pending_reminders(limit=5):
-    now_value = now_local()
-    reminders = []
-    for reminder in HOME_MEMORY.get("reminders", []):
-        trigger_at = parse_iso_datetime(reminder.get("triggerAt"))
-        if reminder.get("status", "pending") != "done" and trigger_at and trigger_at >= now_value - timedelta(hours=12):
-            reminders.append(reminder)
-    return sort_records_by_datetime(reminders, "triggerAt")[:limit]
+    return get_pending_reminders_payload(HOME_MEMORY, limit=limit)
 
 
 def get_due_reminders(limit=3):
-    now_value = now_local()
-    due = []
-    for reminder in HOME_MEMORY.get("reminders", []):
-        trigger_at = parse_iso_datetime(reminder.get("triggerAt"))
-        if reminder.get("status", "pending") != "done" and trigger_at and trigger_at <= now_value:
-            due.append(reminder)
-    return sort_records_by_datetime(due, "triggerAt")[:limit]
-
-
-def record_memory_action(kind, summary):
-    HOME_MEMORY.setdefault("recentActions", []).insert(
-        0,
-        {
-            "id": make_memory_id("act"),
-            "kind": kind,
-            "summary": summary,
-            "createdAt": now_local().isoformat(timespec="minutes"),
-        },
-    )
-    del HOME_MEMORY["recentActions"][12:]
+    return get_due_reminders_payload(HOME_MEMORY, limit=limit)
 
 
 def create_local_event(title, start_at, end_at, participants=None, location="", reminder_offset_minutes=None, notes=""):
-    event_id = make_memory_id("evt")
-    reminder_ids = []
-    event = {
-        "id": event_id,
-        "title": title,
-        "startAt": start_at.isoformat(timespec="minutes"),
-        "endAt": end_at.isoformat(timespec="minutes"),
-        "participants": participants or [],
-        "location": location,
-        "source": "homehub-local",
-        "createdAt": now_local().isoformat(timespec="minutes"),
-        "notes": notes,
-        "linkedReminderIds": reminder_ids,
-    }
-    HOME_MEMORY.setdefault("events", []).append(event)
-    created_reminder = None
-    if reminder_offset_minutes is not None:
-        reminder_time = start_at - timedelta(minutes=reminder_offset_minutes)
-        reminder_id = make_memory_id("rem")
-        created_reminder = {
-            "id": reminder_id,
-            "title": f"Reminder: {title}",
-            "triggerAt": reminder_time.isoformat(timespec="minutes"),
-            "eventId": event_id,
-            "status": "pending",
-            "channels": ["voice", "tv", "mobile"],
-            "createdAt": now_local().isoformat(timespec="minutes"),
-        }
-        HOME_MEMORY.setdefault("reminders", []).append(created_reminder)
-        reminder_ids.append(reminder_id)
-    record_memory_action("create-event", f"Created schedule '{title}' for {start_at.isoformat(timespec='minutes')}.")
-    save_home_memory(HOME_MEMORY)
-    return event, created_reminder
+    return create_local_event_payload(
+        HOME_MEMORY,
+        HOME_MEMORY_FILE,
+        title,
+        start_at,
+        end_at,
+        participants=participants,
+        location=location,
+        reminder_offset_minutes=reminder_offset_minutes,
+        notes=notes,
+    )
 
 
 def create_local_reminder(title, trigger_at, notes=""):
-    reminder = {
-        "id": make_memory_id("rem"),
-        "title": title,
-        "triggerAt": trigger_at.isoformat(timespec="minutes"),
-        "eventId": "",
-        "status": "pending",
-        "channels": ["voice", "tv", "mobile"],
-        "createdAt": now_local().isoformat(timespec="minutes"),
-        "notes": notes,
-    }
-    HOME_MEMORY.setdefault("reminders", []).append(reminder)
-    record_memory_action("create-reminder", f"Created reminder '{title}' for {trigger_at.isoformat(timespec='minutes')}.")
-    save_home_memory(HOME_MEMORY)
-    return reminder
-
-
-def detect_day_offset(text_value):
-    lowered = text_value.lower()
-    if "后天" in text_value:
-        return 2
-    if "明天" in text_value or "明早" in text_value or "明晚" in text_value or "tomorrow" in lowered:
-        return 1
-    return 0
-
-
-def parse_zh_number(text_value):
-    digits = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
-    if not text_value:
-        return None
-    if text_value == "十":
-        return 10
-    if "十" in text_value:
-        left, _, right = text_value.partition("十")
-        tens = 1 if left == "" else digits.get(left)
-        ones = 0 if right == "" else digits.get(right)
-        if tens is None or ones is None:
-            return None
-        return tens * 10 + ones
-    if len(text_value) == 1:
-        return digits.get(text_value)
-    return None
-
-
-def detect_time_from_text(text_value):
-    lowered = text_value.lower()
-    hour = None
-    minute = 0
-    match = re.search(r"(\d{1,2})[:：](\d{2})", text_value)
-    if match:
-        hour = int(match.group(1))
-        minute = int(match.group(2))
-    else:
-        match = re.search(r"(\d{1,2})点半", text_value)
-        if match:
-            hour = int(match.group(1))
-            minute = 30
-        else:
-            match = re.search(r"(\d{1,2})点(?:(\d{1,2})分?)?", text_value)
-            if match:
-                hour = int(match.group(1))
-                minute = int(match.group(2) or 0)
-            else:
-                match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", lowered)
-                if match:
-                    hour = int(match.group(1))
-                    minute = int(match.group(2) or 0)
-                    if match.group(3) == "pm" and hour < 12:
-                        hour += 12
-                    if match.group(3) == "am" and hour == 12:
-                        hour = 0
-                else:
-                    match = re.search(r"\b(\d{1,2})\b", text_value)
-                    if match and any(token in text_value for token in ["点", "时", "hour", "pm", "am"]):
-                        hour = int(match.group(1))
-    if hour is None:
-        zh_match = re.search(r"([零一二两三四五六七八九十]{1,3})点(半|([零一二两三四五六七八九十]{1,3})分?)?", text_value)
-        if zh_match:
-            hour = parse_zh_number(zh_match.group(1))
-            if zh_match.group(2) == "半":
-                minute = 30
-            else:
-                minute = parse_zh_number(zh_match.group(3) or "") or 0
-
-    if hour is None:
-        return None
-    if any(token in text_value for token in ["下午", "晚上", "今晚", "傍晚"]) and hour < 12:
-        hour += 12
-    if any(token in text_value for token in ["中午"]) and hour < 11:
-        hour += 12
-    if any(token in lowered for token in ["afternoon", "evening", "tonight"]) and hour < 12:
-        hour += 12
-    return hour, minute
-
-
-def detect_reminder_offset_minutes(text_value):
-    if "提前半小时" in text_value or "提前半個小時" in text_value:
-        return 30
-    match = re.search(r"提前(\d{1,3})\s*分钟", text_value)
-    if match:
-        return int(match.group(1))
-    match = re.search(r"提前(\d{1,2})\s*小时", text_value)
-    if match:
-        return int(match.group(1)) * 60
-    match = re.search(r"(\d{1,3})\s*minutes?\s+before", text_value.lower())
-    if match:
-        return int(match.group(1))
-    match = re.search(r"(\d{1,2})\s*hours?\s+before", text_value.lower())
-    if match:
-        return int(match.group(1)) * 60
-    return 30 if "提前提醒" in text_value or "remind me ahead" in text_value.lower() else None
-
-
-def infer_title_from_text(text_value):
-    quoted = re.search(r"[\"“](.+?)[\"”]", text_value)
-    if quoted:
-        return quoted.group(1).strip()
-    person_meeting = re.search(r"和(.+?)的(会议|会面|聚餐|通话|视频|课程)", text_value)
-    if person_meeting:
-        return f"和{person_meeting.group(1).strip()}的{person_meeting.group(2).strip()}"
-    remind_match = re.search(r"提醒我(.+)", text_value)
-    if remind_match:
-        return remind_match.group(1).strip("，。 ")
-    generic = re.search(r"(创建|添加|安排|设定|新建)(.+?)(日程|会议|提醒|行程)", text_value)
-    if generic:
-        core = generic.group(2).strip("，。 ")
-        suffix = generic.group(3).strip()
-        return f"{core}{suffix}"
-    return "家庭日程"
-
-
-def build_datetime_from_text(text_value):
-    time_parts = detect_time_from_text(text_value)
-    if not time_parts:
-        return None
-    hour, minute = time_parts
-    base = now_local() + timedelta(days=detect_day_offset(text_value))
-    candidate = base.replace(hour=hour, minute=minute)
-    if detect_day_offset(text_value) == 0 and candidate < now_local() - timedelta(minutes=5):
-        candidate += timedelta(days=1)
-    return candidate
+    return create_local_reminder_payload(HOME_MEMORY, HOME_MEMORY_FILE, title, trigger_at, notes=notes)
 
 
 def summarize_schedule(locale):
-    events = get_upcoming_events(limit=3)
-    reminders = get_pending_reminders(limit=3)
-    if locale == "zh-CN":
-        if not events and not reminders:
-            return "本地日程里暂时没有新的安排或提醒。"
-        lines = []
-        if events:
-            lines.append("接下来日程有：" + "；".join(f"{event['title']}（{format_datetime_local(event['startAt'], locale)}）" for event in events))
-        if reminders:
-            lines.append("提醒有：" + "；".join(f"{item['title']}（{format_datetime_local(item['triggerAt'], locale)}）" for item in reminders))
-        return " ".join(lines)
-    if locale == "ja-JP":
-        return "ローカル予定とリマインダーを表示しました。"
-    return "I pulled the upcoming local schedule and reminders."
-
-
-def try_extract_schedule_with_openai(user_text, locale):
-    api_key = SECRETS.get("openaiApiKey", "")
-    if not api_key:
-        return None
-    schema_prompt = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You extract household scheduling intent. "
-                    "Return JSON only with keys: action, title, startAt, endAt, reminderOffsetMinutes, location, participants, confidence. "
-                    "Valid action values: create_event, create_reminder, show_schedule, none. "
-                    f"Current local time is {now_local().isoformat(timespec='minutes')}."
-                ),
-            },
-            {"role": "user", "content": f"Locale={locale}\nUser message: {user_text}"},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.2,
-    }
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=json.dumps(schema_prompt).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        content = payload["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        data = json.loads(content)
-        if not isinstance(data, dict):
-            return None
-        return data
-    except Exception:
-        return None
+    return summarize_schedule_payload(HOME_MEMORY, locale)
 
 
 def detect_local_assistant_action(user_text, locale):
-    lowered = user_text.lower()
-    ai_result = try_extract_schedule_with_openai(user_text, locale)
-    if isinstance(ai_result, dict) and ai_result.get("action") in {"create_event", "create_reminder", "show_schedule"}:
-        return ai_result
-    if any(token in user_text for token in ["查看日程", "看看日程", "我的日程", "有什么安排", "提醒列表"]) or "show my schedule" in lowered:
-        return {"action": "show_schedule"}
-    if any(token in user_text for token in ["提醒", "日程", "会议", "安排", "行程", "闹钟"]) or "remind me" in lowered or "schedule" in lowered:
-        start_at = build_datetime_from_text(user_text)
-        offset = detect_reminder_offset_minutes(user_text)
-        title = infer_title_from_text(user_text)
-        if start_at and any(token in user_text for token in ["日程", "会议", "安排", "行程", "schedule", "meeting"]):
-            return {
-                "action": "create_event",
-                "title": title,
-                "startAt": start_at.isoformat(timespec="minutes"),
-                "endAt": (start_at + timedelta(minutes=60)).isoformat(timespec="minutes"),
-                "reminderOffsetMinutes": offset,
-                "location": "",
-                "participants": [],
-            }
-        if start_at and any(token in user_text for token in ["提醒", "闹钟"]) or ("remind me" in lowered and start_at):
-            return {
-                "action": "create_reminder",
-                "title": title if title != "家庭日程" else "HomeHub reminder",
-                "startAt": start_at.isoformat(timespec="minutes"),
-            }
-    return {"action": "none"}
+    return detect_local_assistant_action_payload(user_text, locale, _memory_context())
 
 
 def append_conversation_turn(speaker, text_value, artifacts=None):
@@ -2911,49 +2080,7 @@ def append_conversation_turn(speaker, text_value, artifacts=None):
 
 
 def build_household_modules(locale):
-    modules = deepcopy(HOUSEHOLD_MODULES)
-    upcoming_events = get_upcoming_events(limit=3)
-    pending_reminders = get_pending_reminders(limit=3)
-    due_reminders = get_due_reminders(limit=2)
-
-    for module in modules:
-        if module["id"] == "schedule":
-            if upcoming_events:
-                next_event = upcoming_events[0]
-                if locale == "zh-CN":
-                    module["summary"] = f"已记录 {len(upcoming_events)} 个本地日程。下一个是 {next_event['title']}，时间 {format_datetime_local(next_event['startAt'], locale)}。"
-                    module["actionLabel"] = "查看日程"
-                elif locale == "ja-JP":
-                    module["summary"] = f"ローカル予定 {len(upcoming_events)} 件。次は {next_event['title']}、{format_datetime_local(next_event['startAt'], locale)}。"
-                    module["actionLabel"] = "予定を見る"
-                else:
-                    module["summary"] = f"{len(upcoming_events)} local events tracked. Next: {next_event['title']} at {format_datetime_local(next_event['startAt'], locale)}."
-                    module["actionLabel"] = "Open Schedule"
-                module["state"] = "attention" if due_reminders else "active"
-            else:
-                if locale == "zh-CN":
-                    module["summary"] = "还没有本地日程。你可以直接对 HomeHub 说出要创建的安排。"
-                    module["actionLabel"] = "语音创建"
-                elif locale == "ja-JP":
-                    module["summary"] = "ローカル予定はまだありません。音声で追加できます。"
-                    module["actionLabel"] = "音声で作成"
-                else:
-                    module["summary"] = "No local schedule items yet. Ask HomeHub by voice to create one."
-                    module["actionLabel"] = "Create by Voice"
-                module["state"] = "ready"
-        if module["id"] == "messages" and pending_reminders:
-            next_reminder = pending_reminders[0]
-            if locale == "zh-CN":
-                module["summary"] = f"已有 {len(pending_reminders)} 条提醒。下一条是 {next_reminder['title']}，将在 {format_datetime_local(next_reminder['triggerAt'], locale)} 触发。"
-                module["actionLabel"] = "查看提醒"
-            elif locale == "ja-JP":
-                module["summary"] = f"リマインダー {len(pending_reminders)} 件。次は {next_reminder['title']}、{format_datetime_local(next_reminder['triggerAt'], locale)}。"
-                module["actionLabel"] = "通知を見る"
-            else:
-                module["summary"] = f"{len(pending_reminders)} reminders queued. Next: {next_reminder['title']} at {format_datetime_local(next_reminder['triggerAt'], locale)}."
-                module["actionLabel"] = "View Reminders"
-            module["state"] = "attention" if due_reminders else "active"
-    return modules
+    return build_household_modules_payload(HOUSEHOLD_MODULES, HOME_MEMORY, locale)
 
 
 def build_feature_household_modules(locale):
@@ -3297,6 +2424,29 @@ def build_pending_clarification_snapshot():
     return dict(PENDING_VOICE_CLARIFICATION)
 
 
+def learn_from_clarification(clarification_context, route, combined_text, locale):
+    if not clarification_context or not isinstance(route, dict):
+        return
+    task_spec = route.get("taskSpec", {})
+    if not isinstance(task_spec, dict) or not task_spec:
+        return
+    original_request = str(clarification_context.get("originalRequest", "")).strip()
+    if not original_request:
+        return
+    record_semantic_example(
+        combined_text,
+        locale,
+        task_spec,
+        correction_text=str(clarification_context.get("latestUserMessage", "")).strip(),
+    )
+    record_semantic_example(
+        original_request,
+        locale,
+        task_spec,
+        correction_text=str(clarification_context.get("latestUserMessage", "")).strip(),
+    )
+
+
 def detect_ui_action(user_text, locale):
     normalized = str(user_text or "").strip().lower()
     if not normalized:
@@ -3411,159 +2561,61 @@ def build_ui_action_reply(action, locale):
     return f"Opening the {label} tab."
 
 
-def resolve_voice_request(user_text, locale):
+def _get_pending_voice_clarification():
+    return PENDING_VOICE_CLARIFICATION
+
+
+def _set_pending_voice_clarification(payload):
     global PENDING_VOICE_CLARIFICATION
+    PENDING_VOICE_CLARIFICATION = payload
 
-    runtime = build_runtime_bridge()
-    original_text = user_text
-    combined_text = user_text
-    clarification_context = PENDING_VOICE_CLARIFICATION
-    ui_action = detect_ui_action(original_text, locale)
-    text_lower = str(original_text or "").lower()
-    network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方网站", "官方消息", "最新消息", "最新新闻"]) or any(
-        token in text_lower for token in ["search", "lookup", "look up", "official website", "latest news", "breaking news", "web search", "online search"]
-    )
 
-    if ui_action and not clarification_context:
-        PENDING_VOICE_CLARIFICATION = None
-        return {
-            "reply": build_ui_action_reply(ui_action, locale),
-            "route": {
-                "kind": "ui_action",
-                "selected": {
-                    "intent": "ui-action",
-                    "featureId": "tv-shell",
-                    "featureName": "TV Shell",
-                    "action": ui_action.get("type"),
-                    "target": ui_action.get("tab"),
-                    "score": 0.99,
-                },
-                "candidates": [],
-                "clarificationQuestion": "",
-                "reasoning": "Detected a direct TV navigation command.",
-            },
-            "pendingClarification": None,
-            "uiAction": ui_action,
-        }
-
-    if network_hint and not clarification_context:
-        task_spec = {
-            "taskType": "network_lookup",
-            "intent": "network-lookup",
-            "summary": "Query approved external sources and return a sourced summary.",
-            "urgency": "normal",
-            "inputModes": ["text"],
-            "requiresImage": False,
-            "requiresGeneration": False,
-            "requiresScheduling": False,
-            "requiresLongRunningAgent": False,
-            "preferredExecution": "hybrid",
-            "missingInfo": [],
-        }
-        runtime_strategy = build_runtime_strategy(load_ollama_inventory())
-        route = {
-            "kind": "general",
-            "selected": {
-                "intent": "network-lookup",
-                "featureId": "homehub-core",
-                "featureName": "HomeHub Core",
-                "action": "controlled_network_lookup",
-                "score": 0.91,
-            },
-            "candidates": [],
-            "reasoning": "Detected a controlled network lookup request from the message.",
-            "taskSpec": task_spec,
-            "toolPlan": build_tool_plan(task_spec, {"selected": {"featureId": "homehub-core"}}),
-            "modelRoute": select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])}),
-        }
-        lookup_result = perform_controlled_network_lookup(original_text, locale)
-        if not lookup_result.get("ok") and str(lookup_result.get("error", "")).strip() == "no_allowed_source_found":
-            fallback_reply = build_general_voice_reply(original_text, locale, route.get("modelRoute"))
-            return {
-                "reply": fallback_reply,
-                "route": serialize_voice_route(route),
-                "pendingClarification": None,
-                "uiAction": None,
-                "lookupResult": lookup_result,
-            }
-        return {
-            "reply": build_network_lookup_reply(lookup_result, locale),
-            "route": serialize_voice_route(route),
-            "pendingClarification": None,
-            "uiAction": None,
-            "lookupResult": lookup_result,
-        }
-
-    if clarification_context:
-        combined_text = (
-            f"Original request: {clarification_context.get('originalRequest', '')}\n"
-            f"Clarification answer: {user_text}"
-        )
-
-    route = route_voice_request(combined_text, locale)
-    lookup_result = None
-    ui_action = None
-
-    if route.get("kind") == "clarify":
-        PENDING_VOICE_CLARIFICATION = {
-            "originalRequest": clarification_context.get("originalRequest", original_text) if clarification_context else original_text,
-            "latestUserMessage": original_text,
-            "clarificationQuestion": build_clarification_reply(route, locale),
-            "selected": route.get("selected"),
-            "createdAt": datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes"),
-        }
-        return {
-            "reply": PENDING_VOICE_CLARIFICATION["clarificationQuestion"],
-            "route": serialize_voice_route(route),
-            "pendingClarification": build_pending_clarification_snapshot(),
-        }
-
-    if route.get("kind") == "feature":
-        result = FEATURE_MANAGER.dispatch_voice_intent(route, combined_text, locale, runtime) or {}
-        reply = result.get("reply") or build_general_voice_reply(original_text, locale, route.get("modelRoute"))
-        ui_action = result.get("uiAction")
-        artifacts = result.get("artifacts", [])
-    elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
-        lookup_result = perform_controlled_network_lookup(combined_text if clarification_context else original_text, locale)
-        if not lookup_result.get("ok") and str(lookup_result.get("error", "")).strip() == "no_allowed_source_found":
-            reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
-        else:
-            reply = build_network_lookup_reply(lookup_result, locale)
-        artifacts = []
-    elif route.get("kind") == "agent_factory":
-        reply = build_agent_factory_reply(locale)
-        artifacts = []
-    else:
-        reply = build_general_voice_reply(combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
-        artifacts = []
-
-    PENDING_VOICE_CLARIFICATION = None
+def _voice_context():
     return {
-        "reply": reply,
-        "route": serialize_voice_route(route),
-        "pendingClarification": None,
-        "uiAction": ui_action,
-        "lookupResult": lookup_result,
-        "artifacts": artifacts,
+        "build_agent_factory_reply": build_agent_factory_reply,
+        "build_clarification_reply": build_clarification_reply,
+        "build_general_voice_reply": build_general_voice_reply,
+        "build_network_lookup_reply": build_network_lookup_reply,
+        "build_pending_clarification_snapshot": build_pending_clarification_snapshot,
+        "build_runtime_bridge": build_runtime_bridge,
+        "build_runtime_strategy": build_runtime_strategy,
+        "build_tool_plan": build_tool_plan,
+        "build_ui_action_reply": build_ui_action_reply,
+        "build_tool_registry_snapshot": build_tool_registry_snapshot,
+        "clear_pending_voice_clarification": clear_pending_voice_clarification,
+        "detect_ui_action": detect_ui_action,
+        "feature_manager": FEATURE_MANAGER,
+        "get_pending_voice_clarification": _get_pending_voice_clarification,
+        "learn_from_clarification": learn_from_clarification,
+        "load_ollama_inventory": load_ollama_inventory,
+        "perform_network_lookup": perform_network_lookup,
+        "route_voice_request": route_voice_request,
+        "select_model_route": select_model_route,
+        "serialize_voice_route": serialize_voice_route,
+        "set_pending_voice_clarification": _set_pending_voice_clarification,
     }
+
+
+def resolve_voice_request(user_text, locale):
+    return resolve_voice_request_payload(user_text, locale, _voice_context())
 
 
 def build_voice_router_snapshot(locale):
-    runtime = build_runtime_bridge()
-    features = FEATURE_MANAGER.list_features(runtime)
-    return {
-        "pendingVoiceClarification": build_pending_clarification_snapshot(),
-        "toolRegistry": build_tool_registry_snapshot(),
-        "featureIntents": [
-            {
-                "featureId": item.get("id"),
-                "featureName": item.get("name"),
-                "intents": item.get("voiceIntents", []),
-            }
-            for item in features
-            if item.get("voiceIntents")
-        ]
-    }
+    return build_voice_router_snapshot_payload(locale, _voice_context())
+
+
+def set_last_voice_route(route):
+    global LAST_VOICE_ROUTE
+    LAST_VOICE_ROUTE = route
+
+
+def clear_pending_voice_clarification():
+    global PENDING_VOICE_CLARIFICATION
+    PENDING_VOICE_CLARIFICATION = None
+
+
+def reset_last_voice_route():
+    set_last_voice_route(default_last_voice_route())
 
 
 def is_generic_agent_request(user_text):
@@ -3578,125 +2630,46 @@ def is_generic_agent_request(user_text):
 
 
 def generate_assistant_reply(user_text, locale):
-    return resolve_voice_request(user_text, locale)["reply"]
+    return generate_assistant_reply_payload(user_text, locale, _voice_context())
 
 
 def build_last_voice_route(user_text, locale):
-    return serialize_voice_route(route_voice_request(user_text, locale))
+    return build_last_voice_route_payload(user_text, locale, _voice_context())
 
 
 def build_dashboard():
-    provider_catalog = get_audio_provider_catalog()
-    local_inventory = load_ollama_inventory()
-    agents = deepcopy(BASE_AGENTS)
-    for agent in agents:
-        delta = random.randint(-4, 6)
-        agent["progress"] = max(12, min(100, agent["progress"] + delta))
-        if agent["progress"] > 92:
-            agent["status"] = "complete"
-            agent["lastUpdate"] = "Task finished and result published to the TV shell."
-        elif agent["progress"] < 45 and agent["id"] == "lifestyle":
-            agent["status"] = "planning"
-        else:
-            agent["status"] = "running"
-
-    timeline = deepcopy(BASE_TIMELINE)
-    timeline.append(
+    return build_dashboard_payload(
         {
-            "id": f"live-{datetime.now().strftime('%H%M%S')}",
-            "time": datetime.now().strftime("%H:%M"),
-            "title": "Live Box Update",
-            "detail": random.choice(
-                [
-                    "Companion app heartbeat confirmed.",
-                    "Travel checklist refreshed from latest family note.",
-                    "Voice pipeline pushed a partial transcript to the screen.",
-                    "Relay message delivered and removed from transient storage.",
-                ]
-            ),
-            "stream": random.choice(["system", "implementation", "family", "voice"]),
+            "audio_stack": AUDIO_STACK,
+            "base_agents": BASE_AGENTS,
+            "base_timeline": BASE_TIMELINE,
+            "bootstrap_snapshot": bootstrap_snapshot,
+            "box_profile": BOX_PROFILE,
+            "build_ai_capability_catalog": build_ai_capability_catalog,
+            "build_feature_household_modules": build_feature_household_modules,
+            "build_runtime_bridge": build_runtime_bridge,
+            "build_runtime_strategy": build_runtime_strategy,
+            "build_voice_router_snapshot": build_voice_router_snapshot,
+            "current_conversation": CURRENT_CONVERSATION,
+            "feature_manager": FEATURE_MANAGER,
+            "get_audio_provider_catalog": get_audio_provider_catalog,
+            "get_google_service_account_file": get_google_service_account_file,
+            "language_settings": LANGUAGE_SETTINGS,
+            "last_voice_route": LAST_VOICE_ROUTE,
+            "load_ollama_inventory": load_ollama_inventory,
+            "model_providers": MODEL_PROVIDERS,
+            "pairing": PAIRING,
+            "persisted_settings": PERSISTED_SETTINGS,
+            "relay_messages": RELAY_MESSAGES,
+            "secret_sources": SECRET_SOURCES,
+            "secrets": SECRETS,
+            "semantic_backend_snapshot": semantic_backend_snapshot,
+            "skills": SKILLS,
+            "system_status": SYSTEM_STATUS,
+            "voice_profile": VOICE_PROFILE,
+            "weather": WEATHER,
         }
     )
-
-    stt_provider_id = PERSISTED_SETTINGS["sttProvider"]
-    tts_provider_id = PERSISTED_SETTINGS["ttsProvider"]
-    stt_provider = provider_catalog[stt_provider_id]
-    tts_provider = provider_catalog[tts_provider_id]
-    runtime = build_runtime_bridge()
-    feature_payload = FEATURE_MANAGER.dashboard_payload(PERSISTED_SETTINGS["language"], runtime)
-    voice_router = build_voice_router_snapshot(PERSISTED_SETTINGS["language"])
-
-    return {
-        "hero": {
-            "title": "HomeHub",
-            "subtitle": "AI Box for the Living Room",
-            "tagline": "Boot like a TV box, collaborate like a multi-agent team.",
-        },
-        "boxProfile": BOX_PROFILE,
-        "householdModules": build_feature_household_modules(PERSISTED_SETTINGS["language"]),
-        "activeAgents": agents,
-        "timelineEvents": timeline,
-        "modelProviders": MODEL_PROVIDERS,
-        "skillCatalog": SKILLS,
-        "pairingSession": PAIRING,
-        "relayMessages": RELAY_MESSAGES,
-        "voiceProfile": {
-            **VOICE_PROFILE,
-            "sttProvider": f"{stt_provider['label']} / {stt_provider['stt']['defaultModel']}",
-            "ttsProvider": f"{tts_provider['label']} / {tts_provider['tts']['defaultModel']}",
-            "locale": PERSISTED_SETTINGS["language"],
-        },
-        "audioStack": {
-            **AUDIO_STACK,
-            "stt": {
-                **AUDIO_STACK["stt"],
-                "provider": stt_provider["label"],
-                "primaryModel": stt_provider["stt"]["defaultModel"],
-                "fallbackModel": stt_provider["stt"]["fallbackModel"],
-            },
-            "tts": {
-                **AUDIO_STACK["tts"],
-                "provider": tts_provider["label"],
-                "primaryModel": tts_provider["tts"]["defaultModel"],
-                "fallbackModel": tts_provider["tts"]["fallbackModel"],
-            },
-        },
-        "audioProviders": {
-            "selected": {
-                "stt": stt_provider_id,
-                "tts": tts_provider_id,
-            },
-            "catalog": provider_catalog,
-            "secrets": {
-                "googleConfigured": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
-                "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
-                "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
-                "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
-            },
-            "counts": {
-                "total": len(provider_catalog),
-                "editable": sum(1 for provider in provider_catalog.values() if provider.get("editable")),
-            },
-        },
-        "modelCatalog": build_ai_capability_catalog(
-            provider_catalog,
-            {"stt": stt_provider_id, "tts": tts_provider_id},
-        ),
-        "runtimeProfile": build_runtime_strategy(local_inventory),
-        "languageSettings": {
-            **LANGUAGE_SETTINGS,
-            "current": PERSISTED_SETTINGS["language"],
-        },
-        "weather": WEATHER,
-        "systemStatus": SYSTEM_STATUS,
-        "conversation": CURRENT_CONVERSATION,
-        "lastVoiceRoute": LAST_VOICE_ROUTE,
-        "features": FEATURE_MANAGER.list_features(runtime),
-        "agentTypes": FEATURE_MANAGER.list_agent_types(PERSISTED_SETTINGS["language"], runtime),
-        "bootstrap": bootstrap_snapshot(),
-        **voice_router,
-        **feature_payload,
-    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -3770,113 +2743,71 @@ class Handler(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, json.JSONDecodeError):
             return {"_raw": raw.decode("utf-8", errors="ignore")}
 
+    def _route_context(self):
+        return {
+            "append_conversation_turn": append_conversation_turn,
+            "audio_provider_catalog": AUDIO_PROVIDER_CATALOG,
+            "bootstrap_snapshot": bootstrap_snapshot,
+            "build_assistant_memory_snapshot": build_assistant_memory_snapshot,
+            "build_dashboard": build_dashboard,
+            "build_initial_conversation": build_initial_conversation,
+            "clear_pending_voice_clarification": clear_pending_voice_clarification,
+            "current_conversation": CURRENT_CONVERSATION,
+            "detect_text_locale": detect_text_locale,
+            "export_training_pairs": export_training_pairs,
+            "feature_manager": FEATURE_MANAGER,
+            "generated_dir": GENERATED_DIR,
+            "get_audio_provider_catalog": get_audio_provider_catalog,
+            "get_google_service_account_file": get_google_service_account_file,
+            "get_secret_sources": get_secret_sources,
+            "json": json,
+            "language_settings": LANGUAGE_SETTINGS,
+            "load_custom_audio_providers": load_custom_audio_providers,
+            "load_secrets_file": load_secrets_file,
+            "mimetypes": mimetypes,
+            "model_providers": MODEL_PROVIDERS,
+            "network_lookup_policies": NETWORK_LOOKUP_POLICIES,
+            "normalize_locale": normalize_locale,
+            "normalize_string_list": normalize_string_list,
+            "normalize_supported_languages": normalize_supported_languages,
+            "pairing": PAIRING,
+            "perform_network_lookup": perform_network_lookup,
+            "persisted_settings": PERSISTED_SETTINGS,
+            "query_semantic_memory": query_semantic_memory,
+            "record_semantic_example": record_semantic_example,
+            "refresh_secrets_state": lambda: self._refresh_secrets_state(),
+            "relay_messages": RELAY_MESSAGES,
+            "resolve_voice_request": resolve_voice_request,
+            "reset_last_voice_route": reset_last_voice_route,
+            "save_custom_audio_providers": save_custom_audio_providers,
+            "save_persisted_settings": save_persisted_settings,
+            "save_secrets": save_secrets,
+            "semantic_backend_snapshot": semantic_backend_snapshot,
+            "set_last_voice_route": set_last_voice_route,
+            "skills": SKILLS,
+            "start_bootstrap_install": start_bootstrap_install,
+            "static_dir": STATIC_DIR,
+            "synthesize_speech": synthesize_speech,
+            "transcribe_audio": transcribe_audio,
+            "usage_log_file": USAGE_LOG_FILE,
+            "voice_conversation": VOICE_CONVERSATION,
+            "voice_profile": VOICE_PROFILE,
+        }
+
+    def _refresh_secrets_state(self):
+        global SECRETS, SECRET_SOURCES
+        SECRETS = get_effective_secrets()
+        SECRET_SOURCES = get_secret_sources()
+        return SECRETS
+
     def do_GET(self):
         parsed = urlparse(self.path)
-        path = parsed.path
         runtime = build_runtime_bridge()
-        feature_response = FEATURE_MANAGER.handle_api("GET", path, parse_qs(parsed.query), None, runtime)
-        if feature_response:
-            self._send_feature_response(feature_response)
+        if handle_get_route(self, parsed, runtime, self._route_context()):
             return
-
-        if path == "/api/health":
-            self._send_json({"ok": True, "service": "homehub-runtime"})
-            return
-
-        if path == "/api/dashboard":
-            self._send_json(build_dashboard())
-            return
-
-        if path == "/api/bootstrap/status":
-            self._send_json(bootstrap_snapshot())
-            return
-
-        if path == "/api/providers":
-            self._send_json(MODEL_PROVIDERS)
-            return
-
-        if path == "/api/network/policies":
-            self._send_json({"items": list(NETWORK_LOOKUP_POLICIES.values())})
-            return
-
-        if path == "/api/skills":
-            self._send_json(SKILLS)
-            return
-
-        if path == "/api/features":
-            self._send_json(FEATURE_MANAGER.list_features(runtime))
-            return
-
-        if path == "/api/agent-types":
-            self._send_json(FEATURE_MANAGER.list_agent_types(PERSISTED_SETTINGS["language"], runtime))
-            return
-
-        if path == "/api/pairing":
-            self._send_json(PAIRING)
-            return
-
-        if path == "/api/relay":
-            self._send_json(RELAY_MESSAGES)
-            return
-
-        if path == "/api/voice":
-            self._send_json(VOICE_PROFILE)
-            return
-
-        if path == "/api/usage/logs":
-            if not USAGE_LOG_FILE.exists():
-                self._send_json({"items": []})
-                return
-            lines = USAGE_LOG_FILE.read_text(encoding="utf-8").splitlines()[-200:]
-            items = [json.loads(line) for line in lines if line.strip()]
-            self._send_json({"items": items})
-            return
-
-        if path == "/api/run":
-            params = parse_qs(parsed.query)
-            task = params.get("task", ["Plan a family trip and show progress on TV"])[0]
-            self._send_json(
-                {
-                    "task": task,
-                    "fanout": 4,
-                    "strategy": "planner -> device | lifestyle | developer | voice",
-                    "status": "running",
-                }
-            )
-            return
-
-        if path == "/" or path == "/index.html":
-            self._send_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
-            return
-
-        if path == "/assets/app.css":
-            self._send_file(STATIC_DIR / "assets" / "app.css", "text/css; charset=utf-8")
-            return
-
-        if path == "/assets/app.js":
-            self._send_file(STATIC_DIR / "assets" / "app.js", "application/javascript; charset=utf-8")
-            return
-
-        if path.startswith("/generated/"):
-            relative = path.removeprefix("/generated/").strip("/")
-            target = (GENERATED_DIR / relative).resolve()
-            try:
-                target.relative_to(GENERATED_DIR.resolve())
-            except ValueError:
-                self.send_error(403)
-                return
-            if not target.exists() or not target.is_file():
-                self.send_error(404)
-                return
-            content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-            self._send_file(target, content_type)
-            return
-
         self.send_error(404)
 
     def do_POST(self):
-        global PERSISTED_SETTINGS, SECRETS, SECRET_SOURCES, LAST_VOICE_ROUTE, PENDING_VOICE_CLARIFICATION
-
         parsed = urlparse(self.path)
         runtime = build_runtime_bridge()
         raw_body = self._read_request_body()
@@ -3888,315 +2819,8 @@ class Handler(BaseHTTPRequestHandler):
         elif isinstance(preview_body, dict):
             preview_body["_headers"] = request_headers
             preview_body.setdefault("_raw", raw_text)
-        feature_response = FEATURE_MANAGER.handle_api("POST", parsed.path, parse_qs(parsed.query), preview_body, runtime)
-        if feature_response:
-            self._send_feature_response(feature_response)
+        if handle_post_route(self, parsed, runtime, preview_body, raw_text, request_headers, self._route_context()):
             return
-
-        if parsed.path == "/api/settings/language":
-            body = preview_body
-            if not body or "language" not in body:
-                self._send_json({"error": "Invalid request body"}, status=400)
-                return
-
-            supported_codes = {item["code"] for item in LANGUAGE_SETTINGS["supported"]}
-            language = body["language"]
-            if language not in supported_codes:
-                self._send_json({"error": "Unsupported language"}, status=400)
-                return
-
-            PERSISTED_SETTINGS["language"] = language
-            save_persisted_settings(PERSISTED_SETTINGS)
-            self._send_json({"ok": True, "language": language})
-            return
-
-        if parsed.path == "/api/bootstrap/approve":
-            PERSISTED_SETTINGS["bootstrapConsent"] = True
-            PERSISTED_SETTINGS["bootstrapCompleted"] = False
-            save_persisted_settings(PERSISTED_SETTINGS)
-            start_bootstrap_install()
-            self._send_json({"ok": True, "bootstrap": bootstrap_snapshot()})
-            return
-
-        if parsed.path == "/api/settings/audio":
-            body = preview_body
-            if not body:
-                self._send_json({"error": "Invalid request body"}, status=400)
-                return
-
-            provider_catalog = get_audio_provider_catalog()
-            supported_providers = set(provider_catalog.keys())
-            stt_provider = body.get("sttProvider", PERSISTED_SETTINGS["sttProvider"])
-            tts_provider = body.get("ttsProvider", PERSISTED_SETTINGS["ttsProvider"])
-            if stt_provider not in supported_providers or tts_provider not in supported_providers:
-                self._send_json({"error": "Unsupported provider"}, status=400)
-                return
-            if provider_catalog[stt_provider]["stt"].get("runtime") == "catalog":
-                self._send_json({"error": "Selected STT provider is catalog-only."}, status=400)
-                return
-            if provider_catalog[tts_provider]["tts"].get("runtime") == "catalog":
-                self._send_json({"error": "Selected TTS provider is catalog-only."}, status=400)
-                return
-
-            PERSISTED_SETTINGS["sttProvider"] = stt_provider
-            PERSISTED_SETTINGS["ttsProvider"] = tts_provider
-            save_persisted_settings(PERSISTED_SETTINGS)
-            self._send_json(
-                {
-                    "ok": True,
-                    "sttProvider": stt_provider,
-                    "ttsProvider": tts_provider,
-                }
-            )
-            return
-
-        if parsed.path == "/api/settings/secrets":
-            body = preview_body
-            if not body:
-                self._send_json({"error": "Invalid request body"}, status=400)
-                return
-
-            file_secrets = load_secrets_file()
-            google_api_key = body.get("googleApiKey", file_secrets.get("googleApiKey", ""))
-            openai_api_key = body.get("openaiApiKey", file_secrets.get("openaiApiKey", ""))
-            save_secrets({
-                "googleApiKey": google_api_key,
-                "googleAccessToken": body.get("googleAccessToken", file_secrets.get("googleAccessToken", "")),
-                "openaiApiKey": openai_api_key,
-                "mailAddress": body.get("mailAddress", file_secrets.get("mailAddress", "")),
-                "mailPassword": body.get("mailPassword", file_secrets.get("mailPassword", "")),
-                "mailSmtpHost": body.get("mailSmtpHost", file_secrets.get("mailSmtpHost", "")),
-                "mailSmtpPort": body.get("mailSmtpPort", file_secrets.get("mailSmtpPort", "")),
-                "mailImapHost": body.get("mailImapHost", file_secrets.get("mailImapHost", "")),
-                "mailImapPort": body.get("mailImapPort", file_secrets.get("mailImapPort", "")),
-                "wechatOfficialToken": body.get("wechatOfficialToken", file_secrets.get("wechatOfficialToken", "")),
-                "wechatOfficialAppId": body.get("wechatOfficialAppId", file_secrets.get("wechatOfficialAppId", "")),
-                "wechatOfficialAppSecret": body.get("wechatOfficialAppSecret", file_secrets.get("wechatOfficialAppSecret", "")),
-                "wechatOfficialEncodingAesKey": body.get("wechatOfficialEncodingAesKey", file_secrets.get("wechatOfficialEncodingAesKey", "")),
-                "lineChannelSecret": body.get("lineChannelSecret", file_secrets.get("lineChannelSecret", "")),
-                "lineChannelAccessToken": body.get("lineChannelAccessToken", file_secrets.get("lineChannelAccessToken", "")),
-                "externalBridgeUrl": body.get("externalBridgeUrl", file_secrets.get("externalBridgeUrl", "")),
-                "externalBridgeToken": body.get("externalBridgeToken", file_secrets.get("externalBridgeToken", "")),
-            })
-            SECRETS = get_effective_secrets()
-            SECRET_SOURCES = get_secret_sources()
-            self._send_json(
-                {
-                    "ok": True,
-                    "googleConfigured": bool(SECRETS.get("googleAccessToken") or get_google_service_account_file().exists()),
-                    "openaiConfigured": bool(SECRETS.get("openaiApiKey")),
-                    "mailConfigured": bool(SECRETS.get("mailAddress") and SECRETS.get("mailPassword")),
-                    "wechatOfficialConfigured": bool(SECRETS.get("wechatOfficialToken") and SECRETS.get("wechatOfficialAppId")),
-                    "lineConfigured": bool(SECRETS.get("lineChannelSecret") and SECRETS.get("lineChannelAccessToken")),
-                    "googleSource": "service-account-file" if get_google_service_account_file().exists() else SECRET_SOURCES.get("googleAccessToken", "missing"),
-                    "openaiSource": SECRET_SOURCES.get("openaiApiKey", "missing"),
-                    "mailAddressSource": SECRET_SOURCES.get("mailAddress", "missing"),
-                    "wechatOfficialTokenSource": SECRET_SOURCES.get("wechatOfficialToken", "missing"),
-                    "wechatOfficialAppIdSource": SECRET_SOURCES.get("wechatOfficialAppId", "missing"),
-                    "lineChannelSecretSource": SECRET_SOURCES.get("lineChannelSecret", "missing"),
-                    "lineChannelAccessTokenSource": SECRET_SOURCES.get("lineChannelAccessToken", "missing"),
-                    "externalBridgeConfigured": bool(SECRETS.get("externalBridgeUrl") and SECRETS.get("externalBridgeToken")),
-                    "externalBridgeUrlSource": SECRET_SOURCES.get("externalBridgeUrl", "missing"),
-                }
-            )
-            return
-
-        if parsed.path == "/api/audio/transcribe":
-            body = preview_body
-            if not body or "audioBase64" not in body:
-                self._send_json({"error": "audioBase64 is required"}, status=400)
-                return
-
-            provider = body.get("provider", PERSISTED_SETTINGS["sttProvider"])
-            mime_type = body.get("mimeType", "audio/wav")
-            locale = body.get("locale", PERSISTED_SETTINGS["language"])
-            try:
-                result = transcribe_audio(provider, body["audioBase64"], mime_type, locale)
-            except RuntimeError as exc:
-                self._send_json({"error": str(exc)}, status=502)
-                return
-            except Exception as exc:
-                self._send_json({"error": f"Unexpected transcription error: {exc}"}, status=500)
-                return
-            transcript_text = str(result.get("transcript", "")).strip()
-            detected_locale = detect_text_locale(transcript_text, normalize_locale(locale, PERSISTED_SETTINGS["language"]))
-            result["detectedLocale"] = detected_locale
-            self._send_json({"ok": True, **result})
-            return
-
-        if parsed.path == "/api/audio/synthesize":
-            body = preview_body
-            if not body or "text" not in body:
-                self._send_json({"error": "text is required"}, status=400)
-                return
-
-            provider = body.get("provider", PERSISTED_SETTINGS["ttsProvider"])
-            locale = body.get("locale", PERSISTED_SETTINGS["language"])
-            try:
-                result = synthesize_speech(provider, body["text"], locale)
-            except RuntimeError as exc:
-                self._send_json({"error": str(exc)}, status=502)
-                return
-            except Exception as exc:
-                self._send_json({"error": f"Unexpected synthesis error: {exc}"}, status=500)
-                return
-            self._send_json({"ok": True, **result})
-            return
-
-        if parsed.path == "/api/network/query":
-            body = preview_body
-            if not body or "query" not in body:
-                self._send_json({"error": "query is required"}, status=400)
-                return
-            locale = body.get("locale", PERSISTED_SETTINGS["language"])
-            policy_id = str(body.get("policyId", "safe-general")).strip() or "safe-general"
-            preferred_sources = body.get("preferredSources", []) if isinstance(body.get("preferredSources", []), list) else []
-            allowed_domains = body.get("allowedDomains", []) if isinstance(body.get("allowedDomains", []), list) else []
-            result = perform_controlled_network_lookup(str(body.get("query", "")).strip(), locale, policy_id, preferred_sources, allowed_domains)
-            self._send_json({"ok": result.get("ok", False), **result})
-            return
-
-        if parsed.path == "/api/voice/chat":
-            body = preview_body
-            if not body or "message" not in body:
-                self._send_json({"error": "message is required"}, status=400)
-                return
-
-            message = str(body["message"]).strip()
-            if not message:
-                self._send_json({"error": "message is empty"}, status=400)
-                return
-
-            requested_locale = normalize_locale(body.get("locale", PERSISTED_SETTINGS["language"]), PERSISTED_SETTINGS["language"])
-            locale = detect_text_locale(message, requested_locale)
-            append_conversation_turn("You", message)
-            resolution = resolve_voice_request(message, locale)
-            voice_route = resolution["route"]
-            LAST_VOICE_ROUTE = voice_route
-            reply_text = resolution["reply"]
-            append_conversation_turn("HomeHub", reply_text, resolution.get("artifacts", []))
-
-            audio_payload = None
-            if body.get("speakReply", True):
-                try:
-                    audio_payload = synthesize_speech(PERSISTED_SETTINGS["ttsProvider"], reply_text, locale)
-                except Exception as exc:
-                    audio_payload = {
-                        "error": str(exc),
-                    }
-
-            self._send_json(
-                {
-                    "ok": True,
-                    "reply": reply_text,
-                    "detectedLocale": locale,
-                    "conversation": CURRENT_CONVERSATION,
-                    "voiceRoute": voice_route,
-                    "pendingVoiceClarification": resolution.get("pendingClarification"),
-                    "uiAction": resolution.get("uiAction"),
-                    "lookupResult": resolution.get("lookupResult"),
-                    "artifacts": resolution.get("artifacts", []),
-                    "assistantMemory": build_assistant_memory_snapshot(),
-                    "audio": audio_payload,
-                }
-            )
-            return
-
-        if parsed.path == "/api/settings/audio-provider":
-            body = preview_body
-            if not body:
-                self._send_json({"error": "Invalid request body"}, status=400)
-                return
-            try:
-                entry_type = str(body.get("entryType", "capability")).strip().lower() or "capability"
-                provider_id = str(body.get("id", "")).strip().lower()
-                if not provider_id:
-                    raise ValueError("Entry id is required.")
-                if provider_id in AUDIO_PROVIDER_CATALOG:
-                    raise ValueError("This provider id is reserved by a built-in stack.")
-                existing = load_custom_audio_providers()
-                items = [item for item in existing.get("items", []) if item.get("id") != provider_id]
-                if entry_type == "provider":
-                    items.append(
-                        {
-                            "entryType": "provider",
-                            "id": provider_id,
-                            "label": body.get("label", provider_id),
-                            "sttRuntime": body.get("sttRuntime", "catalog"),
-                            "ttsRuntime": body.get("ttsRuntime", "catalog"),
-                            "sttDefaultModel": body.get("sttDefaultModel", "not-configured"),
-                            "sttFallbackModel": body.get("sttFallbackModel", "not-configured"),
-                            "ttsDefaultModel": body.get("ttsDefaultModel", "not-configured"),
-                            "ttsFallbackModel": body.get("ttsFallbackModel", "not-configured"),
-                            "supportedLanguages": normalize_supported_languages(body.get("supportedLanguages")),
-                        }
-                    )
-                else:
-                    items.append(
-                        {
-                            "entryType": "capability",
-                            "id": provider_id,
-                            "label": body.get("label", provider_id),
-                            "source": body.get("source", "Custom"),
-                            "summary": body.get("summary", "Custom AI capability entry."),
-                            "models": normalize_string_list(body.get("models")),
-                            "capabilities": normalize_string_list(body.get("capabilities")),
-                            "supportedLanguages": normalize_supported_languages(body.get("supportedLanguages")),
-                            "syncOpenclaw": body.get("syncOpenclaw", "manual"),
-                            "syncWorkbuddy": body.get("syncWorkbuddy", "manual"),
-                        }
-                    )
-                save_custom_audio_providers({"items": items})
-            except ValueError as exc:
-                self._send_json({"error": str(exc)}, status=400)
-                return
-            self._send_json({"ok": True, "providerId": provider_id, "catalog": get_audio_provider_catalog()})
-            return
-
-        if parsed.path == "/api/voice/reset":
-            welcome_seed = build_initial_conversation(PERSISTED_SETTINGS["language"])
-            VOICE_CONVERSATION.clear()
-            VOICE_CONVERSATION.extend(deepcopy(welcome_seed))
-            CURRENT_CONVERSATION.clear()
-            CURRENT_CONVERSATION.extend(deepcopy(welcome_seed))
-            LAST_VOICE_ROUTE = {
-                "kind": "general",
-                "selected": {
-                    "intent": "general-chat",
-                    "featureId": "homehub-core",
-                    "featureName": "HomeHub Core",
-                    "action": "reply_directly",
-                    "score": 0.4,
-                },
-                "candidates": [],
-                "clarificationQuestion": "",
-                "reasoning": "",
-                "taskSpec": {
-                    "taskType": "general_chat",
-                    "intent": "general-chat",
-                    "summary": "General household conversation or Q&A.",
-                    "urgency": "normal",
-                    "inputModes": ["text"],
-                    "requiresImage": False,
-                    "requiresGeneration": False,
-                    "requiresScheduling": False,
-                    "requiresLongRunningAgent": False,
-                    "preferredExecution": "hybrid",
-                    "missingInfo": [],
-                },
-                "toolPlan": [{"toolId": "general-chat", "label": "General Chat", "execution": "hybrid", "kind": "core", "selected": True}],
-                "modelRoute": {
-                    "execution": "hybrid",
-                    "primaryModel": "qwen2.5:3b-instruct",
-                    "fallbackModel": "qwen2.5:1.5b-instruct",
-                    "reason": "Balanced default for mixed household conversations.",
-                },
-            }
-            PENDING_VOICE_CLARIFICATION = None
-            FEATURE_MANAGER.reset(runtime)
-            self._send_json({"ok": True, "conversation": CURRENT_CONVERSATION})
-            return
-
         self.send_error(404)
 
     def log_message(self, format, *args):

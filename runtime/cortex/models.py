@@ -51,5 +51,26 @@ def default_agent_cortex(agent_id: str, agent_name: str = "") -> dict:
             "recommendedBrain": "shared",
             "nextUpgrade": "Collect more confirmed interactions before specializing this agent.",
         },
+        "brain": {
+            "brainFamily": "homehub-exec-brain",
+            "pattern": "pre-brain -> exec-brain -> repo-brain",
+            "summary": {
+                "agentId": agent_id,
+                "agentName": agent_name,
+                "mission": "",
+                "brainMode": "execution-first",
+                "inputModes": ["text"],
+                "primaryPlanner": "",
+                "primaryExecutor": "",
+                "primaryArtifactModel": "",
+            },
+            "taskflow": {
+                "command": "",
+                "taskType": "general_chat",
+                "missionFit": "",
+                "stages": [],
+                "selectedModels": {},
+            },
+        },
         "recentEvents": [],
     }

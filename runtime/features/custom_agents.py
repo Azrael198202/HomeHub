@@ -11,8 +11,10 @@ from .base import HomeHubFeature, RuntimeBridge
 
 try:
     from cortex.core import AgentCortex
+    from cortex.models import default_agent_cortex
 except ModuleNotFoundError:
     from runtime.cortex.core import AgentCortex
+    from runtime.cortex.models import default_agent_cortex
 
 
 ZH = {
@@ -100,7 +102,7 @@ class Feature(HomeHubFeature):
     def descriptor(self) -> dict:
         data = super().descriptor()
         data["summary"] = "Creates reusable custom household agents, asks follow-up questions, and generates feature scaffolds."
-        data["api"] = ["/api/custom-agents", "/api/custom-agents/cortex", "/api/custom-agents/generate-feature", "/api/custom-agents/intake", "/api/custom-agents/lookup"]
+        data["api"] = ["/api/custom-agents", "/api/custom-agents/cortex", "/api/custom-agents/autonomous-plan", "/api/custom-agents/generate-feature", "/api/custom-agents/intake", "/api/custom-agents/lookup"]
         data["voiceIntents"] = self.voice_intents()
         return data
 
@@ -293,6 +295,7 @@ class Feature(HomeHubFeature):
 
     def agent_business_keywords(self, agent: dict) -> set[str]:
         profile = agent.get("profile", {})
+        autonomous = agent.get("autonomousCreation", {}) if isinstance(agent.get("autonomousCreation", {}), dict) else {}
         parts = [
             agent.get("name", ""),
             profile.get("goal", ""),
@@ -301,6 +304,7 @@ class Feature(HomeHubFeature):
             profile.get("checkPrompt", ""),
             profile.get("hasInputAction", ""),
             profile.get("constraints", ""),
+            autonomous.get("createdFromDemand", ""),
         ]
         keywords: set[str] = set()
         for part in parts:
@@ -321,6 +325,7 @@ class Feature(HomeHubFeature):
             str(profile.get("output", "")).strip().lower(),
             str(profile.get("checkPrompt", "")).strip().lower(),
             str(profile.get("hasInputAction", "")).strip().lower(),
+            str((agent.get("autonomousCreation", {}) if isinstance(agent.get("autonomousCreation", {}), dict) else {}).get("createdFromDemand", "")).strip().lower(),
         ]
         if not keywords and not any(fields):
             return 0.0
@@ -498,15 +503,14 @@ class Feature(HomeHubFeature):
             profile["noInputAction"] = profile["noInputAction"] or zh(locale, "\u8bb0\u5f55\u672c\u6b21\u65e0\u65b0\u8d26\u5355\uff0c\u7ed3\u675f\u8fd9\u4e00\u8f6e\u68c0\u67e5", "Record that there are no new bills this round and finish the check")
             profile["hasInputAction"] = profile["hasInputAction"] or zh(locale, "\u63a5\u6536\u8d26\u5355\u56fe\u7247\u6216\u6587\u5b57\uff0c\u8bb0\u5f55\u53d1\u9001\u65f6\u95f4\uff0c\u5f52\u6863\u5185\u5bb9\u5e76\u8f93\u51fa\u6458\u8981", "Accept bill images or text, record the send time, archive the content, and output a summary")
             profile["constraints"] = profile["constraints"] or zh(locale, "\u5728\u786e\u8ba4\u524d\u4e0d\u8981\u81ea\u52a8\u8ba4\u5b9a\u6263\u6b3e\u6b63\u5e38", "Do not assume charges are valid before confirmation")
+        profile["allowNetworkLookup"] = profile["allowNetworkLookup"] or "yes"
         if any(token in message for token in ["\u67e5\u4e00\u4e0b", "\u67e5\u8be2", "\u641c\u7d22", "\u8054\u7f51", "\u5b98\u65b9", "\u6700\u65b0", "\u65b0\u95fb", "\u5929\u6c14"]) or any(
             token in lowered for token in ["search", "lookup", "web", "online", "official", "latest", "news", "weather"]
         ):
-            profile["allowNetworkLookup"] = profile["allowNetworkLookup"] or "yes"
-            profile["preferredSources"] = profile["preferredSources"] or "official websites, wikipedia.org"
-            profile["lookupPolicy"] = profile["lookupPolicy"] or "safe-general"
+            profile["preferredSources"] = profile["preferredSources"] or "official websites, docs, standards, github.com, huggingface.co"
         else:
-            profile["allowNetworkLookup"] = profile["allowNetworkLookup"] or "no"
-            profile["lookupPolicy"] = profile["lookupPolicy"] or "safe-general"
+            profile["preferredSources"] = profile["preferredSources"] or "official websites, docs, github.com, huggingface.co"
+        profile["lookupPolicy"] = profile["lookupPolicy"] or "official-only"
         return profile
 
     def extract_update_patch(self, message: str, locale: str, runtime: RuntimeBridge) -> dict:
@@ -524,12 +528,15 @@ class Feature(HomeHubFeature):
             patch["output"] = message.strip()
         if any(token in message for token in ["\u67e5\u4e00\u4e0b", "\u67e5\u8be2", "\u641c\u7d22", "\u8054\u7f51", "\u5b98\u65b9", "\u6700\u65b0"]) or any(token in lowered for token in ["search", "lookup", "web", "online", "official"]):
             patch["allowNetworkLookup"] = "yes"
-            patch.setdefault("lookupPolicy", "safe-general")
+            patch.setdefault("preferredSources", "official websites, docs, github.com, huggingface.co")
+            patch.setdefault("lookupPolicy", "official-only")
+        patch.setdefault("allowNetworkLookup", "yes")
+        patch.setdefault("lookupPolicy", "official-only")
         return patch
 
     def blueprint_allows_network(self, agent: dict) -> bool:
         value = str(agent.get("profile", {}).get("allowNetworkLookup", "")).strip().lower()
-        return value in {"yes", "true", "allowed", "allow", "on", "1"}
+        return not value or value in {"yes", "true", "allowed", "allow", "on", "1"}
 
     def preferred_sources(self, agent: dict) -> list[str]:
         raw = str(agent.get("profile", {}).get("preferredSources", "")).strip()
@@ -611,6 +618,207 @@ class Feature(HomeHubFeature):
         self.save_store(store, runtime)
         self.cortex(runtime).record_event(agent, "draft_created", {"message": message.strip()})
         return agent
+
+    def build_request_context(
+        self,
+        message: str,
+        locale: str,
+        attachments: list[dict] | None = None,
+        task_type: str = "general_chat",
+        requires_network: bool = False,
+        require_artifacts: bool = False,
+    ) -> dict:
+        attachment_list = attachments if isinstance(attachments, list) else []
+        input_modes = ["text"]
+        if attachment_list:
+            input_modes.append("image")
+        lowered = str(message or "").lower()
+        if any(token in lowered for token in ["voice", "audio"]) or any(token in str(message or "") for token in ["语音", "音频", "声音"]):
+            input_modes.append("voice")
+        return {
+            "command": str(message or "").strip(),
+            "locale": str(locale or "zh-CN").strip() or "zh-CN",
+            "taskType": str(task_type or "general_chat").strip() or "general_chat",
+            "inputModes": sorted(set(input_modes)),
+            "requireArtifacts": bool(require_artifacts or attachment_list),
+            "requiresNetwork": bool(requires_network),
+            "speakReply": False,
+        }
+
+    def best_existing_agent_for_request(self, request: dict, runtime: RuntimeBridge) -> dict | None:
+        scored: list[tuple[float, dict, dict]] = []
+        message = str(request.get("command", "")).strip()
+        for agent in self.sorted_agents(runtime):
+            if agent.get("status") != "complete":
+                continue
+            agent_id = str(agent.get("id", "")).strip()
+            if not agent_id:
+                continue
+            brain = self.cortex(runtime).get_brain(agent_id, request)
+            plan = brain.get("autonomousCreation", {}) if isinstance(brain, dict) else {}
+            fit = plan.get("existingBrainFit", {}) if isinstance(plan, dict) else {}
+            try:
+                capability_score = float(fit.get("capabilityFitScore", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                capability_score = 0.0
+            business_score = self.business_match_score(agent, message)
+            score = capability_score + min(1.0, business_score / 6.0)
+            scored.append((score, agent, brain if isinstance(brain, dict) else {}))
+        if not scored:
+            return None
+        scored.sort(key=lambda item: (item[0], item[1].get("updatedAt", "")), reverse=True)
+        best_score, best_agent, best_brain = scored[0]
+        return {
+            "score": best_score,
+            "agent": best_agent,
+            "brain": best_brain,
+        }
+
+    def should_autonomously_create(self, request: dict, runtime: RuntimeBridge) -> dict:
+        command = str(request.get("command", "")).strip()
+        if not command:
+            return {"shouldCreate": False, "reason": "empty-request"}
+        seed_state = default_agent_cortex("homehub-shared-brain", "HomeHub Shared Brain")
+        architect = self.cortex(runtime).architect
+        design = architect.design_state(seed_state, request)
+        autonomous = design.get("autonomousCreation", {}) if isinstance(design, dict) else {}
+        requirement = autonomous.get("requirement", {}) if isinstance(autonomous, dict) else {}
+        capabilities = requirement.get("requiredCapabilities", []) if isinstance(requirement, dict) else []
+        best_existing = self.best_existing_agent_for_request(request, runtime)
+        lowered = command.lower()
+        continuation_hint = any(token in command for token in ["继续", "沿用", "还是按刚才", "接着处理", "继续用"]) or any(
+            token in lowered for token in ["continue", "reuse", "same way", "same workflow", "keep using"]
+        )
+        if best_existing and (
+            float(best_existing.get("score", 0.0) or 0.0) >= 0.75
+            or (continuation_hint and float(best_existing.get("score", 0.0) or 0.0) >= 0.35)
+        ):
+            return {
+                "shouldCreate": False,
+                "reason": "existing-agent-fit",
+                "bestExisting": best_existing,
+                "design": design,
+            }
+        meaningful_capabilities = [item for item in capabilities if item != "semantic-understanding"]
+        should_create = bool(meaningful_capabilities) or str(request.get("taskType", "")).strip() in {"agent_creation", "document_analysis", "ocr_analysis"}
+        return {
+            "shouldCreate": should_create,
+            "reason": "capability-gap" if should_create else "general-chat-fit",
+            "bestExisting": best_existing,
+            "design": design,
+        }
+
+    def create_agent_from_autonomous_plan(self, runtime: RuntimeBridge, message: str, locale: str, plan: dict) -> dict:
+        design = plan.get("design", {}) if isinstance(plan, dict) else {}
+        autonomous = design.get("autonomousCreation", {}) if isinstance(design, dict) else {}
+        proposed = autonomous.get("proposedBrain", {}) if isinstance(autonomous, dict) else {}
+        profile = self.infer_initial_profile(message, locale, runtime)
+        capability_labels = ", ".join(proposed.get("requiredCapabilities", [])) if isinstance(proposed.get("requiredCapabilities", []), list) else ""
+        feature_hooks = ", ".join(proposed.get("featureHooks", [])) if isinstance(proposed.get("featureHooks", []), list) else ""
+        if not profile.get("name"):
+            profile["name"] = self.default_name(str(proposed.get("mission", "")).strip() or profile.get("goal", ""), locale)
+        if not profile.get("goal"):
+            profile["goal"] = str(proposed.get("mission", "")).strip() or message.strip()
+        if not profile.get("inputs"):
+            input_modes = proposed.get("inputModes", [])
+            if isinstance(input_modes, list) and input_modes:
+                profile["inputs"] = ", ".join(str(item) for item in input_modes if str(item).strip())
+        if not profile.get("output"):
+            profile["output"] = zh(locale, "先完成需求处理，再返回结果、建议或可交付物。", "Complete the request, then return results, guidance, or generated artifacts.")
+        profile["allowNetworkLookup"] = str(profile.get("allowNetworkLookup", "")).strip() or "yes"
+        profile["preferredSources"] = str(profile.get("preferredSources", "")).strip() or "official websites, docs, github.com, huggingface.co"
+        profile["lookupPolicy"] = str(profile.get("lookupPolicy", "")).strip() or "official-only"
+        auto_constraints = []
+        if capability_labels:
+            auto_constraints.append(f"Required capabilities: {capability_labels}")
+        if feature_hooks:
+            auto_constraints.append(f"Runtime hooks: {feature_hooks}")
+        if auto_constraints:
+            merged = " | ".join(auto_constraints)
+            profile["constraints"] = f"{profile.get('constraints', '').strip()} | {merged}".strip(" |")
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        agent = {
+            "id": f"custom-agent-{stamp}",
+            "type": str(proposed.get("agentType", "custom-agent")).strip() or "custom-agent",
+            "name": profile["name"],
+            "status": "review",
+            "createdAt": self.now_iso(),
+            "updatedAt": self.now_iso(),
+            "profile": profile,
+            "qaHistory": [],
+            "artifact": "",
+            "generatedFeaturePath": "",
+            "generatedFeatureId": "",
+            "records": [],
+            "autonomousCreation": {
+                "createdFromDemand": message.strip(),
+                "requirement": autonomous.get("requirement", {}),
+                "proposedBrain": proposed,
+            },
+        }
+        agent["artifact"] = self.build_artifact(agent, locale)
+        store = self.get_store(runtime)
+        store.setdefault("items", []).insert(0, agent)
+        self.append_action(runtime, f"Autonomously prepared agent draft '{agent['name']}' from a detected capability gap.")
+        self.save_store(store, runtime)
+        self.cortex(runtime).record_event(agent, "autonomous_draft_created", {"message": message.strip(), "taskType": str(proposed.get("agentType", "")).strip()})
+        return agent
+
+    def maybe_autonomous_agent_response(
+        self,
+        message: str,
+        locale: str,
+        runtime: RuntimeBridge,
+        task_type: str = "general_chat",
+        requires_network: bool = False,
+        attachments: list[dict] | None = None,
+    ) -> dict | None:
+        request = self.build_request_context(
+            message,
+            locale,
+            attachments=attachments,
+            task_type=task_type,
+            requires_network=requires_network,
+            require_artifacts=bool(attachments),
+        )
+        plan = self.should_autonomously_create(request, runtime)
+        best_existing = plan.get("bestExisting") if isinstance(plan, dict) else None
+        lowered = str(message or "").lower()
+        continuation_hint = any(token in str(message or "") for token in ["继续", "沿用", "还是按刚才", "接着处理", "继续用"]) or any(
+            token in lowered for token in ["continue", "reuse", "same way", "same workflow", "keep using"]
+        )
+        if isinstance(best_existing, dict):
+            agent = best_existing.get("agent")
+            try:
+                score = float(best_existing.get("score", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                score = 0.0
+            if isinstance(agent, dict) and (score >= 0.75 or (continuation_hint and score >= 0.35)):
+                reply = zh(
+                    locale,
+                    f"我判断现有智能体“{agent.get('name', '')}”已经能处理这类需求，先直接复用它来继续执行。",
+                    f"I found that the existing agent '{agent.get('name', '')}' already fits this request, so HomeHub will reuse it first.",
+                )
+                return {
+                    "reply": reply + "\n\n" + self.agent_detail_message(agent, locale),
+                    "uiAction": self.studio_ui_action(agent),
+                    "autonomousPlan": plan,
+                    "autonomousAction": "reuse_existing",
+                }
+        if not plan.get("shouldCreate"):
+            return None
+        agent = self.create_agent_from_autonomous_plan(runtime, message, locale, plan)
+        intro = zh(
+            locale,
+            f"我先做了能力缺口判断，发现现有智能体还不够匹配，所以我已经为这条需求自主起草了一个新的智能体：{agent['name']}。",
+            f"HomeHub detected a capability gap for this request, so it drafted a new agent automatically: {agent['name']}.",
+        )
+        return {
+            "reply": intro + "\n\n" + self.build_review_summary(agent, locale),
+            "uiAction": self.studio_ui_action(agent),
+            "autonomousPlan": plan,
+            "autonomousAction": "create_draft",
+        }
 
     def now_iso(self) -> str:
         return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
@@ -1179,7 +1387,7 @@ class Feature(HomeHubFeature):
         lookup = runtime.network_lookup(
             query,
             locale,
-            str(agent.get("profile", {}).get("lookupPolicy", "safe-general")).strip() or "safe-general",
+            str(agent.get("profile", {}).get("lookupPolicy", "official-only")).strip() or "official-only",
             self.preferred_sources(agent),
             None,
         )
@@ -1741,6 +1949,22 @@ def load_feature() -> HomeHubFeature:
             if not agent_id:
                 return {"status": 400, "body": {"error": "id is required"}}
             return {"status": 200, "body": {"item": self.cortex(runtime).get_summary(agent_id)}}
+        if method == "POST" and path == "/api/custom-agents/autonomous-plan":
+            payload = body or {}
+            message = str(payload.get("message", "")).strip()
+            locale = str(payload.get("locale", "zh-CN")).strip() or "zh-CN"
+            task_type = str(payload.get("taskType", "general_chat")).strip() or "general_chat"
+            attachments = payload.get("attachments", []) if isinstance(payload.get("attachments", []), list) else []
+            request = self.build_request_context(
+                message,
+                locale,
+                attachments=attachments,
+                task_type=task_type,
+                requires_network=bool(payload.get("requiresNetwork", False)),
+                require_artifacts=bool(payload.get("requireArtifacts", False)),
+            )
+            plan = self.should_autonomously_create(request, runtime)
+            return {"status": 200, "body": {"ok": True, "request": request, "plan": plan}}
         if method == "POST" and path == "/api/custom-agents/intake":
             payload = body or {}
             message = str(payload.get("message", "")).strip()

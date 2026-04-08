@@ -1,0 +1,19 @@
+{
+  "backend": "qdrant",
+  "mirrorToJson": true,
+  "qdrant": {
+    "url": "",
+    "apiKey": "",
+    "collection": "homehub_semantic_memory",
+    "timeoutSeconds": 3
+  },
+  "pgvector": {
+    "dsn": "",
+    "table": "homehub_semantic_memory"
+  },
+  "milvus": {
+    "uri": "",
+    "token": "",
+    "collection": "homehub_semantic_memory"
+  }
+}

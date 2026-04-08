@@ -1,20 +1,68 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Callable
+
+try:
+    from server_components.semantic_memory import infer_from_semantic_memory
+except ModuleNotFoundError:
+    from runtime.server_components.semantic_memory import infer_from_semantic_memory
 
 
 TaskSpec = dict[str, Any]
 
+ZH_NETWORK_TOKENS = [
+    "\u67e5\u8be2",
+    "\u641c\u7d22",
+    "\u4e0a\u7f51",
+    "\u8054\u7f51",
+    "\u5b98\u7f51",
+    "\u6700\u65b0",
+    "\u65b0\u95fb",
+    "\u5929\u6c14",
+    "\u4ef7\u683c",
+]
+ZH_AGENT_TOKENS = [
+    "\u667a\u80fd\u4f53",
+    "\u52a9\u624b",
+    "\u673a\u5668\u4eba",
+    "\u5de5\u4f5c\u6d41",
+]
+ZH_REMINDER_TOKENS = ["\u63d0\u9192", "\u95f9\u949f"]
+ZH_SCHEDULE_TOKENS = ["\u65e5\u7a0b", "\u5b89\u6392", "\u4f1a\u8bae", "\u884c\u7a0b", "\u8ba1\u5212"]
+ZH_BILL_TOKENS = ["\u8d26\u5355", "\u6536\u636e", "\u53d1\u7968", "\u6263\u8d39", "\u652f\u51fa", "\u8d39\u7528"]
+ZH_DOCUMENT_TOKENS = [
+    "OCR",
+    "\u626b\u63cf",
+    "\u8bc6\u522b\u6587\u5b57",
+    "\u6587\u6863",
+    "\u8868\u683c",
+    "PPT",
+    "Excel",
+    "Word",
+    "\u622a\u56fe",
+    "\u56fe\u7247",
+    "\u7167\u7247",
+]
+ZH_STUDY_TOKENS = ["\u5b66\u4e60\u8ba1\u5212", "\u4f5c\u4e1a", "\u590d\u4e60", "\u5b66\u4e60"]
+
+
+def has_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", str(text or "")))
+
 
 def detect_input_modes(user_text: str) -> list[str]:
     lowered = str(user_text or "").lower()
+    raw = str(user_text or "")
     modes = ["text"]
-    if any(token in lowered for token in ["image", "photo", "screenshot", "receipt", "invoice", "picture"]) or any(
-        token in user_text for token in ["图片", "照片", "截图", "账单图", "小票", "发票"]
-    ):
+    if any(token in lowered for token in ["image", "photo", "screenshot", "receipt", "invoice", "picture", "scan", "ocr", "document"]):
         modes.append("image")
-    if any(token in lowered for token in ["say", "voice", "speak", "audio"]) or any(token in user_text for token in ["语音", "说话", "听我"]):
+    if any(token in raw for token in ["\u56fe\u7247", "\u7167\u7247", "\u622a\u56fe", "\u626b\u63cf", "\u53d1\u7968", "\u6536\u636e", "\u6587\u6863"]):
+        modes.append("image")
+    if any(token in lowered for token in ["say", "voice", "speak", "audio"]):
+        modes.append("voice")
+    if any(token in raw for token in ["\u8bed\u97f3", "\u97f3\u9891", "\u8bf4\u8bdd"]):
         modes.append("voice")
     return sorted(set(modes))
 
@@ -33,7 +81,8 @@ def infer_task_spec_with_openai(
             "You are HomeHub's task-spec parser. Return JSON only with keys: "
             "taskType, intent, urgency, requiresImage, requiresGeneration, requiresScheduling, "
             "requiresLongRunningAgent, preferredExecution, missingInfo, summary, confidence. "
-            "Valid taskType values: agent_creation, reminder, schedule, bill_intake, general_chat, study_plan, ui_navigation, network_lookup, document_workflow. "
+            "Valid taskType values: agent_creation, reminder, schedule, bill_intake, general_chat, "
+            "study_plan, ui_navigation, network_lookup, document_workflow. "
             "Valid urgency values: low, normal, high. "
             "Valid preferredExecution values: local, cloud, hybrid. "
             "Set confidence between 0 and 1."
@@ -46,8 +95,10 @@ def infer_task_spec_with_openai(
 
 def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
     lowered = str(user_text or "").lower()
-    if any(token in user_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方", "最新"]) or any(
-        token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]
+    raw = str(user_text or "")
+
+    if any(token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]) or any(
+        token in raw for token in ZH_NETWORK_TOKENS
     ):
         spec.update(
             {
@@ -57,9 +108,8 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "hybrid",
             }
         )
-    if any(token in user_text for token in ["智能体", "助手", "代理", "机器人"]) or any(
-        token in lowered for token in ["agent", "assistant", "workflow", "bot"]
-    ):
+
+    if any(token in lowered for token in ["agent", "assistant", "workflow", "bot"]) or any(token in raw for token in ZH_AGENT_TOKENS):
         spec.update(
             {
                 "taskType": "agent_creation",
@@ -70,7 +120,8 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "hybrid",
             }
         )
-    if any(token in user_text for token in ["提醒", "闹钟"]) or "remind me" in lowered:
+
+    if "remind me" in lowered or any(token in lowered for token in ["reminder", "remind", "alarm"]) or any(token in raw for token in ZH_REMINDER_TOKENS):
         spec.update(
             {
                 "taskType": "reminder",
@@ -80,9 +131,8 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "local",
             }
         )
-    elif any(token in user_text for token in ["日程", "会议", "安排", "行程"]) or any(
-        token in lowered for token in ["schedule", "calendar", "meeting"]
-    ):
+
+    if any(token in lowered for token in ["schedule", "calendar", "meeting", "event"]) or any(token in raw for token in ZH_SCHEDULE_TOKENS):
         spec.update(
             {
                 "taskType": "schedule",
@@ -92,8 +142,9 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "local",
             }
         )
-    if any(token in user_text for token in ["账单", "扣费", "发票", "小票", "收据"]) or any(
-        token in lowered for token in ["bill", "receipt", "invoice", "charge", "expense"]
+
+    if spec["taskType"] != "agent_creation" and (
+        any(token in lowered for token in ["bill", "receipt", "invoice", "charge", "expense"]) or any(token in raw for token in ZH_BILL_TOKENS)
     ):
         spec.update(
             {
@@ -103,21 +154,27 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "hybrid",
             }
         )
-    if any(token in user_text for token in ["OCR", "识别文字", "提取文字", "文档", "表格", "PPT", "幻灯片", "Excel", "表格文件", "Word", "文稿"]) or any(
-        token in lowered for token in ["ocr", "extract text", "document", "table", "ppt", "powerpoint", "slides", "excel", "spreadsheet", "xlsx", "word", "docx"]
+
+    if spec["taskType"] != "agent_creation" and (
+        any(token in lowered for token in ["ocr", "extract text", "document", "table", "ppt", "powerpoint", "slides", "excel", "spreadsheet", "xlsx", "word", "docx"]) or any(
+            token in raw for token in ZH_DOCUMENT_TOKENS
+        )
     ):
         spec.update(
             {
                 "taskType": "document_workflow",
                 "intent": "document-workflow",
                 "summary": "Read, extract, or generate office-style documents such as OCR results, PowerPoint, Excel, or Word files.",
-                "requiresImage": spec["requiresImage"] or any(token in lowered for token in ["ocr", "scan", "screenshot", "image", "photo"]),
+                "requiresImage": spec["requiresImage"] or any(token in lowered for token in ["ocr", "scan", "screenshot", "image", "photo"]) or any(
+                    token in raw for token in ["\u56fe\u7247", "\u7167\u7247", "\u622a\u56fe", "\u626b\u63cf"]
+                ),
                 "requiresGeneration": True,
                 "preferredExecution": "hybrid",
             }
         )
-    if any(token in user_text for token in ["学习计划", "复习", "作业"]) or any(
-        token in lowered for token in ["study plan", "homework", "revision plan"]
+
+    if spec["taskType"] != "agent_creation" and (
+        any(token in lowered for token in ["study plan", "homework", "revision plan", "study"]) or any(token in raw for token in ZH_STUDY_TOKENS)
     ):
         spec.update(
             {
@@ -128,14 +185,15 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
                 "preferredExecution": "hybrid",
             }
         )
+
     if spec["taskType"] == "agent_creation":
         missing = []
-        if not any(token in user_text for token in ["每", "每天", "每周", "每月", "收到", "上传", "定时"]) and not any(
-            token in lowered for token in ["daily", "weekly", "monthly", "when", "trigger", "schedule"]
+        if not any(token in lowered for token in ["daily", "weekly", "monthly", "when", "trigger", "schedule"]) and not any(
+            token in raw for token in ["\u6bcf\u5929", "\u6bcf\u5468", "\u6bcf\u6708", "\u4ec0\u4e48\u65f6\u5019", "\u89e6\u53d1", "\u5b9a\u65f6"]
         ):
             missing.append("trigger")
-        if not any(token in user_text for token in ["输出", "结果", "记录", "汇总", "提醒"]) and not any(
-            token in lowered for token in ["output", "result", "summary", "record", "alert"]
+        if not any(token in lowered for token in ["output", "result", "summary", "record", "alert"]) and not any(
+            token in raw for token in ["\u8f93\u51fa", "\u7ed3\u679c", "\u603b\u7ed3", "\u8bb0\u5f55", "\u63d0\u9192"]
         ):
             missing.append("output")
         spec["missingInfo"] = missing
@@ -171,6 +229,22 @@ def build_task_spec(
                 "preferredExecution": "local",
             }
         )
+        return spec
+
+    memory_spec = infer_from_semantic_memory(user_text, locale)
+    if memory_spec:
+        spec["taskType"] = str(memory_spec.get("taskType", spec["taskType"])).strip() or spec["taskType"]
+        spec["intent"] = str(memory_spec.get("intent", spec["intent"])).strip() or spec["intent"]
+        spec["summary"] = str(memory_spec.get("summary", spec["summary"])).strip() or spec["summary"]
+        spec["requiresImage"] = bool(memory_spec.get("requiresImage", spec["requiresImage"]))
+        spec["requiresGeneration"] = bool(memory_spec.get("requiresGeneration", spec["requiresGeneration"]))
+        spec["requiresScheduling"] = bool(memory_spec.get("requiresScheduling", spec["requiresScheduling"]))
+        spec["requiresLongRunningAgent"] = bool(memory_spec.get("requiresLongRunningAgent", spec["requiresLongRunningAgent"]))
+        preferred = str(memory_spec.get("preferredExecution", spec["preferredExecution"])).strip()
+        if preferred in {"local", "cloud", "hybrid"}:
+            spec["preferredExecution"] = preferred
+        if isinstance(memory_spec.get("missingInfo"), list):
+            spec["missingInfo"] = [str(item).strip() for item in memory_spec.get("missingInfo", []) if str(item).strip()]
         return spec
 
     ai_spec = infer_task_spec(user_text, locale)

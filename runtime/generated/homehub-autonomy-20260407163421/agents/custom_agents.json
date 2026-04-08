@@ -1,0 +1,163 @@
+{
+  "items": [
+    {
+      "id": "custom-agent-20260407163421",
+      "type": "document_analysis",
+      "name": "Handle demand: ???智能体",
+      "status": "review",
+      "createdAt": "2026-04-07T16:34",
+      "updatedAt": "2026-04-07T16:34",
+      "profile": {
+        "name": "Handle demand: ???智能体",
+        "goal": "???????????????????????????????",
+        "primaryUser": "",
+        "trigger": "",
+        "inputs": "image, text",
+        "output": "先完成需求处理，再返回结果、建议或可交付物。",
+        "constraints": "Required capabilities: semantic-understanding, ocr-intake, artifact-generation | Runtime hooks: document OCR, artifact builder",
+        "checkPrompt": "",
+        "noInputAction": "",
+        "hasInputAction": "",
+        "allowNetworkLookup": "no",
+        "preferredSources": "",
+        "lookupPolicy": "safe-general"
+      },
+      "qaHistory": [],
+      "artifact": "# Handle demand: ???智能体\n\n## Goal\n???????????????????????????????\n\n## Primary User\n\n\n## Trigger\n\n\n## Required Inputs\nimage, text\n\n## Output\n先完成需求处理，再返回结果、建议或可交付物。\n\n## Proactive Check Prompt\n\n\n## If No New Input\n\n\n## If New Input Arrives\n\n\n## Network Lookup\nAllowed: no\nPreferred Sources: \nLookup Policy: safe-general\n\n## Constraints\nRequired capabilities: semantic-understanding, ocr-intake, artifact-generation | Runtime hooks: document OCR, artifact builder\n\n## HomeHub Execution Notes\n- 在语音或文字对话中识别用户需求。\n- 如果资料不完整，先主动追问，再执行。\n- 在允许范围内复用本地家庭记忆、文档、日程和消息桥接输入。\n- 在执行过程中持续给用户简短进度反馈。",
+      "generatedFeaturePath": "",
+      "generatedFeatureId": "",
+      "records": [],
+      "autonomousCreation": {
+        "createdFromDemand": "???????????????????????????????",
+        "requirement": {
+          "command": "???????????????????????????????",
+          "taskType": "document_analysis",
+          "inputModes": [
+            "image",
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "ocr-intake",
+            "artifact-generation"
+          ],
+          "decisionHints": {
+            "requireSearch": false,
+            "requireArchive": false,
+            "requireFollowUp": false,
+            "requireArtifact": true
+          }
+        },
+        "proposedBrain": {
+          "agentType": "document_analysis",
+          "mission": "Handle demand: ???????????????????????????????",
+          "inputModes": [
+            "image",
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "ocr-intake",
+            "artifact-generation"
+          ],
+          "featureHooks": [
+            "document OCR",
+            "artifact builder"
+          ]
+        }
+      }
+    },
+    {
+      "id": "custom-agent-20260407163421",
+      "type": "document_analysis",
+      "name": "Handle demand: ???智能体",
+      "status": "complete",
+      "createdAt": "2026-04-07T16:34",
+      "updatedAt": "2026-04-07T16:34",
+      "profile": {
+        "name": "Handle demand: ???智能体",
+        "goal": "??????????????????????????????????????????????????????????",
+        "primaryUser": "",
+        "trigger": "",
+        "inputs": "image, text",
+        "output": "先完成需求处理，再返回结果、建议或可交付物。",
+        "constraints": "Required capabilities: semantic-understanding, ocr-intake, network-research, artifact-generation | Runtime hooks: document OCR, controlled network lookup, artifact builder",
+        "checkPrompt": "",
+        "noInputAction": "",
+        "hasInputAction": "",
+        "allowNetworkLookup": "no",
+        "preferredSources": "",
+        "lookupPolicy": "safe-general"
+      },
+      "qaHistory": [],
+      "artifact": "# Handle demand: ???智能体\n\n## Goal\n??????????????????????????????????????????????????????????\n\n## Primary User\n\n\n## Trigger\n\n\n## Required Inputs\nimage, text\n\n## Output\n先完成需求处理，再返回结果、建议或可交付物。\n\n## Proactive Check Prompt\n\n\n## If No New Input\n\n\n## If New Input Arrives\n\n\n## Network Lookup\nAllowed: no\nPreferred Sources: \nLookup Policy: safe-general\n\n## Constraints\nRequired capabilities: semantic-understanding, ocr-intake, network-research, artifact-generation | Runtime hooks: document OCR, controlled network lookup, artifact builder\n\n## HomeHub Execution Notes\n- 在语音或文字对话中识别用户需求。\n- 如果资料不完整，先主动追问，再执行。\n- 在允许范围内复用本地家庭记忆、文档、日程和消息桥接输入。\n- 在执行过程中持续给用户简短进度反馈。",
+      "generatedFeaturePath": "",
+      "generatedFeatureId": "",
+      "records": [],
+      "autonomousCreation": {
+        "createdFromDemand": "??????????????????????????????????????????????????????????",
+        "requirement": {
+          "command": "??????????????????????????????????????????????????????????",
+          "taskType": "document_analysis",
+          "inputModes": [
+            "image",
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "ocr-intake",
+            "network-research",
+            "artifact-generation"
+          ],
+          "decisionHints": {
+            "requireSearch": true,
+            "requireArchive": false,
+            "requireFollowUp": false,
+            "requireArtifact": true
+          }
+        },
+        "proposedBrain": {
+          "agentType": "document_analysis",
+          "mission": "Handle demand: ??????????????????????????????????????????????????????????",
+          "inputModes": [
+            "image",
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "ocr-intake",
+            "network-research",
+            "artifact-generation"
+          ],
+          "featureHooks": [
+            "document OCR",
+            "controlled network lookup",
+            "artifact builder"
+          ]
+        }
+      }
+    }
+  ],
+  "recentActions": [
+    {
+      "id": "custom-act-2026-04-07T16:34",
+      "summary": "Autonomously prepared agent draft 'Handle demand: ???智能体' from a detected capability gap.",
+      "createdAt": "2026-04-07T16:34"
+    },
+    {
+      "id": "custom-act-2026-04-07T16:34",
+      "summary": "Completed custom agent 'Handle demand: ???智能体'.",
+      "createdAt": "2026-04-07T16:34"
+    },
+    {
+      "id": "custom-act-2026-04-07T16:34",
+      "summary": "Autonomously prepared agent draft 'Handle demand: ???智能体' from a detected capability gap.",
+      "createdAt": "2026-04-07T16:34"
+    },
+    {
+      "id": "custom-agents-ready",
+      "summary": "Custom agent studio is ready.",
+      "createdAt": "2026-04-07T16:34"
+    }
+  ]
+}
