@@ -572,6 +572,531 @@ small,
   grid-template-columns: 1fr 1fr;
 }
 
+.work-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+
+.work-list-card,
+.work-pipeline-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.work-request-list,
+.work-pipeline-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.work-request-list {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.work-request-card {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--work-border, rgba(164, 188, 212, 0.18));
+  background: linear-gradient(135deg, var(--work-surface, rgba(16, 28, 41, 0.82)), rgba(12, 21, 33, 0.94));
+  color: var(--text);
+  text-align: left;
+}
+
+.work-request-card.is-active {
+  box-shadow: 0 0 0 1px var(--work-border, rgba(164, 188, 212, 0.18)) inset, 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.work-request-card p,
+.work-request-card small {
+  margin: 0;
+}
+
+.work-request-card small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.work-request-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.work-pipeline {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: 18px;
+  min-height: 100%;
+  padding: 10px 8px 14px;
+}
+
+.work-conveyor-line {
+  position: absolute;
+  left: 42px;
+  right: 42px;
+  top: 92px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(85, 208, 177, 0.16), rgba(101, 182, 255, 0.26), rgba(255, 189, 92, 0.16));
+  box-shadow: 0 0 18px rgba(101, 182, 255, 0.14);
+  overflow: hidden;
+}
+
+.work-conveyor-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0 18px,
+      rgba(190, 223, 255, 0.24) 18px 28px,
+      rgba(255, 255, 255, 0) 28px 44px
+    );
+  animation: workLineFlow 1.8s linear infinite;
+}
+
+.work-skill-stage {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.work-skill-factory {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--work-border, rgba(164, 188, 212, 0.18));
+  background: radial-gradient(circle at top left, var(--work-surface, rgba(16, 28, 41, 0.82)), transparent 56%), rgba(12, 21, 33, 0.96);
+  overflow: hidden;
+  min-height: 94px;
+}
+
+.work-factory-decor {
+  position: relative;
+  height: 28px;
+  margin-bottom: 2px;
+}
+
+.work-factory-arm {
+  position: absolute;
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 205, 133, 0.96), rgba(224, 148, 51, 0.92));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.work-factory-arm-main {
+  top: 4px;
+  left: 10px;
+  width: 44px;
+  height: 8px;
+  transform-origin: left center;
+  animation: workArmMain 2.8s ease-in-out infinite;
+}
+
+.work-factory-arm-joint {
+  top: 10px;
+  left: 44px;
+  width: 28px;
+  height: 8px;
+  transform-origin: left center;
+  animation: workArmJoint 2.8s ease-in-out infinite;
+}
+
+.work-factory-arm-claw {
+  top: 12px;
+  left: 66px;
+  width: 14px;
+  height: 14px;
+  border-radius: 6px;
+  clip-path: polygon(25% 0, 75% 0, 100% 45%, 75% 100%, 25% 100%, 0 45%);
+  animation: workArmClaw 2.8s ease-in-out infinite;
+}
+
+.work-factory-belt {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 58px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 193, 102, 0.18);
+  background:
+    linear-gradient(180deg, rgba(18, 31, 46, 0.96), rgba(8, 16, 25, 0.96));
+  overflow: hidden;
+}
+
+.work-factory-belt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 193, 102, 0.08) 0 8px,
+      rgba(255, 193, 102, 0.32) 8px 14px,
+      rgba(255, 193, 102, 0.08) 14px 20px
+    );
+  animation: workBeltFlow 1.5s linear infinite;
+}
+
+.work-skill-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.work-skill-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--work-accent, var(--accent));
+  box-shadow: 0 0 16px var(--work-accent, rgba(85, 208, 177, 0.6));
+}
+
+.work-skill-factory strong,
+.work-robot-card strong {
+  display: block;
+  font-size: 14px;
+}
+
+.work-skill-factory small,
+.work-robot-card span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.work-skill-robots {
+  display: grid;
+  gap: 10px;
+}
+
+.work-robot-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-radius: 18px;
+  border: 1px solid var(--work-border, rgba(164, 188, 212, 0.18));
+  background: linear-gradient(180deg, rgba(10, 18, 28, 0.96), var(--work-surface, rgba(16, 28, 41, 0.82)));
+  overflow: hidden;
+}
+
+.work-robot-visual {
+  position: relative;
+  min-height: 70px;
+  display: grid;
+  place-items: center;
+}
+
+.work-robot-bubble {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 70px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(190, 223, 255, 0.2);
+  background: rgba(18, 29, 42, 0.92);
+  color: #d8ecff;
+  font-size: 9px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work-robot-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  background: rgba(18, 29, 42, 0.92);
+  border-right: 1px solid rgba(190, 223, 255, 0.2);
+  border-bottom: 1px solid rgba(190, 223, 255, 0.2);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.work-robot-shell {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+  border-radius: 14px;
+  border: 2px solid var(--work-border, rgba(164, 188, 212, 0.18));
+  background:
+    radial-gradient(circle at 50% 30%, rgba(154, 234, 255, 0.18), transparent 48%),
+    rgba(12, 21, 33, 0.92);
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.work-robot-shell::before,
+.work-robot-shell::after {
+  content: "";
+  position: absolute;
+  top: -6px;
+  width: 5px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(253, 192, 95, 0.88);
+}
+
+.work-robot-shell::before {
+  left: 12px;
+}
+
+.work-robot-shell::after {
+  right: 12px;
+}
+
+.work-robot-eye {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--work-accent, var(--accent));
+  box-shadow: 0 0 10px var(--work-accent, rgba(85, 208, 177, 0.6));
+}
+
+.work-robot-mouth {
+  position: absolute;
+  bottom: 8px;
+  width: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(190, 223, 255, 0.72);
+}
+
+.work-robot-platform {
+  position: absolute;
+  bottom: 6px;
+  width: 52px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 193, 102, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 193, 102, 0.2), rgba(255, 193, 102, 0.06)),
+    rgba(12, 21, 33, 0.92);
+  box-shadow: inset 0 -3px 0 rgba(12, 21, 33, 0.42);
+  overflow: hidden;
+}
+
+.work-robot-platform::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 193, 102, 0.06) 0 6px,
+      rgba(255, 193, 102, 0.26) 6px 10px,
+      rgba(255, 193, 102, 0.06) 10px 16px
+    );
+  animation: workPlatformFlow 1.2s linear infinite;
+}
+
+.work-robot-box {
+  position: absolute;
+  bottom: 8px;
+  width: 34px;
+  height: 24px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 189, 92, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 205, 133, 0.9), rgba(232, 162, 65, 0.92));
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.18),
+    inset 0 2px 0 rgba(255, 239, 204, 0.42);
+  opacity: 0;
+  transform: translateY(12px) scale(0.92);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.work-robot-box::before,
+.work-robot-box::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.work-robot-box::before {
+  left: 50%;
+  width: 2px;
+  background: rgba(181, 111, 25, 0.48);
+  transform: translateX(-50%);
+}
+
+.work-robot-box::after {
+  left: 7px;
+  right: 7px;
+  top: 8px;
+  height: 2px;
+  background: rgba(181, 111, 25, 0.48);
+}
+
+.work-robot-card.is-sleeping .work-robot-shell {
+  opacity: 0.66;
+  transform: translateY(6px);
+}
+
+.work-robot-card.is-sleeping .work-robot-eye {
+  height: 3px;
+  border-radius: 999px;
+  animation: workBlink 2.8s ease-in-out infinite;
+}
+
+.work-robot-card.is-working .work-robot-shell {
+  animation: workRobotRun 1s ease-in-out infinite, workRobotTravel 2.2s ease-in-out infinite;
+  box-shadow: 0 0 18px var(--work-accent, rgba(85, 208, 177, 0.28));
+}
+
+.work-robot-card.is-working .work-robot-bubble {
+  border-color: rgba(85, 208, 177, 0.32);
+  box-shadow: 0 0 16px rgba(85, 208, 177, 0.16);
+}
+
+.work-robot-card.is-working .work-robot-box {
+  opacity: 0.22;
+  transform: translateX(-8px) translateY(6px) scale(0.88);
+}
+
+.work-robot-card.is-working .work-robot-mouth {
+  animation: workTalk 0.7s ease-in-out infinite;
+}
+
+.work-robot-card.is-packed .work-robot-shell {
+  transform: translateY(-8px) scale(0.82);
+  opacity: 0.18;
+}
+
+.work-robot-card.is-packed .work-robot-platform {
+  opacity: 0.65;
+}
+
+.work-robot-card.is-packed .work-robot-box {
+  opacity: 1;
+  transform: translateX(6px) translateY(0) scale(1);
+  animation: workPackageSlide 2.4s ease-in-out infinite;
+}
+
+.work-link-arrow {
+  position: absolute;
+  right: -24px;
+  top: 82px;
+  width: 18px;
+  height: 16px;
+}
+
+.work-link-arrow::before,
+.work-link-arrow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.work-link-arrow::before {
+  top: 7px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(155, 203, 255, 0.6);
+}
+
+.work-link-arrow::after {
+  top: 1px;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid rgba(155, 203, 255, 0.7);
+  border-right: 2px solid rgba(155, 203, 255, 0.7);
+  transform: rotate(45deg);
+}
+
+@keyframes workBlink {
+  0%, 100% { transform: scaleX(1); opacity: 0.65; }
+  45% { transform: scaleX(0.8); opacity: 0.35; }
+  50% { transform: scaleX(0.6); opacity: 0.25; }
+  55% { transform: scaleX(0.8); opacity: 0.35; }
+}
+
+@keyframes workRobotRun {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-4px) rotate(-2deg); }
+  50% { transform: translateY(1px) rotate(2deg); }
+  75% { transform: translateY(-4px) rotate(-1deg); }
+}
+
+@keyframes workRobotTravel {
+  0%, 100% { margin-left: 0; }
+  50% { margin-left: 8px; }
+}
+
+@keyframes workTalk {
+  0%, 100% { transform: scaleX(1); opacity: 0.72; }
+  50% { transform: scaleX(1.3); opacity: 1; }
+}
+
+@keyframes workLineFlow {
+  from { transform: translateX(0); }
+  to { transform: translateX(44px); }
+}
+
+@keyframes workBeltFlow {
+  from { transform: translateX(0); }
+  to { transform: translateX(20px); }
+}
+
+@keyframes workPlatformFlow {
+  from { transform: translateX(0); }
+  to { transform: translateX(16px); }
+}
+
+@keyframes workPackageSlide {
+  0%, 100% { transform: translateX(4px) translateY(0) scale(1); }
+  50% { transform: translateX(10px) translateY(0) scale(1); }
+}
+
+@keyframes workArmMain {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(-8deg); }
+  65% { transform: rotate(5deg); }
+}
+
+@keyframes workArmJoint {
+  0%, 100% { transform: rotate(12deg); }
+  35% { transform: rotate(30deg); }
+  65% { transform: rotate(-6deg); }
+}
+
+@keyframes workArmClaw {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  35% { transform: translateY(3px) rotate(14deg); }
+  65% { transform: translateY(-2px) rotate(-10deg); }
+}
+
 .exchange-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
@@ -914,8 +1439,49 @@ small,
 }
 
 @media (max-width: 1600px) {
+  .work-layout,
   .cortex-layout {
     grid-template-columns: 1fr;
+  }
+
+  .work-pipeline {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-columns: 1fr;
+  }
+
+  .work-conveyor-line {
+    left: 118px;
+    right: auto;
+    top: 80px;
+    bottom: 80px;
+    width: 8px;
+    height: auto;
+    background: linear-gradient(180deg, rgba(85, 208, 177, 0.16), rgba(101, 182, 255, 0.26), rgba(255, 189, 92, 0.16));
+  }
+
+  .work-link-arrow {
+    top: auto;
+    bottom: -18px;
+    left: 108px;
+    right: auto;
+    width: 20px;
+    height: 24px;
+  }
+
+  .work-link-arrow::before {
+    top: 0;
+    left: 8px;
+    width: 4px;
+    height: 100%;
+  }
+
+  .work-link-arrow::after {
+    top: auto;
+    bottom: 0;
+    left: 2px;
+    right: auto;
+    transform: rotate(135deg);
   }
 
   .cortex-primary-column,
@@ -2137,7 +2703,9 @@ button {
 #relay,
 #conversation,
 #test-conversation,
+#work-request-list,
 #audio-stack,
+#work-pipeline-scroll,
 #studio-blueprints,
 #studio-actions-log,
 #settings-directory-list,
@@ -2155,7 +2723,9 @@ button {
 #relay,
 #conversation,
 #test-conversation,
+#work-request-list,
 #audio-stack,
+#work-pipeline-scroll,
 #studio-blueprints,
 #studio-actions-log,
 #settings-directory-list,
@@ -2200,7 +2770,9 @@ button {
 #relay::-webkit-scrollbar,
 #conversation::-webkit-scrollbar,
 #test-conversation::-webkit-scrollbar,
+#work-request-list::-webkit-scrollbar,
 #audio-stack::-webkit-scrollbar,
+#work-pipeline-scroll::-webkit-scrollbar,
 #studio-blueprints::-webkit-scrollbar,
 #studio-actions-log::-webkit-scrollbar,
 #settings-directory-list::-webkit-scrollbar,
@@ -2219,7 +2791,9 @@ button {
 #relay:hover,
 #conversation:hover,
 #test-conversation:hover,
+#work-request-list:hover,
 #audio-stack:hover,
+#work-pipeline-scroll:hover,
 #studio-blueprints:hover,
 #studio-actions-log:hover,
 #settings-directory-list:hover,
@@ -2234,6 +2808,8 @@ button {
 #relay:focus-within,
 #conversation:focus-within,
 #test-conversation:focus-within,
+#work-request-list:focus-within,
+#work-pipeline-scroll:focus-within,
 #settings-directory-list:focus-within,
 #settings-detail-scroll:focus-within,
 .settings-scroll-area:focus-within,
@@ -2251,9 +2827,11 @@ button {
 #relay:hover::-webkit-scrollbar,
 #conversation:hover::-webkit-scrollbar,
 #test-conversation:hover::-webkit-scrollbar,
+#work-request-list:hover::-webkit-scrollbar,
 #settings-directory-list:hover::-webkit-scrollbar,
 #settings-detail-scroll:hover::-webkit-scrollbar,
 #audio-stack:hover::-webkit-scrollbar,
+#work-pipeline-scroll:hover::-webkit-scrollbar,
 #studio-blueprints:hover::-webkit-scrollbar,
 #studio-actions-log:hover::-webkit-scrollbar,
 #model-stack-scroll:hover::-webkit-scrollbar,
@@ -2266,6 +2844,8 @@ button {
 #relay:focus-within::-webkit-scrollbar,
 #conversation:focus-within::-webkit-scrollbar,
 #test-conversation:focus-within::-webkit-scrollbar,
+#work-request-list:focus-within::-webkit-scrollbar,
+#work-pipeline-scroll:focus-within::-webkit-scrollbar,
 .settings-scroll-area:focus-within::-webkit-scrollbar,
 .studio-list:focus-within::-webkit-scrollbar,
 .voice-stage .voice-card:hover::-webkit-scrollbar,
@@ -2281,9 +2861,11 @@ button {
 #relay:hover::-webkit-scrollbar-thumb,
 #conversation:hover::-webkit-scrollbar-thumb,
 #test-conversation:hover::-webkit-scrollbar-thumb,
+#work-request-list:hover::-webkit-scrollbar-thumb,
 #settings-directory-list:hover::-webkit-scrollbar-thumb,
 #settings-detail-scroll:hover::-webkit-scrollbar-thumb,
 #audio-stack:hover::-webkit-scrollbar-thumb,
+#work-pipeline-scroll:hover::-webkit-scrollbar-thumb,
 #studio-blueprints:hover::-webkit-scrollbar-thumb,
 #studio-actions-log:hover::-webkit-scrollbar-thumb,
 #model-stack-scroll:hover::-webkit-scrollbar-thumb,
@@ -2296,6 +2878,8 @@ button {
 #relay:focus-within::-webkit-scrollbar-thumb,
 #conversation:focus-within::-webkit-scrollbar-thumb,
 #test-conversation:focus-within::-webkit-scrollbar-thumb,
+#work-request-list:focus-within::-webkit-scrollbar-thumb,
+#work-pipeline-scroll:focus-within::-webkit-scrollbar-thumb,
 .settings-scroll-area:focus-within::-webkit-scrollbar-thumb,
 .studio-list:focus-within::-webkit-scrollbar-thumb,
 .voice-stage .voice-card:hover::-webkit-scrollbar-thumb,

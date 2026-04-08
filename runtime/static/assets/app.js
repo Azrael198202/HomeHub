@@ -11,7 +11,7 @@
   cancelled: "is-muted"
 };
 
-const tabs = ["home", "exchange", "cortex", "blueprints", "agents", "settings"];
+const tabs = ["home", "exchange", "work", "cortex", "blueprints", "agents", "settings"];
 let activeTab = "home";
 let activeSettingsSection = "language";
 let latestDashboard = null;
@@ -59,7 +59,7 @@ const UI_TEXT = {
   "en-US": {
     metaTitle: "HomeHub TV Box",
     brandEyebrow: "AI Box for the Living Room",
-    tabs: { home: "Home", exchange: "Exchange", cortex: "Cortex", blueprints: "Blueprints", agents: "Agents", settings: "Settings" },
+    tabs: { home: "Home", exchange: "Exchange", work: "Work", cortex: "Cortex", blueprints: "Blueprints", agents: "Agents", settings: "Settings" },
     top: {
       homeAssistant: "Household Assistant",
       starterLayer: "Starter Layer",
@@ -79,6 +79,9 @@ const UI_TEXT = {
       languageMode: "Language Mode",
       audioStack: "AI Capability Catalog",
       testLab: "Conversation Workspace",
+      workLab: "Work",
+      workBoard: "Execution Board",
+      workFactory: "Factory Line",
       blueprintStudio: "Blueprint Studio",
       sttProvider: "STT Provider",
       ttsProvider: "TTS Provider",
@@ -231,7 +234,7 @@ const UI_TEXT = {
   "zh-CN": {
     metaTitle: "HomeHub 电视盒子",
     brandEyebrow: "客厅 AI 盒子",
-    tabs: { home: "首页", exchange: "交流", cortex: "大脑", blueprints: "蓝图", agents: "智能体", settings: "设置" },
+    tabs: { home: "首页", exchange: "交流", work: "工作", cortex: "大脑", blueprints: "蓝图", agents: "智能体", settings: "设置" },
     top: {
       homeAssistant: "家庭助理",
       starterLayer: "基础能力层",
@@ -251,6 +254,9 @@ const UI_TEXT = {
       languageMode: "语言模式",
       audioStack: "AI 能力模型目录",
       testLab: "交流工作区",
+      workLab: "工作",
+      workBoard: "执行看板",
+      workFactory: "工厂流水线",
       blueprintStudio: "蓝图工作室",
       sttProvider: "语音识别提供方",
       ttsProvider: "语音合成提供方",
@@ -404,7 +410,7 @@ const UI_TEXT = {
   "ja-JP": {
     metaTitle: "HomeHub テレビボックス",
     brandEyebrow: "リビング向け AI ボックス",
-    tabs: { home: "ホーム", exchange: "交流", cortex: "コルテックス", blueprints: "ブループリント", agents: "エージェント", settings: "設定" },
+    tabs: { home: "ホーム", exchange: "交流", work: "仕事", cortex: "コルテックス", blueprints: "ブループリント", agents: "エージェント", settings: "設定" },
     top: {
       homeAssistant: "家庭アシスタント",
       starterLayer: "基本レイヤー",
@@ -424,6 +430,9 @@ const UI_TEXT = {
       languageMode: "言語モード",
       audioStack: "AI 機能モデル一覧",
       testLab: "会話ワークスペース",
+      workLab: "仕事",
+      workBoard: "実行ボード",
+      workFactory: "ファクトリーライン",
       blueprintStudio: "ブループリントスタジオ",
       sttProvider: "音声認識プロバイダー",
       ttsProvider: "音声合成プロバイダー",
@@ -858,6 +867,7 @@ function buddyPoseForTab() {
     home: "home",
     agents: "agents",
     exchange: "voice",
+    work: "agents",
     cortex: "agents",
     blueprints: "agents",
     settings: "settings",
@@ -871,6 +881,7 @@ function buddyPromptForTab() {
       home: "我在这里陪你整理家庭与工作。",
       agents: "我在协调多智能体任务。",
       exchange: isRecording ? "我正在认真听你说话，也能接收你的文字输入。" : "你可以说话，也可以直接输入文字给我。",
+      work: "这里会把你的请求拆成技能和智能体的执行流水线。",
       cortex: "这里会把我的大脑拆开给你看，也能直接测试我的判断过程。",
       blueprints: "这里用来查看蓝图、挑选已完成方案，并生成 feature 脚手架。",
       settings: "这里可以继续扩展我的能力边界。"
@@ -879,6 +890,7 @@ function buddyPromptForTab() {
       home: "I am here for both family life and focused work.",
       agents: "I am coordinating the multi-agent workflow.",
       exchange: isRecording ? "I am listening carefully and tracking your text too." : "Talk to me or type directly in the exchange workspace.",
+      work: "This view turns each request into a visible line of skills and agents.",
       cortex: "This is where I expose my brain loop and let you test how I reason.",
       blueprints: "This is where we inspect blueprints and turn finished ones into feature scaffolds.",
       settings: "This is where we expand my capabilities."
@@ -887,6 +899,7 @@ function buddyPromptForTab() {
       home: "暮らしにも仕事にも寄り添います。",
       agents: "マルチエージェントの流れを整えています。",
       exchange: isRecording ? "今、しっかり聞いています。文字入力も受け取れます。" : "音声でも文字でもこの場でやり取りできます。",
+      work: "ここでは依頼をスキルとエージェントの実行ラインとして見せます。",
       cortex: "ここでは私の思考ループを見せながら、判断の流れを試せます。",
       blueprints: "ここではブループリントを確認し、完成したものから feature 雛形を作れます。",
       settings: "ここで私の機能を広げていきます。"
@@ -901,6 +914,7 @@ function buddySubtitleForTab() {
       home: "陪伴生活，也陪伴工作",
       agents: "多智能体协作中",
       exchange: isRecording ? "正在倾听与整理" : "语音与文字一起交流",
+      work: "执行状态与流水线工厂",
       cortex: "拆解大脑与执行链",
       blueprints: "蓝图检查与脚手架生成",
       settings: "继续扩展无限想象"
@@ -909,6 +923,7 @@ function buddySubtitleForTab() {
       home: "For home life and focused work",
       agents: "Coordinating multi-agent flows",
       exchange: isRecording ? "Listening and organizing" : "Voice and text in one workspace",
+      work: "Execution states and factory flow",
       cortex: "Brain loops and execution traces",
       blueprints: "Blueprint review and scaffold generation",
       settings: "Expanding into more possibilities"
@@ -917,6 +932,7 @@ function buddySubtitleForTab() {
       home: "暮らしにも仕事にも寄り添う",
       agents: "マルチエージェントを調整中",
       exchange: isRecording ? "聞き取りと整理を進行中" : "音声とテキストを一つに",
+      work: "実行状態とファクトリーの流れ",
       cortex: "脳の流れと実行経路を可視化",
       blueprints: "ブループリント確認と雛形生成",
       settings: "可能性を広げていく"
@@ -1016,6 +1032,7 @@ function applyStaticTranslations() {
   setTextIfPresent("brand-eyebrow", t("brandEyebrow"));
   setTextIfPresent("tab-home", t("tabs.home"));
   setTextIfPresent("tab-exchange", t("tabs.exchange"));
+  setTextIfPresent("tab-work", t("tabs.work"));
   setTextIfPresent("tab-cortex", t("tabs.cortex"));
   setTextIfPresent("tab-blueprints", t("tabs.blueprints"));
   setTextIfPresent("tab-agents", t("tabs.agents"));
@@ -1037,6 +1054,15 @@ function applyStaticTranslations() {
   setTextIfPresent("conversation-pill", t("top.transcript"));
   setTextIfPresent("test-title", t("top.testLab"));
   setTextIfPresent("test-pill", currentLocale === "zh-CN" ? "语音 / 文字 / 文件" : currentLocale === "ja-JP" ? "音声 / テキスト / ファイル" : "Voice / Text / Files");
+  setTextIfPresent("work-title", t("top.workLab"));
+  setTextIfPresent("work-pill", t("top.workBoard"));
+  setTextIfPresent("work-factory-title", t("top.workFactory"));
+  setTextIfPresent("work-factory-pill", currentLocale === "zh-CN" ? "技能 / 智能体流水线" : currentLocale === "ja-JP" ? "スキル / エージェント ライン" : "Skill / Agent Pipeline");
+  setTextIfPresent("work-guidance", currentLocale === "zh-CN"
+    ? "左边追踪用户请求，右边观察技能和智能体如何被唤醒、执行与完成。"
+    : currentLocale === "ja-JP"
+      ? "左側で依頼一覧を追い、右側でスキルとエージェントが起動・実行・完了する流れを見ます。"
+      : "Track incoming requests on the left and watch skills and agents wake up, run, and finish on the right.");
   setTextIfPresent("test-blueprints-title", t("top.blueprintStudio"));
   setTextIfPresent("test-blueprints-pill", t("test.storageTag"));
   setTextIfPresent("test-blueprints-guidance", t("test.blueprintsGuidance"));
@@ -1243,6 +1269,10 @@ function renderModules(modules) {
 function renderAgents(agents) {
   const container = document.getElementById("agents");
   if (!container) return;
+  if (!Array.isArray(agents) || !agents.length) {
+    container.innerHTML = `<div class="settings-card"><p>${currentLocale === "zh-CN" ? "当前还没有可展示的业务智能体运行数据。" : currentLocale === "ja-JP" ? "現在表示できる業務エージェント実行データはありません。" : "No live business agent activity is available yet."}</p></div>`;
+    return;
+  }
   container.innerHTML = agents.map((item) => translateItem(item, agentTranslations)).map((agent) => `
     <div class="agent-card remote-target focusable-card" tabindex="0" data-title="${escapeHtml(agent.name)}">
       <div class="agent-row">
@@ -1475,6 +1505,274 @@ function renderTestLab() {
       ? `${testUploadAttachment.kind === "file" ? "Attached file" : "Attached image"}: ${testUploadAttachment.name} (${Math.round((testUploadAttachment.sizeBytes || 0) / 1024)} KB)`
       : "";
   }
+}
+
+function workCopy(key) {
+  const bundle = {
+    empty: {
+      "zh-CN": "还没有可演示的执行请求。",
+      "ja-JP": "まだ表示できる実行リクエストがありません。",
+      "en-US": "No runnable requests to visualize yet."
+    },
+    source: {
+      app: { "zh-CN": "自身 App", "ja-JP": "自身アプリ", "en-US": "App" },
+      voice: { "zh-CN": "语音", "ja-JP": "音声", "en-US": "Voice" },
+      image: { "zh-CN": "图片", "ja-JP": "画像", "en-US": "Image" },
+      file: { "zh-CN": "文件", "ja-JP": "ファイル", "en-US": "File" },
+      mail: { "zh-CN": "邮件", "ja-JP": "メール", "en-US": "Mail" },
+      line: { "zh-CN": "LINE", "ja-JP": "LINE", "en-US": "LINE" },
+      web: { "zh-CN": "网页", "ja-JP": "Web", "en-US": "Web" }
+    },
+    status: {
+      sleeping: { "zh-CN": "待唤醒", "ja-JP": "待機中", "en-US": "Sleeping" },
+      working: { "zh-CN": "执行中", "ja-JP": "実行中", "en-US": "Working" },
+      packed: { "zh-CN": "已完成", "ja-JP": "完了", "en-US": "Packed" },
+      queued: { "zh-CN": "排队中", "ja-JP": "待機列", "en-US": "Queued" }
+    },
+    intake: {
+      "zh-CN": "输入接收",
+      "ja-JP": "入力受付",
+      "en-US": "Intake"
+    },
+    routing: {
+      "zh-CN": "需求判断",
+      "ja-JP": "要求判定",
+      "en-US": "Routing"
+    },
+    execution: {
+      "zh-CN": "执行编排",
+      "ja-JP": "実行編成",
+      "en-US": "Execution"
+    },
+    packaging: {
+      "zh-CN": "结果打包",
+      "ja-JP": "結果梱包",
+      "en-US": "Packaging"
+    }
+  };
+  const value = bundle[key];
+  if (!value) return key;
+  if (typeof value === "object" && !Object.prototype.hasOwnProperty.call(value, currentLocale) && !Object.prototype.hasOwnProperty.call(value, "en-US")) {
+    return value;
+  }
+  if (typeof value[currentLocale] === "string") return value[currentLocale];
+  return value["en-US"] || key;
+}
+
+function localizeWorkSource(source) {
+  const bundle = workCopy("source");
+  if (bundle && typeof bundle === "object") {
+    const item = bundle[source] || bundle.app;
+    return item?.[currentLocale] || item?.["en-US"] || source;
+  }
+  return source;
+}
+
+function localizeWorkStatus(status) {
+  const bundle = workCopy("status");
+  if (bundle && typeof bundle === "object") {
+    const item = bundle[status] || bundle.queued;
+    return item?.[currentLocale] || item?.["en-US"] || status;
+  }
+  return status;
+}
+
+function workAgentCountLabel(count) {
+  const total = Number(count) || 0;
+  if (currentLocale === "zh-CN") {
+    return total === 1 ? "1 个执行单元" : `${total} 个执行单元`;
+  }
+  if (currentLocale === "ja-JP") {
+    return total === 1 ? "1 実行ユニット" : `${total} 実行ユニット`;
+  }
+  return total === 1 ? "1 execution unit" : `${total} execution units`;
+}
+
+function inferWorkSource(text, attachment) {
+  const value = String(text || "").toLowerCase();
+  if (attachment?.kind === "image") return "image";
+  if (attachment?.kind === "file") return "file";
+  if (value.includes("mail") || value.includes("邮箱") || value.includes("邮件") || value.includes("email")) return "mail";
+  if (value.includes("line")) return "line";
+  if (value.includes("http://") || value.includes("https://") || value.includes("网页") || value.includes("网站")) return "web";
+  return isRecording ? "voice" : "app";
+}
+
+function hashString(value) {
+  let hash = 0;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function workColorStyle(key) {
+  const palette = [
+    ["#5ad4b2", "rgba(90, 212, 178, 0.22)", "rgba(90, 212, 178, 0.52)"],
+    ["#67b5ff", "rgba(103, 181, 255, 0.22)", "rgba(103, 181, 255, 0.52)"],
+    ["#ffb763", "rgba(255, 183, 99, 0.22)", "rgba(255, 183, 99, 0.52)"],
+    ["#c48eff", "rgba(196, 142, 255, 0.22)", "rgba(196, 142, 255, 0.52)"],
+    ["#ff8ea1", "rgba(255, 142, 161, 0.22)", "rgba(255, 142, 161, 0.52)"],
+    ["#8fe388", "rgba(143, 227, 136, 0.22)", "rgba(143, 227, 136, 0.52)"]
+  ];
+  const [accent, surface, border] = palette[hashString(key) % palette.length];
+  return `--work-accent:${accent};--work-surface:${surface};--work-border:${border};`;
+}
+
+function deriveWorkItems() {
+  const conversation = Array.isArray(testConversation) && testConversation.length
+    ? testConversation
+    : (Array.isArray(latestDashboard?.conversation) ? latestDashboard.conversation : []);
+  const userMessages = conversation
+    .map((item, index) => ({ ...item, index }))
+    .filter((item) => item.speaker === "You" && String(item.text || "").trim());
+  return userMessages.slice(-10).reverse().map((item, position) => {
+    const reply = conversation.slice(item.index + 1).find((entry) => entry.speaker !== "You");
+    const isLatest = position === 0;
+    const source = inferWorkSource(item.text, isLatest ? testUploadAttachment : null);
+    const status = isLatest
+      ? (customAgentStudio.isThinking ? "working" : reply ? "packed" : "queued")
+      : (reply ? "packed" : "sleeping");
+    return {
+      id: `work-${item.index}`,
+      time: item.time || "",
+      text: item.text || "",
+      status,
+      source,
+      reply,
+      route: isLatest ? (latestDashboard?.lastVoiceRoute || latestDashboard?.voiceRoute || null) : null
+    };
+  });
+}
+
+function buildWorkPipeline(item) {
+  const route = item?.route || {};
+  const selectedAgent = getSelectedStudioAgent();
+  const taskSpec = route.taskSpec || {};
+  const toolPlan = Array.isArray(route.toolPlan) ? route.toolPlan : [];
+  const requiresNetwork = Boolean(taskSpec.requiresNetworkLookup || toolPlan.some((tool) => String(tool || "").toLowerCase().includes("network")));
+  const inputAgents = [];
+  inputAgents.push({
+    name: item?.source === "voice" ? "Speech Intake" : item?.source === "image" ? "OCR Intake" : item?.source === "file" ? "Document Intake" : "Text Intake",
+    state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+  });
+  inputAgents.push({
+    name: "Semantic Parser",
+    state: item?.status === "queued" ? "sleeping" : item?.status === "working" ? "working" : "packed"
+  });
+  const routingAgents = [{
+    name: route.kind === "agent_factory" ? "Agent Factory" : route.kind === "feature" ? (route.selected?.featureName || "Skill Router") : "Task Router",
+    state: item?.status === "queued" ? "sleeping" : "packed"
+  }];
+  if (requiresNetwork) {
+    routingAgents.push({
+      name: "Official Search",
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+  }
+  const executionAgents = [];
+  if (selectedAgent?.name) {
+    executionAgents.push({
+      name: selectedAgent.name,
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+  }
+  if (toolPlan.length) {
+    toolPlan.slice(0, 3).forEach((tool, index) => {
+      executionAgents.push({
+        name: String(tool?.label || tool?.name || tool || `Tool ${index + 1}`),
+        state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+      });
+    });
+  }
+  if (!executionAgents.length) {
+    executionAgents.push({
+      name: route.selected?.intent || taskSpec.taskType || "General Worker",
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+  }
+  const packagingAgents = [{
+    name: item?.reply ? "Result Packager" : "Reply Builder",
+    state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+  }];
+  return [
+    { id: "intake", name: workCopy("intake"), agents: inputAgents },
+    { id: "routing", name: workCopy("routing"), agents: routingAgents },
+    { id: "execution", name: workCopy("execution"), agents: executionAgents },
+    { id: "packaging", name: workCopy("packaging"), agents: packagingAgents }
+  ];
+}
+
+function renderWorkTab() {
+  const listNode = document.getElementById("work-request-list");
+  const pipelineNode = document.getElementById("work-pipeline");
+  if (!listNode || !pipelineNode) return;
+  const items = deriveWorkItems();
+  if (!items.length) {
+    listNode.innerHTML = `<div class="settings-card"><p>${escapeHtml(workCopy("empty"))}</p></div>`;
+    pipelineNode.innerHTML = `<div class="settings-card"><p>${escapeHtml(workCopy("empty"))}</p></div>`;
+    return;
+  }
+  listNode.innerHTML = items.map((item, index) => `
+    <button
+      class="work-request-card remote-target ${index === 0 ? "is-active" : ""}"
+      type="button"
+      data-title="${escapeHtml(item.text.slice(0, 24) || "Request")}"
+      style="${workColorStyle(item.source)}"
+    >
+      <div class="work-request-meta">
+        <span class="mini-pill">${escapeHtml(item.time || "--:--")}</span>
+        <span class="mini-pill">${escapeHtml(localizeWorkSource(item.source))}</span>
+        <span class="pill ${item.status === "packed" ? "is-ready" : item.status === "working" ? "is-active" : "is-muted"}">${escapeHtml(localizeWorkStatus(item.status))}</span>
+      </div>
+      <p>${escapeHtml(item.text)}</p>
+      ${item.reply?.text ? `<small>${escapeHtml(item.reply.text.slice(0, 88))}</small>` : ""}
+    </button>
+  `).join("");
+
+  const focusItem = items[0];
+  const pipeline = buildWorkPipeline(focusItem);
+  pipelineNode.innerHTML = `
+    <div class="work-conveyor-line"></div>
+    ${pipeline.map((skill, skillIndex) => `
+      <section class="work-skill-stage" style="${workColorStyle(skill.id)}">
+        <div class="work-skill-factory">
+          <div class="work-factory-decor" aria-hidden="true">
+            <span class="work-factory-arm work-factory-arm-main"></span>
+            <span class="work-factory-arm work-factory-arm-joint"></span>
+            <span class="work-factory-arm work-factory-arm-claw"></span>
+            <span class="work-factory-belt"></span>
+          </div>
+          <div class="work-skill-head">
+            <span class="work-skill-dot"></span>
+            <strong>${escapeHtml(skill.name)}</strong>
+          </div>
+          <small>${escapeHtml(workAgentCountLabel(skill.agents.length))}</small>
+        </div>
+        <div class="work-skill-robots">
+          ${skill.agents.map((agent) => `
+            <article class="work-robot-card is-${agent.state}" style="${workColorStyle(skill.id)}">
+              <div class="work-robot-visual">
+                <div class="work-robot-bubble">${escapeHtml(localizeWorkStatus(agent.state))}</div>
+                <div class="work-robot-shell">
+                  <span class="work-robot-eye"></span>
+                  <span class="work-robot-eye"></span>
+                  <span class="work-robot-mouth"></span>
+                </div>
+                <div class="work-robot-platform"></div>
+                <div class="work-robot-box"></div>
+              </div>
+              <strong>${escapeHtml(agent.name)}</strong>
+              <span>${escapeHtml(localizeWorkStatus(agent.state))}</span>
+            </article>
+          `).join("")}
+        </div>
+        ${skillIndex < pipeline.length - 1 ? `<div class="work-link-arrow"></div>` : ""}
+      </section>
+    `).join("")}
+  `;
 }
 
 async function completeActiveReminder() {
@@ -2398,6 +2696,7 @@ function updateConversation(conversation) {
   testConversation = Array.isArray(conversation) ? [...conversation] : [];
   renderVoice(latestDashboard);
   renderTestLab();
+  renderWorkTab();
 }
 
 function focusUiNode(node, selector = "") {
@@ -2487,6 +2786,7 @@ async function refreshCustomAgentStudio() {
     customAgentStudio.selectedAgentId = "";
   } finally {
     customAgentStudio.isLoading = false;
+    renderWorkTab();
   }
 }
 
@@ -2504,6 +2804,7 @@ async function sendTestMessage() {
   }
   customAgentStudio.isThinking = true;
   renderTestLab();
+  renderWorkTab();
   try {
     if (testUploadAttachment) {
       await sendTestAttachmentMessage(message);
@@ -2514,6 +2815,7 @@ async function sendTestMessage() {
   } finally {
     customAgentStudio.isThinking = false;
     renderTestLab();
+    renderWorkTab();
   }
 }
 
@@ -2634,11 +2936,12 @@ async function generateSelectedFeature() {
   } finally {
     customAgentStudio.isGenerating = false;
     renderTestLab();
+    renderWorkTab();
   }
 }
 
 function revealInScrollableParent(target) {
-  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice, #test-conversation, #studio-blueprints, #studio-actions-log, #settings-directory-list, #settings-detail-scroll");
+  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice, #test-conversation, #work-request-list, #work-pipeline-scroll, #studio-blueprints, #studio-actions-log, #settings-directory-list, #settings-detail-scroll");
   if (!scrollParent) return;
   target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
@@ -3047,6 +3350,7 @@ async function loadDashboard() {
   renderPairing(data.pairingSession, data.relayMessages);
   renderVoice(data);
   renderTestLab();
+  renderWorkTab();
   renderReminderOverlay(data);
   renderSettings(data);
   renderCortexUnpacked(latestCortexUnpacked);

@@ -33,6 +33,7 @@
       <nav class="tabbar" id="tabbar" aria-label="HomeHub tabs" role="tablist">
         <button class="tab-chip remote-target is-selected" role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home" data-tab="home" tabindex="0">Home</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-exchange" id="tab-exchange" data-tab="exchange" tabindex="-1">Exchange</button>
+        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-work" id="tab-work" data-tab="work" tabindex="-1">Work</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-cortex" id="tab-cortex" data-tab="cortex" tabindex="-1">Cortex</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-blueprints" id="tab-blueprints" data-tab="blueprints" tabindex="-1">Blueprints</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-agents" id="tab-agents" data-tab="agents" tabindex="-1">Agents</button>
@@ -204,6 +205,29 @@
                 <pre class="cortex-json-view" id="cortex-json"></pre>
               </article>
             </div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-work" role="tabpanel" aria-labelledby="tab-work" hidden>
+          <div class="work-layout">
+            <article class="panel section-card work-list-card">
+              <div class="panel-header">
+                <h2 id="work-title">Work</h2>
+                <span class="pill" id="work-pill">Execution Board</span>
+              </div>
+              <div class="voice-guidance" id="work-guidance">Watch how HomeHub turns a request into a running pipeline of skills and agents.</div>
+              <div class="work-request-list" id="work-request-list"></div>
+            </article>
+
+            <article class="panel section-card work-pipeline-card">
+              <div class="panel-header">
+                <h2 id="work-factory-title">Factory Line</h2>
+                <span class="pill" id="work-factory-pill">Skill / Agent Pipeline</span>
+              </div>
+              <div class="work-pipeline-scroll" id="work-pipeline-scroll">
+                <div class="work-pipeline" id="work-pipeline"></div>
+              </div>
+            </article>
           </div>
         </section>
 
