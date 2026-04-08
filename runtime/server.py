@@ -7,13 +7,14 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 from copy import deepcopy
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT_DIR = CURRENT_DIR.parent
@@ -75,6 +76,8 @@ from runtime.server_components.semantic_memory import (
     record_semantic_example,
     semantic_backend_snapshot,
 )
+from runtime.cortex.architect import CortexArchitect
+from runtime.cortex.models import default_agent_cortex
 from runtime.server_network import (
     build_network_lookup_reply,
     perform_controlled_network_lookup as perform_controlled_network_lookup_impl,
@@ -1338,7 +1341,12 @@ def bootstrap_snapshot():
         BOOTSTRAP_STATUS_FILE,
         PERSISTED_SETTINGS,
         load_bootstrap_status,
-        lambda process, settings: refresh_bootstrap_process_state_payload(process, load_bootstrap_status, settings, save_persisted_settings),
+        lambda process, load_status, settings: refresh_bootstrap_process_state_payload(
+            process,
+            load_status,
+            settings,
+            save_persisted_settings,
+        ),
     )
     return snapshot
 
@@ -1558,6 +1566,7 @@ LAST_VOICE_ROUTE = {
 PENDING_VOICE_CLARIFICATION = None
 
 FEATURE_MANAGER = FeatureManager(FEATURES_DIR)
+CORTEX_ARCHITECT = CortexArchitect()
 
 RELAY_MESSAGES = [
     {
@@ -1993,7 +2002,7 @@ def _audio_context():
         "json_post": json_post,
         "log_external_usage": log_external_usage,
         "persisted_settings": PERSISTED_SETTINGS,
-        "provider_catalog": PROVIDER_CATALOG,
+        "provider_catalog": get_audio_provider_catalog(),
         "secrets": SECRETS,
     }
 
@@ -2672,6 +2681,36 @@ def build_dashboard():
     )
 
 
+def build_cortex_unpacked(request: dict | None = None):
+    request = request if isinstance(request, dict) else {}
+    locale = normalize_locale(request.get("locale", PERSISTED_SETTINGS.get("language", "zh-CN")), PERSISTED_SETTINGS.get("language", "zh-CN"))
+    input_modes = normalize_string_list(request.get("inputModes", ["text"])) or ["text"]
+    normalized_request = {
+        "command": str(request.get("command", "")).strip()
+        or ("请帮我分析这个需求，并说明 HomeHub 应该如何执行。" if locale == "zh-CN" else "Analyze this request and explain how HomeHub should execute it."),
+        "locale": locale,
+        "taskType": str(request.get("taskType", "general_chat")).strip() or "general_chat",
+        "inputModes": sorted(set(input_modes)) or ["text"],
+        "requireArtifacts": bool(request.get("requireArtifacts", False)),
+        "requiresNetwork": bool(request.get("requiresNetwork", False)),
+        "speakReply": bool(request.get("speakReply", False)),
+    }
+    seed_state = default_agent_cortex("homehub-shared-brain", "HomeHub Shared Brain")
+    seed_state["stage"] = "shared-brain"
+    seed_state["blueprint"]["mission"] = "Understand multimodal user requests, decide whether to reuse or create smart units, and explain the execution path."
+    seed_state["blueprint"]["networkEnabled"] = True
+    return {
+        "ok": True,
+        "seed": {
+            "agentId": seed_state["agentId"],
+            "agentName": seed_state["agentName"],
+            "stage": seed_state["stage"],
+        },
+        "request": normalized_request,
+        "item": CORTEX_ARCHITECT.design_state(seed_state, normalized_request),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -2750,6 +2789,7 @@ class Handler(BaseHTTPRequestHandler):
             "bootstrap_snapshot": bootstrap_snapshot,
             "build_assistant_memory_snapshot": build_assistant_memory_snapshot,
             "build_dashboard": build_dashboard,
+            "build_cortex_unpacked": build_cortex_unpacked,
             "build_initial_conversation": build_initial_conversation,
             "clear_pending_voice_clarification": clear_pending_voice_clarification,
             "current_conversation": CURRENT_CONVERSATION,
@@ -2801,27 +2841,65 @@ class Handler(BaseHTTPRequestHandler):
         return SECRETS
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        runtime = build_runtime_bridge()
-        if handle_get_route(self, parsed, runtime, self._route_context()):
-            return
-        self.send_error(404)
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/cortex/unpacked":
+                params = {}
+                for key, values in parse_qs(parsed.query).items():
+                    params[key] = values[0] if isinstance(values, list) and values else values
+                request = {
+                    "command": str(params.get("command", "")).strip(),
+                    "locale": normalize_locale(params.get("locale", PERSISTED_SETTINGS.get("language", "zh-CN")), PERSISTED_SETTINGS.get("language", "zh-CN")),
+                    "taskType": str(params.get("taskType", "general_chat")).strip() or "general_chat",
+                    "inputModes": normalize_string_list(params.get("inputModes", "text")) or ["text"],
+                    "requireArtifacts": str(params.get("requireArtifacts", "")).strip().lower() in {"1", "true", "yes", "on"},
+                    "requiresNetwork": str(params.get("requiresNetwork", "true")).strip().lower() in {"1", "true", "yes", "on"},
+                    "speakReply": str(params.get("speakReply", "")).strip().lower() in {"1", "true", "yes", "on"},
+                }
+                self._send_json(build_cortex_unpacked(request))
+                return
+            runtime = build_runtime_bridge()
+            if handle_get_route(self, parsed, runtime, self._route_context()):
+                return
+            self.send_error(404)
+        except Exception:
+            traceback.print_exc()
+            self._send_json({"error": "GET route failed", "path": self.path}, status=500)
 
     def do_POST(self):
-        parsed = urlparse(self.path)
-        runtime = build_runtime_bridge()
-        raw_body = self._read_request_body()
-        preview_body = self._parse_request_body(raw_body)
-        raw_text = raw_body.decode("utf-8", errors="ignore") if raw_body else ""
-        request_headers = {str(key).lower(): str(value) for key, value in self.headers.items()}
-        if preview_body is None:
-            preview_body = {"_headers": request_headers, "_raw": raw_text}
-        elif isinstance(preview_body, dict):
-            preview_body["_headers"] = request_headers
-            preview_body.setdefault("_raw", raw_text)
-        if handle_post_route(self, parsed, runtime, preview_body, raw_text, request_headers, self._route_context()):
-            return
-        self.send_error(404)
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/cortex/unpacked":
+                raw_body = self._read_request_body()
+                preview_body = self._parse_request_body(raw_body)
+                body = preview_body if isinstance(preview_body, dict) else {}
+                request = {
+                    "command": str(body.get("command", "")).strip(),
+                    "locale": normalize_locale(body.get("locale", PERSISTED_SETTINGS.get("language", "zh-CN")), PERSISTED_SETTINGS.get("language", "zh-CN")),
+                    "taskType": str(body.get("taskType", "general_chat")).strip() or "general_chat",
+                    "inputModes": normalize_string_list(body.get("inputModes", ["text"])) or ["text"],
+                    "requireArtifacts": bool(body.get("requireArtifacts", False)),
+                    "requiresNetwork": bool(body.get("requiresNetwork", False)),
+                    "speakReply": bool(body.get("speakReply", False)),
+                }
+                self._send_json(build_cortex_unpacked(request))
+                return
+            runtime = build_runtime_bridge()
+            raw_body = self._read_request_body()
+            preview_body = self._parse_request_body(raw_body)
+            raw_text = raw_body.decode("utf-8", errors="ignore") if raw_body else ""
+            request_headers = {str(key).lower(): str(value) for key, value in self.headers.items()}
+            if preview_body is None:
+                preview_body = {"_headers": request_headers, "_raw": raw_text}
+            elif isinstance(preview_body, dict):
+                preview_body["_headers"] = request_headers
+                preview_body.setdefault("_raw", raw_text)
+            if handle_post_route(self, parsed, runtime, preview_body, raw_text, request_headers, self._route_context()):
+                return
+            self.send_error(404)
+        except Exception:
+            traceback.print_exc()
+            self._send_json({"error": "POST route failed", "path": self.path}, status=500)
 
     def log_message(self, format, *args):
         return

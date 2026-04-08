@@ -32,10 +32,10 @@
 
       <nav class="tabbar" id="tabbar" aria-label="HomeHub tabs" role="tablist">
         <button class="tab-chip remote-target is-selected" role="tab" aria-selected="true" aria-controls="panel-home" id="tab-home" data-tab="home" tabindex="0">Home</button>
+        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-exchange" id="tab-exchange" data-tab="exchange" tabindex="-1">Exchange</button>
+        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-cortex" id="tab-cortex" data-tab="cortex" tabindex="-1">Cortex</button>
+        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-blueprints" id="tab-blueprints" data-tab="blueprints" tabindex="-1">Blueprints</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-agents" id="tab-agents" data-tab="agents" tabindex="-1">Agents</button>
-        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-voice" id="tab-voice" data-tab="voice" tabindex="-1">Voice</button>
-        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-test" id="tab-test" data-tab="test" tabindex="-1">Test</button>
-        <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-pairing" id="tab-pairing" data-tab="pairing" tabindex="-1">Pairing</button>
         <button class="tab-chip remote-target" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings" data-tab="settings" tabindex="-1">Settings</button>
       </nav>
 
@@ -90,155 +90,158 @@
                 </div>
               </div>
             </article>
+
           </div>
         </section>
 
-        <section class="tab-panel" id="panel-voice" role="tabpanel" aria-labelledby="tab-voice" hidden>
-            <div class="stage-grid two-col">
-              <article class="panel section-card voice-stage">
-                <div class="panel-header">
-                  <h2 id="voice-title">Voice Session</h2>
-                  <span class="pill" id="voice-pill">STT / TTS</span>
+        <section class="tab-panel" id="panel-exchange" role="tabpanel" aria-labelledby="tab-exchange" hidden>
+          <article class="panel section-card exchange-chat-card">
+            <div class="panel-header">
+              <h2 id="test-title">Conversation Workspace</h2>
+              <div class="exchange-header-right">
+                <div class="exchange-hover-trigger" tabindex="0">
+                  <span class="pill" id="test-pill">Voice / Text / Files</span>
+                  <div class="exchange-hover-popover">
+                    <div class="exchange-voice-summary exchange-voice-summary-header" id="voice"></div>
+                  </div>
                 </div>
-                <div class="voice-guidance" id="voice-guidance">Press the microphone once to start, and once again to stop.</div>
-                <div class="mic-orb remote-target focusable-card" id="mic-orb" tabindex="0">
-                  <div class="mic-ring"></div>
+              </div>
+            </div>
+            <div class="test-upload-meta" id="test-upload-meta"></div>
+            <div class="conversation-list test-conversation-list exchange-thread" id="test-conversation"></div>
+            <div class="exchange-composer">
+              <div class="exchange-toolbar">
+                <button id="test-image-pick" class="exchange-tool-button remote-target" type="button" title="Attach image">🖼</button>
+                <input id="test-image-input" type="file" accept="image/*" hidden>
+                <button id="test-file-pick" class="exchange-tool-button remote-target" type="button" title="Attach file">📎</button>
+                <input id="test-file-input" type="file" accept=".pdf,.txt,.md,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*" hidden>
+                <button class="exchange-tool-button mic-orb remote-target focusable-card" id="mic-orb" tabindex="0" type="button" title="Voice input">
                   <div class="mic-core">MIC</div>
-                </div>
-                <div class="voice-card" id="voice"></div>
-            </article>
-
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="conversation-title">On-Screen Conversation</h2>
-                <span class="pill" id="conversation-pill">Transcript</span>
+                </button>
               </div>
-              <div class="conversation-list" id="conversation"></div>
-            </article>
+              <div class="exchange-input-wrap">
+                <textarea id="test-input" class="settings-input test-input exchange-textarea" rows="3" placeholder="Type a message for HomeHub."></textarea>
+              </div>
+              <div class="exchange-send-wrap">
+                <button id="test-send" class="test-action remote-target exchange-send-button" type="button">Send</button>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="tab-panel" id="panel-cortex" role="tabpanel" aria-labelledby="tab-cortex" hidden>
+          <div class="cortex-layout">
+            <div class="cortex-primary-column">
+              <article class="panel section-card">
+                <div class="panel-header">
+                  <h2 id="cortex-title">Cortex Unpacked</h2>
+                  <span class="pill" id="cortex-pill">Request Loop</span>
+                </div>
+                <div class="voice-guidance" id="cortex-guidance">Test a request and inspect how HomeHub's cortex decides, plans, and learns.</div>
+                <div id="cortex-overview"></div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="panel-header">
+                  <h2 id="cortex-test-title">Cortex Test Console</h2>
+                  <span class="pill" id="cortex-test-pill">Shared Brain</span>
+                </div>
+                <div class="cortex-form-grid">
+                  <textarea id="cortex-request-input" class="settings-input full-span custom-summary" rows="4" placeholder="Describe a request for HomeHub to analyze."></textarea>
+                  <select id="cortex-task-type" class="settings-input remote-target">
+                    <option value="general_chat">general_chat</option>
+                    <option value="agent_creation">agent_creation</option>
+                    <option value="document_analysis">document_analysis</option>
+                    <option value="ocr_analysis">ocr_analysis</option>
+                    <option value="network_lookup">network_lookup</option>
+                  </select>
+                  <input id="cortex-locale-input" class="settings-input" type="text" placeholder="Locale" value="zh-CN" />
+                  <input id="cortex-input-modes" class="settings-input full-span" type="text" placeholder="text,image,voice" value="text" />
+                  <label class="settings-toggle"><input id="cortex-requires-network" type="checkbox" checked> <span>Use network research</span></label>
+                  <label class="settings-toggle"><input id="cortex-require-artifacts" type="checkbox"> <span>Need artifacts</span></label>
+                  <label class="settings-toggle"><input id="cortex-speak-reply" type="checkbox"> <span>Need voice reply</span></label>
+                </div>
+                <div class="studio-actions">
+                  <button id="cortex-run-test" class="test-action remote-target" type="button">Run Cortex Analysis</button>
+                </div>
+                <div class="mail-tester-status" id="cortex-test-status"></div>
+              </article>
+            </div>
+
+            <div class="cortex-secondary-column">
+              <article class="panel section-card">
+                <div class="panel-header compact">
+                  <h3 id="cortex-loop-title">Request Loop</h3>
+                </div>
+                <div class="cortex-step-list" id="cortex-loop"></div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="panel-header compact">
+                  <h3 id="cortex-architecture-title">Architecture Explorer</h3>
+                </div>
+                <div class="cortex-zone-list" id="cortex-architecture"></div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="panel-header compact">
+                  <h3 id="cortex-capability-title">Capability Explorer</h3>
+                </div>
+                <div class="cortex-capability-list" id="cortex-capabilities"></div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="panel-header compact">
+                  <h3 id="cortex-status-title">Feature Status</h3>
+                </div>
+                <div class="cortex-status-list" id="cortex-status"></div>
+              </article>
+
+              <article class="panel section-card">
+                <div class="panel-header compact">
+                  <h3 id="cortex-json-title">Raw Blueprint</h3>
+                </div>
+                <pre class="cortex-json-view" id="cortex-json"></pre>
+              </article>
+            </div>
           </div>
         </section>
 
-        <section class="tab-panel" id="panel-test" role="tabpanel" aria-labelledby="tab-test" hidden>
-          <div class="stage-grid two-col">
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="test-title">Text Test Lab</h2>
-                <span class="pill" id="test-pill">Agent Factory</span>
-              </div>
-              <div class="conversation-list test-conversation-list" id="test-conversation"></div>
-              <div class="test-input-row">
-                <textarea id="test-input" class="settings-input test-input" rows="3" placeholder="Type a request such as: create an agent that reviews our family bills every Sunday."></textarea>
-                <div class="test-action-stack">
-                  <button id="test-image-pick" class="test-action remote-target test-action-secondary" type="button">Attach Image</button>
-                  <input id="test-image-input" type="file" accept="image/*" hidden>
-                  <button id="test-send" class="test-action remote-target" type="button">Send Test Message</button>
+        <section class="tab-panel" id="panel-blueprints" role="tabpanel" aria-labelledby="tab-blueprints" hidden>
+          <article class="panel section-card blueprint-studio-shell">
+            <div class="panel-header">
+              <h2 id="test-blueprints-title">Blueprint Studio</h2>
+              <span class="pill" id="test-blueprints-pill">Generate Feature</span>
+            </div>
+            <div class="voice-guidance" id="test-blueprints-guidance">Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.</div>
+            <div class="blueprint-studio-content">
+              <div class="studio-list blueprint-scroll-area" id="studio-blueprints"></div>
+              <div class="blueprint-sticky-actions">
+                <div class="studio-actions">
+                  <button id="test-generate-feature" class="test-action remote-target" type="button">Generate Feature from Blueprint</button>
                 </div>
+                <div class="mini-list blueprint-log-list" id="studio-actions-log"></div>
               </div>
-              <div class="test-upload-meta" id="test-upload-meta"></div>
-            </article>
-
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="test-blueprints-title">Blueprint Studio</h2>
-                <span class="pill" id="test-blueprints-pill">Generate Feature</span>
-              </div>
-              <div class="voice-guidance" id="test-blueprints-guidance">Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.</div>
-              <div class="studio-list" id="studio-blueprints"></div>
-              <div class="studio-actions">
-                <button id="test-generate-feature" class="test-action remote-target" type="button">Generate Feature from Blueprint</button>
-              </div>
-              <div class="mini-list" id="studio-actions-log"></div>
-            </article>
-          </div>
-        </section>
-
-        <section class="tab-panel" id="panel-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
-          <div class="stage-grid two-col">
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="pairing-title">Pairing and Relay</h2>
-                <span class="pill" id="pairing-pill">QR + Relay</span>
-              </div>
-              <div class="qr-box">
-                <div class="fake-qr remote-target focusable-card" aria-label="pairing qr" tabindex="0">
-                  <span id="pairing-code"></span>
-                </div>
-                <div>
-                  <p id="pairing-description">Pair with the companion app or IM bridge by scanning this code.</p>
-                  <p id="pairing-expiry"></p>
-                  <small id="pairing-payload"></small>
-                </div>
-              </div>
-            </article>
-
-            <article class="panel section-card">
-              <div class="panel-header">
-                <h2 id="relay-title">Relay Inbox</h2>
-                <span class="pill" id="relay-pill">Transient</span>
-              </div>
-              <div class="mini-list" id="relay"></div>
-            </article>
-          </div>
+            </div>
+          </article>
         </section>
 
         <section class="tab-panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-          <div class="stage-grid two-col">
-            <div class="settings-left-stack">
-              <article class="panel section-card">
-                <div class="panel-header">
-                  <h2 id="language-title">Language Mode</h2>
-                  <span class="pill" id="language-pill">ZH / EN / JA</span>
-                </div>
-                <div class="settings-scroll-area" id="settings-language-scroll">
-                  <div class="language-list" id="languages"></div>
-                </div>
-              </article>
-
-              <article class="panel section-card">
-                <div class="settings-scroll-area" id="mail-tester-scroll">
-                  <div id="mail-tester-card"></div>
-                </div>
-              </article>
-            </div>
-
-              <article class="panel section-card">
-                <div class="panel-header">
-                  <h2 id="audio-stack-title">Model Stack Catalog</h2>
-                  <span class="pill" id="audio-stack-pill">Catalog</span>
-                </div>
-                <div class="settings-scroll-area" id="model-stack-scroll">
-                  <div class="catalog-grid" id="model-stack-cards"></div>
-                  <div class="settings-stack" id="audio-stack"></div>
-                  <div class="custom-provider-form">
-                    <div class="panel-header compact">
-                      <h3 id="custom-stack-title">Add Custom Capability</h3>
-                      <span class="pill" id="custom-stack-pill">Custom</span>
-                    </div>
-                    <div class="custom-provider-grid">
-                      <input id="custom-provider-id" class="settings-input" type="text" placeholder="entry-id" />
-                      <input id="custom-provider-label" class="settings-input" type="text" placeholder="Display name" />
-                      <input id="custom-source" class="settings-input" type="text" placeholder="Source: OpenClaw / WorkBuddy / Custom" />
-                      <input id="custom-capabilities" class="settings-input" type="text" placeholder="Capabilities: Wake Word, ASR, LLM, RAG" />
-                      <input id="custom-models" class="settings-input full-span" type="text" placeholder="Models: Porcupine, Whisper, Qwen2.5" />
-                      <textarea id="custom-summary" class="settings-input full-span custom-summary" placeholder="Summary of what this stack or capability does"></textarea>
-                      <select id="custom-sync-openclaw" class="settings-input">
-                        <option value="manual">OpenClaw sync: Manual</option>
-                        <option value="aligned">OpenClaw sync: Aligned</option>
-                        <option value="config-compatible">OpenClaw sync: Config compatible</option>
-                      </select>
-                      <select id="custom-sync-workbuddy" class="settings-input">
-                        <option value="manual">WorkBuddy sync: Manual</option>
-                        <option value="not-supported">WorkBuddy sync: Not supported</option>
-                        <option value="conceptual">WorkBuddy sync: Conceptual only</option>
-                      </select>
-                      <input id="custom-languages" class="settings-input full-span" type="text" placeholder="zh-CN,en-US,ja-JP" />
-                    </div>
-                    <button id="custom-provider-save" class="custom-provider-save remote-target" type="button">Save Custom Capability</button>
-                  </div>
-                </div>
-              </article>
-            </div>
-          </section>
+          <div class="settings-shell">
+            <aside class="panel section-card settings-nav-card">
+              <div class="panel-header">
+                <h2 id="settings-directory-title">Settings</h2>
+                <span class="pill" id="settings-directory-pill">Directory</span>
+              </div>
+              <div class="settings-directory-list" id="settings-directory-list"></div>
+            </aside>
+            <section class="panel section-card settings-detail-card">
+              <div class="settings-detail-scroll" id="settings-detail-scroll">
+                <div id="settings-detail"></div>
+              </div>
+            </section>
+          </div>
+        </section>
       </section>
 
       <section class="panel dialogue-dock">

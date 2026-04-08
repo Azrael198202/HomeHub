@@ -12,6 +12,12 @@ from .brains import (
 from .catalog import build_model_catalog, build_model_plan
 from .requirements import build_autonomous_creation_plan, infer_requirement_spec
 from .tech import build_technology_stack
+from .unpacked import (
+    build_architecture_explorer,
+    build_capability_explorer,
+    build_feature_status_matrix,
+    build_request_loop,
+)
 from .use_cases import build_requirement_validation
 
 
@@ -26,9 +32,11 @@ class CortexArchitect:
         taskflow = compile_taskflow(state, request, model_plan)
         requirement_spec = infer_requirement_spec(request)
         autonomous_creation = build_autonomous_creation_plan(state, request)
+        technology_stack = build_technology_stack(request)
         return {
             "brainFamily": "homehub-exec-brain",
             "pattern": "pre-brain -> exec-brain -> repo-brain",
+            "explainabilityPattern": "request-loop + architecture-explorer + capability-explorer + feature-status",
             "summary": self._summary(state, request, model_plan),
             "request": request,
             "requirementSpec": requirement_spec,
@@ -40,7 +48,11 @@ class CortexArchitect:
             "repoMemory": build_repo_memory_contracts(state),
             "interfaces": build_interface_contracts(state),
             "supportStack": build_support_stack(),
-            "technologyStack": build_technology_stack(request),
+            "technologyStack": technology_stack,
+            "requestLoop": build_request_loop(state, request, model_plan, autonomous_creation),
+            "architectureExplorer": build_architecture_explorer(state),
+            "capabilityExplorer": build_capability_explorer(request, technology_stack),
+            "featureStatus": build_feature_status_matrix(),
             "validation": build_requirement_validation(state, request),
             "taskflow": taskflow,
         }

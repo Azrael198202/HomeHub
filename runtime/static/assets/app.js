@@ -11,9 +11,11 @@
   cancelled: "is-muted"
 };
 
-const tabs = ["home", "agents", "voice", "test", "pairing", "settings"];
+const tabs = ["home", "exchange", "cortex", "blueprints", "agents", "settings"];
 let activeTab = "home";
+let activeSettingsSection = "language";
 let latestDashboard = null;
+let latestCortexUnpacked = null;
 let currentLocale = "en-US";
 let mediaRecorder = null;
 let mediaChunks = [];
@@ -31,12 +33,33 @@ let testUploadAttachment = null;
 let bootstrapPollTimer = null;
 let dashboardRefreshPromise = null;
 let mailTesterState = { to: "", subject: "", body: "", status: "", isSending: false, isSyncing: false };
+let mailboxSettingsState = {
+  mailAddress: "",
+  mailPassword: "",
+  mailSmtpHost: "",
+  mailSmtpPort: "",
+  mailImapHost: "",
+  mailImapPort: "",
+  status: "",
+  isSaving: false
+};
+let cortexTesterState = {
+  command: "",
+  taskType: "general_chat",
+  locale: "zh-CN",
+  inputModes: "text",
+  requiresNetwork: true,
+  requireArtifacts: false,
+  speakReply: false,
+  status: "",
+  isLoading: false
+};
 
 const UI_TEXT = {
   "en-US": {
     metaTitle: "HomeHub TV Box",
     brandEyebrow: "AI Box for the Living Room",
-    tabs: { home: "Home", agents: "Agents", voice: "Voice", test: "Test", pairing: "Pairing", settings: "Settings" },
+    tabs: { home: "Home", exchange: "Exchange", cortex: "Cortex", blueprints: "Blueprints", agents: "Agents", settings: "Settings" },
     top: {
       homeAssistant: "Household Assistant",
       starterLayer: "Starter Layer",
@@ -55,7 +78,7 @@ const UI_TEXT = {
       transient: "Transient",
       languageMode: "Language Mode",
       audioStack: "AI Capability Catalog",
-      testLab: "Text Test Lab",
+      testLab: "Conversation Workspace",
       blueprintStudio: "Blueprint Studio",
       sttProvider: "STT Provider",
       ttsProvider: "TTS Provider",
@@ -80,7 +103,7 @@ const UI_TEXT = {
       listening: "Listening"
     },
     voice: {
-      guidance: "Press the microphone once to start, and once again to stop.",
+      guidance: "",
       onScreenConversation: "On-Screen Conversation",
       wakeWord: "Wake Word",
       stt: "STT",
@@ -171,8 +194,8 @@ const UI_TEXT = {
     },
     test: {
       guidance: "Use text instead of voice to test HomeHub routing, follow-up questions, and replies.",
-      send: "Send Test Message",
-      inputPlaceholder: "Type a request such as: create an agent that reviews our family bills every Sunday.",
+      send: "Send",
+      inputPlaceholder: "Type a message for HomeHub.",
       blueprintsGuidance: "Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.",
       emptyConversation: "No text test conversation yet.",
       emptyBlueprints: "No custom blueprints yet.",
@@ -208,7 +231,7 @@ const UI_TEXT = {
   "zh-CN": {
     metaTitle: "HomeHub 电视盒子",
     brandEyebrow: "客厅 AI 盒子",
-    tabs: { home: "首页", agents: "智能体", voice: "语音", test: "测试", pairing: "配对", settings: "设置" },
+    tabs: { home: "首页", exchange: "交流", cortex: "大脑", blueprints: "蓝图", agents: "智能体", settings: "设置" },
     top: {
       homeAssistant: "家庭助理",
       starterLayer: "基础能力层",
@@ -227,7 +250,7 @@ const UI_TEXT = {
       transient: "临时消息",
       languageMode: "语言模式",
       audioStack: "AI 能力模型目录",
-      testLab: "文字测试台",
+      testLab: "交流工作区",
       blueprintStudio: "蓝图工作室",
       sttProvider: "语音识别提供方",
       ttsProvider: "语音合成提供方",
@@ -252,7 +275,7 @@ const UI_TEXT = {
       listening: "监听中"
     },
     voice: {
-      guidance: "按一次麦克风开始，再按一次停止。",
+      guidance: "",
       onScreenConversation: "屏幕对话",
       wakeWord: "唤醒词",
       stt: "语音识别",
@@ -344,8 +367,8 @@ const UI_TEXT = {
     },
     test: {
       guidance: "这里用文字来测试 HomeHub 的路由、追问补全和回复，不必打开语音。",
-      send: "发送测试消息",
-      inputPlaceholder: "例如：帮我创建一个每周日检查家庭账单的智能体。",
+      send: "发送",
+      inputPlaceholder: "输入你想让 HomeHub 处理的内容。",
       blueprintsGuidance: "选中一个已完成蓝图后，可以直接生成带持久化存储和 API 占位的 feature 脚手架。",
       emptyConversation: "还没有文字测试对话。",
       emptyBlueprints: "还没有通用智能体蓝图。",
@@ -381,7 +404,7 @@ const UI_TEXT = {
   "ja-JP": {
     metaTitle: "HomeHub テレビボックス",
     brandEyebrow: "リビング向け AI ボックス",
-    tabs: { home: "ホーム", agents: "エージェント", voice: "音声", test: "テスト", pairing: "ペアリング", settings: "設定" },
+    tabs: { home: "ホーム", exchange: "交流", cortex: "コルテックス", blueprints: "ブループリント", agents: "エージェント", settings: "設定" },
     top: {
       homeAssistant: "家庭アシスタント",
       starterLayer: "基本レイヤー",
@@ -400,7 +423,7 @@ const UI_TEXT = {
       transient: "一時保存",
       languageMode: "言語モード",
       audioStack: "AI 機能モデル一覧",
-      testLab: "テキストテスト",
+      testLab: "会話ワークスペース",
       blueprintStudio: "ブループリントスタジオ",
       sttProvider: "音声認識プロバイダー",
       ttsProvider: "音声合成プロバイダー",
@@ -425,7 +448,7 @@ const UI_TEXT = {
       listening: "待機中"
     },
     voice: {
-      guidance: "マイクを一度押すと開始し、もう一度押すと停止します。",
+      guidance: "",
       onScreenConversation: "画面上の会話",
       wakeWord: "ウェイクワード",
       stt: "音声認識",
@@ -517,8 +540,8 @@ const UI_TEXT = {
     },
     test: {
       guidance: "音声の代わりにテキストで、HomeHub のルーティング、追質問、返答をテストします。",
-      send: "テストメッセージを送信",
-      inputPlaceholder: "例: 毎週日曜に家計の請求を確認するエージェントを作って。",
+      send: "送信",
+      inputPlaceholder: "HomeHub に処理してほしい内容を入力してください。",
       blueprintsGuidance: "完成済みブループリントを選ぶと、永続ストレージと API の雛形付き feature を生成できます。",
       emptyConversation: "まだテキストテスト会話はありません。",
       emptyBlueprints: "まだカスタムブループリントはありません。",
@@ -568,6 +591,74 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function setTextIfPresent(id, value) {
+  const node = document.getElementById(id);
+  if (node) node.textContent = value;
+}
+
+function normalizeTabName(tabName) {
+  if (tabName === "voice" || tabName === "test") return "exchange";
+  if (tabName === "pairing") return "settings";
+  return tabs.includes(tabName) ? tabName : "home";
+}
+
+function settingsSectionCatalog() {
+  return {
+    language: {
+      label: { "zh-CN": "语言", "ja-JP": "言語", "en-US": "Language" },
+      summary: {
+        "zh-CN": "切换界面语言与会话语言。",
+        "ja-JP": "UI と会話の言語を切り替えます。",
+        "en-US": "Switch UI and conversation language."
+      }
+    },
+    pairing: {
+      label: { "zh-CN": "配对", "ja-JP": "ペアリング", "en-US": "Pairing" },
+      summary: {
+        "zh-CN": "连接手机、伴侣应用和消息通道。",
+        "ja-JP": "端末、コンパニオンアプリ、通知経路を接続します。",
+        "en-US": "Connect devices, the companion app, and message relays."
+      }
+    },
+    mailbox: {
+      label: { "zh-CN": "邮箱", "ja-JP": "メール", "en-US": "Mailbox" },
+      summary: {
+        "zh-CN": "配置可收发邮件的邮箱账号。",
+        "ja-JP": "送受信に使うメールアカウントを設定します。",
+        "en-US": "Configure the mailbox HomeHub can send and receive with."
+      }
+    },
+    skills: {
+      label: { "zh-CN": "技能", "ja-JP": "スキル", "en-US": "Skills" },
+      summary: {
+        "zh-CN": "高频可复用流程，会由 HomeHub 沉淀成技能。",
+        "ja-JP": "繰り返し使う流れを HomeHub がスキル化します。",
+        "en-US": "Reusable flows that HomeHub promotes into repeatable skills."
+      }
+    },
+    agents: {
+      label: { "zh-CN": "智能体", "ja-JP": "エージェント", "en-US": "Agents" },
+      summary: {
+        "zh-CN": "最小执行单元，例如提醒、分析、抓取、路由。",
+        "ja-JP": "リマインダーや解析などの最小実行単位です。",
+        "en-US": "The smallest executable unit, such as reminders or analysis."
+      }
+    },
+    "ai-models": {
+      label: { "zh-CN": "AI模型", "ja-JP": "AI モデル", "en-US": "AI Models" },
+      summary: {
+        "zh-CN": "智能体可调用的本地模型、网络模型和能力目录。",
+        "ja-JP": "エージェントが使うローカル/クラウドモデルの一覧です。",
+        "en-US": "The local and cloud models that agents can call."
+      }
+    }
+  };
+}
+
+function localizeCatalogText(entry) {
+  return entry?.[currentLocale] || entry?.["en-US"] || "";
 }
 
 function localizeSpeaker(speaker) {
@@ -766,9 +857,9 @@ function buddyPoseForTab() {
   const map = {
     home: "home",
     agents: "agents",
-    voice: "voice",
-    test: "test",
-    pairing: "pairing",
+    exchange: "voice",
+    cortex: "agents",
+    blueprints: "agents",
     settings: "settings",
   };
   return map[activeTab] || "home";
@@ -779,25 +870,25 @@ function buddyPromptForTab() {
     "zh-CN": {
       home: "我在这里陪你整理家庭与工作。",
       agents: "我在协调多智能体任务。",
-      voice: isRecording ? "我正在认真听你说话。" : "按下麦克风，我们开始对话。",
-      test: "这里最适合用文字调试新的智能体蓝图。",
-      pairing: "我可以帮你把设备和消息连起来。",
+      exchange: isRecording ? "我正在认真听你说话，也能接收你的文字输入。" : "你可以说话，也可以直接输入文字给我。",
+      cortex: "这里会把我的大脑拆开给你看，也能直接测试我的判断过程。",
+      blueprints: "这里用来查看蓝图、挑选已完成方案，并生成 feature 脚手架。",
       settings: "这里可以继续扩展我的能力边界。"
     },
     "en-US": {
       home: "I am here for both family life and focused work.",
       agents: "I am coordinating the multi-agent workflow.",
-      voice: isRecording ? "I am listening carefully." : "Press the mic and let's talk.",
-      test: "This is the best place to test new blueprints through text.",
-      pairing: "I can help bridge your devices and messages.",
+      exchange: isRecording ? "I am listening carefully and tracking your text too." : "Talk to me or type directly in the exchange workspace.",
+      cortex: "This is where I expose my brain loop and let you test how I reason.",
+      blueprints: "This is where we inspect blueprints and turn finished ones into feature scaffolds.",
       settings: "This is where we expand my capabilities."
     },
     "ja-JP": {
       home: "暮らしにも仕事にも寄り添います。",
       agents: "マルチエージェントの流れを整えています。",
-      voice: isRecording ? "今、しっかり聞いています。" : "マイクを押して話しかけてください。",
-      test: "ここでは新しいブループリントを文字で試せます。",
-      pairing: "端末とメッセージの接続を手伝います。",
+      exchange: isRecording ? "今、しっかり聞いています。文字入力も受け取れます。" : "音声でも文字でもこの場でやり取りできます。",
+      cortex: "ここでは私の思考ループを見せながら、判断の流れを試せます。",
+      blueprints: "ここではブループリントを確認し、完成したものから feature 雛形を作れます。",
       settings: "ここで私の機能を広げていきます。"
     }
   };
@@ -809,25 +900,25 @@ function buddySubtitleForTab() {
     "zh-CN": {
       home: "陪伴生活，也陪伴工作",
       agents: "多智能体协作中",
-      voice: isRecording ? "正在倾听" : "随时可以开口",
-      test: "文字测试与蓝图生成",
-      pairing: "连接更多设备与消息",
+      exchange: isRecording ? "正在倾听与整理" : "语音与文字一起交流",
+      cortex: "拆解大脑与执行链",
+      blueprints: "蓝图检查与脚手架生成",
       settings: "继续扩展无限想象"
     },
     "en-US": {
       home: "For home life and focused work",
       agents: "Coordinating multi-agent flows",
-      voice: isRecording ? "Listening now" : "Ready whenever you are",
-      test: "Text testing and blueprint generation",
-      pairing: "Bridging devices and messages",
+      exchange: isRecording ? "Listening and organizing" : "Voice and text in one workspace",
+      cortex: "Brain loops and execution traces",
+      blueprints: "Blueprint review and scaffold generation",
       settings: "Expanding into more possibilities"
     },
     "ja-JP": {
       home: "暮らしにも仕事にも寄り添う",
       agents: "マルチエージェントを調整中",
-      voice: isRecording ? "聞いています" : "いつでも話せます",
-      test: "テキスト検証と feature 生成",
-      pairing: "端末とメッセージをつなぐ",
+      exchange: isRecording ? "聞き取りと整理を進行中" : "音声とテキストを一つに",
+      cortex: "脳の流れと実行経路を可視化",
+      blueprints: "ブループリント確認と雛形生成",
       settings: "可能性を広げていく"
     }
   };
@@ -922,51 +1013,42 @@ function getSelectedProviders() {
 function applyStaticTranslations() {
   document.documentElement.lang = currentLocale;
   document.title = t("metaTitle");
-  document.getElementById("brand-eyebrow").textContent = t("brandEyebrow");
-  document.getElementById("tab-home").textContent = t("tabs.home");
-  document.getElementById("tab-agents").textContent = t("tabs.agents");
-  document.getElementById("tab-voice").textContent = t("tabs.voice");
-  document.getElementById("tab-test").textContent = t("tabs.test");
-  document.getElementById("tab-pairing").textContent = t("tabs.pairing");
-  document.getElementById("tab-settings").textContent = t("tabs.settings");
-  document.getElementById("home-assistant-title").textContent = t("top.homeAssistant");
-  document.getElementById("home-assistant-pill").textContent = t("top.starterLayer");
-  document.getElementById("home-dev-title").textContent = t("top.aiBoard");
-  document.getElementById("home-dev-pill").textContent = t("top.liveWorkflow");
-  document.getElementById("agents-title").textContent = t("top.parallelAgents");
-  document.getElementById("agents-pill").textContent = t("top.coreEngine");
-  document.getElementById("models-skills-title").textContent = t("top.modelsSkills");
-  document.getElementById("models-skills-pill").textContent = t("top.extensible");
-  document.getElementById("models-title").textContent = t("top.models");
-  document.getElementById("skills-title").textContent = t("top.skills");
-  document.getElementById("voice-title").textContent = t("top.voiceSession");
-  document.getElementById("voice-pill").textContent = "STT / TTS";
-  document.getElementById("voice-guidance").textContent = t("voice.guidance");
-  document.getElementById("conversation-title").textContent = t("voice.onScreenConversation");
-  document.getElementById("conversation-pill").textContent = t("top.transcript");
-  document.getElementById("test-title").textContent = t("top.testLab");
-  document.getElementById("test-pill").textContent = "Agent Factory";
-  document.getElementById("test-blueprints-title").textContent = t("top.blueprintStudio");
-  document.getElementById("test-blueprints-pill").textContent = t("test.storageTag");
-  document.getElementById("test-blueprints-guidance").textContent = t("test.blueprintsGuidance");
-  document.getElementById("test-input").placeholder = t("test.inputPlaceholder");
-  document.getElementById("test-send").textContent = t("test.send");
-  document.getElementById("test-generate-feature").textContent = customAgentStudio.isGenerating ? t("test.generating") : t("test.generate");
-  document.getElementById("pairing-title").textContent = t("top.pairingRelay");
-  document.getElementById("pairing-pill").textContent = "QR + Relay";
-  document.getElementById("pairing-description").textContent = t("pairing.description");
-  document.getElementById("relay-title").textContent = t("top.relayInbox");
-  document.getElementById("relay-pill").textContent = t("top.transient");
-  document.getElementById("language-title").textContent = t("top.languageMode");
-  document.getElementById("language-pill").textContent = t("settings.languageBadge");
-  document.getElementById("audio-stack-title").textContent = t("top.audioStack");
-  document.getElementById("audio-stack-pill").textContent = t("settings.catalogBadge");
-  document.getElementById("custom-stack-title").textContent = t("settings.customStackTitle");
-  document.getElementById("custom-stack-pill").textContent = t("settings.customStackBadge");
-  document.getElementById("custom-provider-save").textContent = t("settings.customSave");
-  document.getElementById("dock-eyebrow").textContent = t("top.conversationDock");
-  document.getElementById("dock-title").textContent = t("top.currentRequest");
-  document.getElementById("reminder-eyebrow").textContent = t("reminder.eyebrow");
+  setTextIfPresent("brand-eyebrow", t("brandEyebrow"));
+  setTextIfPresent("tab-home", t("tabs.home"));
+  setTextIfPresent("tab-exchange", t("tabs.exchange"));
+  setTextIfPresent("tab-cortex", t("tabs.cortex"));
+  setTextIfPresent("tab-blueprints", t("tabs.blueprints"));
+  setTextIfPresent("tab-agents", t("tabs.agents"));
+  setTextIfPresent("tab-settings", t("tabs.settings"));
+  setTextIfPresent("home-assistant-title", t("top.homeAssistant"));
+  setTextIfPresent("home-assistant-pill", t("top.starterLayer"));
+  setTextIfPresent("home-dev-title", t("top.aiBoard"));
+  setTextIfPresent("home-dev-pill", t("top.liveWorkflow"));
+  setTextIfPresent("agents-title", t("top.parallelAgents"));
+  setTextIfPresent("agents-pill", t("top.coreEngine"));
+  setTextIfPresent("models-skills-title", t("top.modelsSkills"));
+  setTextIfPresent("models-skills-pill", t("top.extensible"));
+  setTextIfPresent("models-title", t("top.models"));
+  setTextIfPresent("skills-title", t("top.skills"));
+  setTextIfPresent("voice-title", t("top.voiceSession"));
+  setTextIfPresent("voice-pill", "STT / TTS");
+  setTextIfPresent("voice-guidance", t("voice.guidance"));
+  setTextIfPresent("conversation-title", t("voice.onScreenConversation"));
+  setTextIfPresent("conversation-pill", t("top.transcript"));
+  setTextIfPresent("test-title", t("top.testLab"));
+  setTextIfPresent("test-pill", currentLocale === "zh-CN" ? "语音 / 文字 / 文件" : currentLocale === "ja-JP" ? "音声 / テキスト / ファイル" : "Voice / Text / Files");
+  setTextIfPresent("test-blueprints-title", t("top.blueprintStudio"));
+  setTextIfPresent("test-blueprints-pill", t("test.storageTag"));
+  setTextIfPresent("test-blueprints-guidance", t("test.blueprintsGuidance"));
+  const testInput = document.getElementById("test-input");
+  if (testInput) testInput.placeholder = t("test.inputPlaceholder");
+  setTextIfPresent("test-send", t("test.send"));
+  setTextIfPresent("test-generate-feature", customAgentStudio.isGenerating ? t("test.generating") : t("test.generate"));
+  setTextIfPresent("settings-directory-title", t("tabs.settings"));
+  setTextIfPresent("settings-directory-pill", currentLocale === "zh-CN" ? "目录" : currentLocale === "ja-JP" ? "一覧" : "Directory");
+  setTextIfPresent("dock-eyebrow", t("top.conversationDock"));
+  setTextIfPresent("dock-title", t("top.currentRequest"));
+  setTextIfPresent("reminder-eyebrow", t("reminder.eyebrow"));
   syncReminderButtonState();
   const micCore = document.querySelector("#mic-orb .mic-core");
   if (micCore && !isRecording) micCore.textContent = t("voice.micIdle");
@@ -974,23 +1056,26 @@ function applyStaticTranslations() {
 
 function renderClock() {
   const now = new Date();
-  document.getElementById("clock-time").textContent = now.toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" });
-  document.getElementById("clock-date").textContent = now.toLocaleDateString(currentLocale, { weekday: "short", month: "short", day: "numeric" });
+  setTextIfPresent("clock-time", now.toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" }));
+  setTextIfPresent("clock-date", now.toLocaleDateString(currentLocale, { weekday: "short", month: "short", day: "numeric" }));
 }
 
 function renderStatusStrip(data) {
+  const strip = document.getElementById("status-strip");
+  const micStatus = document.getElementById("mic-status");
+  if (!strip || !micStatus) return;
   const weatherValue = `${data.weather.condition} ${data.weather.temperatureC}°C`;
   const weatherMeta = `${data.weather.location} · ${data.weather.highC}° / ${data.weather.lowC}°`;
   const nextReminder = data.assistantMemory?.dueReminders?.[0] || data.assistantMemory?.pendingReminders?.[0];
   const tipValue = nextReminder ? nextReminder.title : t("status.remoteReady");
   const tipMeta = nextReminder ? nextReminder.triggerAt.replace("T", " ") : "Directional navigation enabled";
-  document.getElementById("status-strip").innerHTML = `
+  strip.innerHTML = `
     ${statCard(t("status.status"), localizeMode(data.systemStatus.mode), "Voice link active", "status", "status-card status-card-status")}
     ${statCard(t("status.weather"), weatherValue, weatherMeta, "weather", "status-card status-card-weather")}
     ${statCard(t("status.box"), data.systemStatus.boxHealth, "Living room runtime", "box", "status-card status-card-box")}
     ${statCard(t("status.tip"), tipValue, tipMeta, "tip", "status-card status-card-tip")}
   `;
-  document.getElementById("mic-status").textContent = localizeMode(data.systemStatus.mode);
+  micStatus.textContent = localizeMode(data.systemStatus.mode);
 }
 
 function formatReminderTimestamp(value) {
@@ -1054,8 +1139,11 @@ function speakWithHomeHub(text, lang = currentLocale) {
 
 function renderReminderOverlay(data) {
   const overlay = document.getElementById("reminder-overlay");
+  const reminderTitle = document.getElementById("reminder-title");
+  const reminderTime = document.getElementById("reminder-time");
+  const reminderNotes = document.getElementById("reminder-notes");
   const dueReminder = data.assistantMemory?.dueReminders?.[0] || null;
-  if (!overlay) return;
+  if (!overlay || !reminderTitle || !reminderTime || !reminderNotes) return;
   if (!dueReminder) {
     overlay.hidden = true;
     activeReminderId = null;
@@ -1064,9 +1152,9 @@ function renderReminderOverlay(data) {
 
   activeReminderId = dueReminder.id;
   overlay.hidden = false;
-  document.getElementById("reminder-title").textContent = dueReminder.title || t("reminder.dueNow");
-  document.getElementById("reminder-time").textContent = `${t("reminder.dueNow")} · ${formatReminderTimestamp(dueReminder.triggerAt)}`;
-  document.getElementById("reminder-notes").textContent = dueReminder.notes || t("reminder.noNotes");
+  reminderTitle.textContent = dueReminder.title || t("reminder.dueNow");
+  reminderTime.textContent = `${t("reminder.dueNow")} · ${formatReminderTimestamp(dueReminder.triggerAt)}`;
+  reminderNotes.textContent = dueReminder.notes || t("reminder.noNotes");
   const completeButton = document.getElementById("reminder-complete");
   syncReminderButtonState();
   requestAnimationFrame(() => {
@@ -1087,7 +1175,9 @@ function getCurrentLanguage(data) {
 }
 
 function renderHero(data) {
-  document.getElementById("hero").innerHTML = `
+  const hero = document.getElementById("hero");
+  if (!hero) return;
+  hero.innerHTML = `
     <div class="hero-copy">
       <p class="eyebrow">${t("brandEyebrow")}</p>
       <h2 class="hero-title">${data.hero.title}</h2>
@@ -1115,7 +1205,9 @@ function renderHero(data) {
 }
 
 function renderTimeline(events) {
-  document.getElementById("timeline").innerHTML = events.slice().reverse().map((item) => translateItem(item, timelineTranslations)).map((event) => `
+  const timeline = document.getElementById("timeline");
+  if (!timeline) return;
+  timeline.innerHTML = events.slice().reverse().map((item) => translateItem(item, timelineTranslations)).map((event) => `
     <div class="timeline-item remote-target focusable-card" tabindex="0">
       <span class="timeline-time">${event.time}</span>
       <div>
@@ -1127,7 +1219,9 @@ function renderTimeline(events) {
 }
 
 function renderModules(modules) {
-  document.getElementById("modules").innerHTML = modules.map((item) => {
+  const container = document.getElementById("modules");
+  if (!container) return;
+  container.innerHTML = modules.map((item) => {
     const localized = moduleTranslations[item.id]?.[currentLocale] || {};
     return {
       ...item,
@@ -1147,7 +1241,9 @@ function renderModules(modules) {
 }
 
 function renderAgents(agents) {
-  document.getElementById("agents").innerHTML = agents.map((item) => translateItem(item, agentTranslations)).map((agent) => `
+  const container = document.getElementById("agents");
+  if (!container) return;
+  container.innerHTML = agents.map((item) => translateItem(item, agentTranslations)).map((agent) => `
     <div class="agent-card remote-target focusable-card" tabindex="0" data-title="${escapeHtml(agent.name)}">
       <div class="agent-row">
         <strong>${agent.name}</strong>
@@ -1161,7 +1257,9 @@ function renderAgents(agents) {
 }
 
 function renderModels(models) {
-  document.getElementById("models").innerHTML = models.map((provider) => `
+  const container = document.getElementById("models");
+  if (!container) return;
+  container.innerHTML = models.map((provider) => `
     <li class="remote-target focusable-card" tabindex="0" data-title="${escapeHtml(provider.name)}">
       <strong>${provider.name}</strong>
       <span>${provider.capabilities.join(" / ")}</span>
@@ -1170,7 +1268,9 @@ function renderModels(models) {
 }
 
 function renderSkills(skills) {
-  document.getElementById("skills").innerHTML = skills.map((item) => translateItem(item, skillTranslations)).map((skill) => `
+  const container = document.getElementById("skills");
+  if (!container) return;
+  container.innerHTML = skills.map((item) => translateItem(item, skillTranslations)).map((skill) => `
     <li class="remote-target focusable-card" tabindex="0" data-title="${escapeHtml(skill.name)}">
       <strong>${skill.name}</strong>
       <span>${skill.description}</span>
@@ -1178,10 +1278,15 @@ function renderSkills(skills) {
   `).join("");
 }
 function renderPairing(pairing, relayMessages) {
-  document.getElementById("pairing-code").textContent = pairing.code;
-  document.getElementById("pairing-expiry").textContent = `${t("pairing.expiresIn")}: ${pairing.expiresInSeconds}s`;
-  document.getElementById("pairing-payload").textContent = pairing.qrPayload;
-  document.getElementById("relay").innerHTML = relayMessages.map((message) => `
+  const pairingCode = document.getElementById("pairing-code");
+  const pairingExpiry = document.getElementById("pairing-expiry");
+  const pairingPayload = document.getElementById("pairing-payload");
+  const relay = document.getElementById("relay");
+  if (!pairingCode || !pairingExpiry || !pairingPayload || !relay) return;
+  pairingCode.textContent = pairing.code;
+  pairingExpiry.textContent = `${t("pairing.expiresIn")}: ${pairing.expiresInSeconds}s`;
+  pairingPayload.textContent = pairing.qrPayload;
+  relay.innerHTML = relayMessages.map((message) => `
     <div class="relay-item remote-target focusable-card" tabindex="0" data-title="${escapeHtml(message.source)}">
       <strong>${message.source}</strong>
       <span>${message.preview}</span>
@@ -1208,7 +1313,7 @@ function renderConversationItems(containerId, items, emptyText = t("voice.noConv
   }
   container.innerHTML = list.map((item, index, renderedItems) => `
     <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === renderedItems.length - 1 ? "is-latest" : ""} ${item.isThinking ? "is-thinking" : ""}">
-      <div class="conversation-avatar">${item.speaker === "You" ? "ME" : "HH"}</div>
+      <div class="conversation-avatar">${item.speaker === "You" ? "你" : "HH"}</div>
       <div class="conversation-bubble">
         <div class="conversation-head">
           <strong>${localizeSpeaker(item.speaker)}</strong>
@@ -1235,6 +1340,9 @@ function renderConversationItems(containerId, items, emptyText = t("voice.noConv
 }
 
 function renderVoice(data) {
+  const voice = document.getElementById("voice");
+  const spokenLine = document.getElementById("spoken-line");
+  if (!voice || !spokenLine) return;
   const language = getCurrentLanguage(data);
   const upcomingEvents = data.assistantMemory?.upcomingEvents || [];
   const reminders = data.assistantMemory?.pendingReminders || [];
@@ -1264,29 +1372,21 @@ function renderVoice(data) {
   const clarificationLine = pendingClarification
     ? `<p><strong>${t("voice.pendingClarification")}:</strong> ${pendingClarification.clarificationQuestion || "-"} · ${t("voice.originalRequest")} ${pendingClarification.originalRequest || "-"}</p>`
     : "";
-  document.getElementById("voice").innerHTML = `
-    <p>${t("voice.wakeWord")}: ${data.voiceProfile.wakeWord}</p>
-    <p>${t("voice.stt")}: ${data.voiceProfile.sttProvider}</p>
-    <p>${t("voice.tts")}: ${data.voiceProfile.ttsProvider}</p>
-    <p>${t("voice.locale")}: ${language?.code || data.voiceProfile.locale}</p>
-    <p>${t("voice.weather")}: ${data.weather.condition}, ${data.weather.highC}C / ${data.weather.lowC}C</p>
-    <p><strong>${t("voice.route")}:</strong> ${t("voice.routeKind")} ${routeKindLabel} · ${t("voice.routeTarget")} ${routeTargetLabel} · ${t("voice.routeAction")} ${routeActionLabel}</p>
-    <p><strong>${t("voice.routeReasoning")}:</strong> ${routeReasoning}</p>
-    ${taskSpec ? `<p><strong>Task Spec:</strong> ${escapeHtml(taskSpec.taskType || "-")} · ${escapeHtml(taskSpec.summary || "-")} · inputs: ${escapeHtml((taskSpec.inputModes || []).join("/") || "-")} · missing: ${escapeHtml((taskSpec.missingInfo || []).join("/") || "-")}</p>` : ""}
-    ${modelRoute ? `<p><strong>Model Route:</strong> ${escapeHtml(modelRoute.execution || "-")} · ${escapeHtml(modelRoute.primaryModel || "-")} · fallback ${escapeHtml(modelRoute.fallbackModel || "-")} · ${escapeHtml(modelRoute.reason || "-")}</p>` : ""}
-    ${toolPlan.length ? `<p><strong>Tool Plan:</strong> ${escapeHtml(toolPlan.map((item) => `${item.label}${item.selected ? " [selected]" : ""}`).join(" · "))}</p>` : ""}
-    ${clarificationLine}
-    <p><strong>${t("voice.upcomingEvents")}:</strong> ${upcomingEvents.length ? upcomingEvents.map((event) => `${event.title} (${event.startAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
-    <p><strong>${t("voice.pendingReminders")}:</strong> ${reminders.length ? reminders.map((item) => `${item.title} (${item.triggerAt.replace("T", " ")})`).join(" · ") : t("voice.noUpcoming")}</p>
-    <p><strong>${t("voice.recentActions")}:</strong> ${recentActions.length ? recentActions.map((item) => item.summary).join(" · ") : "-"}</p>
-    <p><strong>${t("voice.studyAgents")}:</strong> ${studyAgents.length ? studyAgents.map((item) => `${item.name} (${item.status})${item.artifact ? ` ${item.artifact.split("\n")[1] || ""}` : ""}`).join(" · ") : "-"}</p>
-    <p><strong>${t("voice.studyRecent")}:</strong> ${studyRecent.length ? studyRecent.map((item) => item.summary).join(" · ") : "-"}</p>
-    <p><strong>${t("voice.agentTypes")}:</strong> ${agentTypes.length ? agentTypes.map((item) => `${item.name}: ${item.summary}`).join(" · ") : "-"}</p>
+  const weatherLine = `${data.weather.condition}, ${data.weather.highC}C / ${data.weather.lowC}C`;
+  voice.innerHTML = `
+    <div class="exchange-voice-pill"><strong>${t("voice.stt")}:</strong><span>${escapeHtml(data.voiceProfile.sttProvider)}</span></div>
+    <div class="exchange-voice-pill"><strong>${t("voice.tts")}:</strong><span>${escapeHtml(data.voiceProfile.ttsProvider)}</span></div>
+    <div class="exchange-voice-pill"><strong>${t("voice.locale")}:</strong><span>${escapeHtml(language?.code || data.voiceProfile.locale)}</span></div>
+    <div class="exchange-voice-pill"><strong>${t("voice.route")}:</strong><span>${escapeHtml(routeKindLabel)}</span></div>
+    <div class="exchange-voice-pill"><strong>${t("voice.weather")}:</strong><span>${escapeHtml(weatherLine)}</span></div>
+    ${taskSpec ? `<div class="exchange-voice-pill is-wide"><strong>Task:</strong><span>${escapeHtml(taskSpec.taskType || "-")} · ${escapeHtml(taskSpec.summary || "-")}</span></div>` : ""}
+    ${modelRoute ? `<div class="exchange-voice-pill is-wide"><strong>Model:</strong><span>${escapeHtml(modelRoute.primaryModel || "-")} · ${escapeHtml(modelRoute.reason || "-")}</span></div>` : ""}
+    ${clarificationLine ? `<div class="exchange-voice-pill is-wide">${clarificationLine}</div>` : ""}
   `;
   renderConversationItems("conversation", data.conversation, t("voice.noConversation"));
 
   const lastSpoken = data.conversation[data.conversation.length - 1];
-  document.getElementById("spoken-line").textContent = lastSpoken ? `${localizeSpeaker(lastSpoken.speaker)}: ${lastSpoken.text}` : t("voice.noConversation");
+  spokenLine.textContent = lastSpoken ? `${localizeSpeaker(lastSpoken.speaker)}: ${lastSpoken.text}` : t("voice.noConversation");
   renderFloatingBuddy();
 }
 
@@ -1372,7 +1472,7 @@ function renderTestLab() {
   const uploadMeta = document.getElementById("test-upload-meta");
   if (uploadMeta) {
     uploadMeta.textContent = testUploadAttachment
-      ? `Attached image: ${testUploadAttachment.name} (${Math.round((testUploadAttachment.sizeBytes || 0) / 1024)} KB)`
+      ? `${testUploadAttachment.kind === "file" ? "Attached file" : "Attached image"}: ${testUploadAttachment.name} (${Math.round((testUploadAttachment.sizeBytes || 0) / 1024)} KB)`
       : "";
   }
 }
@@ -1416,44 +1516,437 @@ async function completeActiveReminder() {
   }
 }
 
-function renderSettings(data) {
-  const language = getCurrentLanguage(data);
-  const selectedAudio = data.audioProviders?.selected || {};
+function cortexCopy(key) {
+  const bundle = {
+    title: {
+      "zh-CN": "Cortex 解构台",
+      "ja-JP": "Cortex 展開ビュー",
+      "en-US": "Cortex Unpacked"
+    },
+    guidance: {
+      "zh-CN": "输入一个需求，观察 HomeHub 如何理解、检索、判断、规划与学习。",
+      "ja-JP": "要求を入力して、HomeHub が理解・検索・判断・計画・学習する流れを確認します。",
+      "en-US": "Enter a request and inspect how HomeHub understands, retrieves, decides, plans, and learns."
+    },
+    testTitle: {
+      "zh-CN": "Cortex 测试台",
+      "ja-JP": "Cortex テストコンソール",
+      "en-US": "Cortex Test Console"
+    },
+    run: {
+      "zh-CN": "运行 Cortex 分析",
+      "ja-JP": "Cortex 分析を実行",
+      "en-US": "Run Cortex Analysis"
+    },
+    running: {
+      "zh-CN": "正在分析这个需求...",
+      "ja-JP": "この要求を分析しています...",
+      "en-US": "Analyzing this request..."
+    },
+    idle: {
+      "zh-CN": "这里会显示共享大脑对当前需求的拆解与执行蓝图。",
+      "ja-JP": "ここに共有ブレインが現在の要求をどう分解したかが表示されます。",
+      "en-US": "This area shows how the shared brain decomposes the current request."
+    },
+    failed: {
+      "zh-CN": "Cortex 加载失败。",
+      "ja-JP": "Cortex の読み込みに失敗しました。",
+      "en-US": "Failed to load cortex blueprint."
+    },
+    overview: {
+      "zh-CN": "概要",
+      "ja-JP": "概要",
+      "en-US": "Overview"
+    },
+    loop: {
+      "zh-CN": "请求环路",
+      "ja-JP": "リクエストループ",
+      "en-US": "Request Loop"
+    },
+    architecture: {
+      "zh-CN": "架构浏览器",
+      "ja-JP": "アーキテクチャエクスプローラー",
+      "en-US": "Architecture Explorer"
+    },
+    capability: {
+      "zh-CN": "能力浏览器",
+      "ja-JP": "ケイパビリティエクスプローラー",
+      "en-US": "Capability Explorer"
+    },
+    status: {
+      "zh-CN": "功能状态",
+      "ja-JP": "機能ステータス",
+      "en-US": "Feature Status"
+    },
+    raw: {
+      "zh-CN": "原始蓝图",
+      "ja-JP": "生のブループリント",
+      "en-US": "Raw Blueprint"
+    }
+  };
+  return bundle[key]?.[currentLocale] || bundle[key]?.["en-US"] || key;
+}
+
+function defaultCortexCommand() {
+  if (currentLocale === "zh-CN") {
+    return "帮我读取一张账单图片，整理本月家庭支出，必要时联网查官方价格参考，并决定是否应该创建新的智能体。";
+  }
+  if (currentLocale === "ja-JP") {
+    return "請求書の画像を読み取り、今月の支出を整理し、必要なら公式情報を調べ、新しいスマートユニットを作るべきか判断してください。";
+  }
+  return "Read a bill image, organize this month's household spending, research official references when needed, and decide whether HomeHub should create a new smart unit.";
+}
+
+function ensureCortexTesterState() {
+  if (!cortexTesterState.command) cortexTesterState.command = defaultCortexCommand();
+  cortexTesterState.locale = latestDashboard?.languageSettings?.current || currentLocale || cortexTesterState.locale;
+}
+
+function readCortexTesterInputs() {
+  const commandInput = document.getElementById("cortex-request-input");
+  const taskTypeInput = document.getElementById("cortex-task-type");
+  const localeInput = document.getElementById("cortex-locale-input");
+  const inputModesInput = document.getElementById("cortex-input-modes");
+  const requiresNetworkInput = document.getElementById("cortex-requires-network");
+  const requireArtifactsInput = document.getElementById("cortex-require-artifacts");
+  const speakReplyInput = document.getElementById("cortex-speak-reply");
+  if (commandInput) cortexTesterState.command = commandInput.value.trim();
+  if (taskTypeInput) cortexTesterState.taskType = taskTypeInput.value || "general_chat";
+  if (localeInput) cortexTesterState.locale = localeInput.value.trim() || currentLocale;
+  if (inputModesInput) cortexTesterState.inputModes = inputModesInput.value.trim() || "text";
+  if (requiresNetworkInput) cortexTesterState.requiresNetwork = Boolean(requiresNetworkInput.checked);
+  if (requireArtifactsInput) cortexTesterState.requireArtifacts = Boolean(requireArtifactsInput.checked);
+  if (speakReplyInput) cortexTesterState.speakReply = Boolean(speakReplyInput.checked);
+}
+
+function cortexStatusClass(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "stable") return "is-ready";
+  if (value === "experimental") return "is-planning";
+  if (value === "planned") return "is-muted";
+  return "is-muted";
+}
+
+function renderCortexUnpacked(payload = latestCortexUnpacked) {
+  ensureCortexTesterState();
+  const titleNode = document.getElementById("cortex-title");
+  const guidanceNode = document.getElementById("cortex-guidance");
+  const testTitleNode = document.getElementById("cortex-test-title");
+  const runButton = document.getElementById("cortex-run-test");
+  const statusNode = document.getElementById("cortex-test-status");
+  const overviewNode = document.getElementById("cortex-overview");
+  const loopNode = document.getElementById("cortex-loop");
+  const architectureNode = document.getElementById("cortex-architecture");
+  const capabilitiesNode = document.getElementById("cortex-capabilities");
+  const featureStatusNode = document.getElementById("cortex-status");
+  const jsonNode = document.getElementById("cortex-json");
+  const requestInput = document.getElementById("cortex-request-input");
+  const taskTypeInput = document.getElementById("cortex-task-type");
+  const localeInput = document.getElementById("cortex-locale-input");
+  const inputModesInput = document.getElementById("cortex-input-modes");
+  const requiresNetworkInput = document.getElementById("cortex-requires-network");
+  const requireArtifactsInput = document.getElementById("cortex-require-artifacts");
+  const speakReplyInput = document.getElementById("cortex-speak-reply");
+
+  setTextIfPresent("cortex-title", cortexCopy("title"));
+  setTextIfPresent("cortex-guidance", cortexCopy("guidance"));
+  setTextIfPresent("cortex-test-title", cortexCopy("testTitle"));
+  setTextIfPresent("cortex-loop-title", cortexCopy("loop"));
+  setTextIfPresent("cortex-architecture-title", cortexCopy("architecture"));
+  setTextIfPresent("cortex-capability-title", cortexCopy("capability"));
+  setTextIfPresent("cortex-status-title", cortexCopy("status"));
+  setTextIfPresent("cortex-json-title", cortexCopy("raw"));
+  if (runButton) {
+    runButton.textContent = cortexTesterState.isLoading ? cortexCopy("running") : cortexCopy("run");
+    runButton.disabled = cortexTesterState.isLoading;
+  }
+  if (requestInput && !requestInput.value) requestInput.value = cortexTesterState.command;
+  if (taskTypeInput) taskTypeInput.value = cortexTesterState.taskType;
+  if (localeInput) localeInput.value = cortexTesterState.locale;
+  if (inputModesInput && !inputModesInput.value) inputModesInput.value = cortexTesterState.inputModes;
+  if (requiresNetworkInput) requiresNetworkInput.checked = cortexTesterState.requiresNetwork;
+  if (requireArtifactsInput) requireArtifactsInput.checked = cortexTesterState.requireArtifacts;
+  if (speakReplyInput) speakReplyInput.checked = cortexTesterState.speakReply;
+  if (statusNode) statusNode.textContent = cortexTesterState.status || cortexCopy("idle");
+
+  const item = payload?.item || null;
+  if (!item) {
+    if (overviewNode) overviewNode.innerHTML = `<div class="settings-card"><p>${escapeHtml(cortexCopy("idle"))}</p></div>`;
+    if (loopNode) loopNode.innerHTML = "";
+    if (architectureNode) architectureNode.innerHTML = "";
+    if (capabilitiesNode) capabilitiesNode.innerHTML = "";
+    if (featureStatusNode) featureStatusNode.innerHTML = "";
+    if (jsonNode) jsonNode.textContent = "";
+    return;
+  }
+
+  const summary = item.summary || {};
+  const autonomous = item.autonomousCreation || {};
+  const request = payload.request || {};
+  if (overviewNode) {
+    overviewNode.innerHTML = `
+      <div class="settings-overview-strip">
+        <div class="settings-overview-card">
+          <small>${escapeHtml(cortexCopy("overview"))}</small>
+          <strong>${escapeHtml(summary.agentName || payload.seed?.agentName || "HomeHub Shared Brain")}</strong>
+          <span>${escapeHtml(summary.brainMode || "execution-first")}</span>
+        </div>
+        <div class="settings-overview-card">
+          <small>Task</small>
+          <strong>${escapeHtml(request.taskType || "-")}</strong>
+          <span>${escapeHtml((request.inputModes || []).join(" / ") || "-")}</span>
+        </div>
+        <div class="settings-overview-card">
+          <small>Decision</small>
+          <strong>${escapeHtml(autonomous.decision || autonomous.action || "reuse_or_create")}</strong>
+          <span>${escapeHtml((autonomous.requirement?.requiredCapabilities || autonomous.proposedBrain?.requiredCapabilities || []).join(" / ") || "-")}</span>
+        </div>
+        <div class="settings-overview-card">
+          <small>Models</small>
+          <strong>${escapeHtml(summary.primaryPlanner || "-")}</strong>
+          <span>${escapeHtml(summary.primaryExecutor || "-")}</span>
+        </div>
+      </div>
+    `;
+  }
+  if (loopNode) {
+    loopNode.innerHTML = (item.requestLoop?.steps || []).map((step, index) => `
+      <div class="cortex-step-card">
+        <div class="cortex-step-index">${index + 1}</div>
+        <div>
+          <strong>${escapeHtml(step.label || step.id || `Step ${index + 1}`)}</strong>
+          <p>${escapeHtml(step.purpose || "")}</p>
+          ${(step.modelRole || step.decisionMode) ? `<small>${escapeHtml(step.modelRole || step.decisionMode)}</small>` : ""}
+        </div>
+      </div>
+    `).join("");
+  }
+  if (architectureNode) {
+    architectureNode.innerHTML = (item.architectureExplorer?.zones || []).map((zone) => `
+      <div class="cortex-zone-card">
+        <div class="cortex-zone-head">
+          <strong>${escapeHtml(zone.label || zone.id || "Zone")}</strong>
+          <span class="mini-pill">${escapeHtml(zone.id || "")}</span>
+        </div>
+        <p>${escapeHtml(zone.purpose || "")}</p>
+        ${(zone.modules || []).length ? `<small>${escapeHtml(zone.modules.join(" · "))}</small>` : ""}
+        ${zone.state ? `<small>${escapeHtml(JSON.stringify(zone.state))}</small>` : ""}
+      </div>
+    `).join("");
+  }
+  if (capabilitiesNode) {
+    capabilitiesNode.innerHTML = (item.capabilityExplorer?.groups || []).map((group) => `
+      <div class="cortex-capability-card">
+        <strong>${escapeHtml(group.label || group.id || "Group")}</strong>
+        <div class="studio-meta">
+          ${(group.items || []).map((capability) => `<span class="mini-pill capability">${escapeHtml(capability)}</span>`).join("")}
+        </div>
+      </div>
+    `).join("");
+  }
+  if (featureStatusNode) {
+    featureStatusNode.innerHTML = (item.featureStatus?.items || []).map((entry) => `
+      <div class="relay-item">
+        <strong>${escapeHtml(entry.label || entry.id || "Feature")}</strong>
+        <span class="pill ${cortexStatusClass(entry.status)}">${escapeHtml(entry.status || "unknown")}</span>
+      </div>
+    `).join("");
+  }
+  if (jsonNode) {
+    jsonNode.textContent = JSON.stringify(item, null, 2);
+  }
+}
+
+async function loadCortexUnpacked(request = null) {
+  ensureCortexTesterState();
+  if (request) {
+    cortexTesterState = {
+      ...cortexTesterState,
+      ...request
+    };
+  }
+  cortexTesterState.isLoading = true;
+  cortexTesterState.status = cortexCopy("running");
+  renderCortexUnpacked();
+  try {
+    const response = await fetch("/api/cortex/unpacked", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        command: cortexTesterState.command,
+        locale: cortexTesterState.locale,
+        taskType: cortexTesterState.taskType,
+        inputModes: cortexTesterState.inputModes.split(",").map((item) => item.trim()).filter(Boolean),
+        requireArtifacts: cortexTesterState.requireArtifacts,
+        requiresNetwork: cortexTesterState.requiresNetwork,
+        speakReply: cortexTesterState.speakReply
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || cortexCopy("failed"));
+    }
+    latestCortexUnpacked = payload;
+    cortexTesterState.status = currentLocale === "zh-CN"
+      ? "Cortex：已更新共享大脑蓝图。"
+      : currentLocale === "ja-JP"
+        ? "Cortex: 共有ブレインの設計を更新しました。"
+        : "Cortex: Shared brain blueprint updated.";
+  } catch (error) {
+    cortexTesterState.status = `${cortexCopy("failed")} ${error.message || ""}`.trim();
+  } finally {
+    cortexTesterState.isLoading = false;
+    renderCortexUnpacked(latestCortexUnpacked);
+  }
+}
+
+function setupCortexControls() {
+  const runButton = document.getElementById("cortex-run-test");
+  if (!runButton) return;
+  runButton.onclick = async () => {
+    readCortexTesterInputs();
+    await loadCortexUnpacked();
+  };
+}
+
+function syncMailboxSettingsFromDom() {
+  mailboxSettingsState.mailAddress = document.getElementById("mailbox-address")?.value?.trim() || mailboxSettingsState.mailAddress;
+  mailboxSettingsState.mailPassword = document.getElementById("mailbox-password")?.value || mailboxSettingsState.mailPassword;
+  mailboxSettingsState.mailSmtpHost = document.getElementById("mailbox-smtp-host")?.value?.trim() || mailboxSettingsState.mailSmtpHost;
+  mailboxSettingsState.mailSmtpPort = document.getElementById("mailbox-smtp-port")?.value?.trim() || mailboxSettingsState.mailSmtpPort;
+  mailboxSettingsState.mailImapHost = document.getElementById("mailbox-imap-host")?.value?.trim() || mailboxSettingsState.mailImapHost;
+  mailboxSettingsState.mailImapPort = document.getElementById("mailbox-imap-port")?.value?.trim() || mailboxSettingsState.mailImapPort;
+}
+
+function initializeMailboxSettingsState(data) {
+  const mailConfig = data.externalChannels?.mailConfig || {};
+  if (!mailboxSettingsState.mailAddress) mailboxSettingsState.mailAddress = mailConfig.address || "";
+  if (!mailboxSettingsState.mailSmtpHost) mailboxSettingsState.mailSmtpHost = mailConfig.smtpHost || "";
+  if (!mailboxSettingsState.mailSmtpPort) mailboxSettingsState.mailSmtpPort = mailConfig.smtpPort || "";
+  if (!mailboxSettingsState.mailImapHost) mailboxSettingsState.mailImapHost = mailConfig.imapHost || "";
+  if (!mailboxSettingsState.mailImapPort) mailboxSettingsState.mailImapPort = mailConfig.imapPort || "";
+}
+
+function settingsSectionHeading(sectionId) {
+  const item = settingsSectionCatalog()[sectionId];
+  return item ? localizeCatalogText(item.label) : sectionId;
+}
+
+function settingsSectionSummary(sectionId) {
+  const item = settingsSectionCatalog()[sectionId];
+  return item ? localizeCatalogText(item.summary) : "";
+}
+
+function buildConceptText(kind) {
+  const bundle = {
+    session: {
+      "zh-CN": "会话是使用者输入文字、语音、图片后的总入口。HomeHub 会先判断这是不是具体指令，再按需要路由到技能和智能体。",
+      "ja-JP": "会話は文字、音声、画像の入力を受ける総合入口です。HomeHub はまず依頼かどうかを判断し、必要なスキルやエージェントに振り分けます。",
+      "en-US": "A session is the shared intake surface for text, voice, and image input. HomeHub first decides whether the message is a concrete request, then routes it to the right skills and agents."
+    },
+    skills: {
+      "zh-CN": "技能是一系列智能体操作的高频组合。HomeHub 会根据流程使用率，把可复用的流程沉淀成技能，方便多次调用。",
+      "ja-JP": "スキルは複数のエージェント操作をまとめた高頻度フローです。HomeHub は利用頻度を見て再利用しやすい流れをスキル化します。",
+      "en-US": "Skills are reusable flows composed of multiple agent actions. HomeHub promotes repeated patterns into skills when it sees stable usage."
+    },
+    agents: {
+      "zh-CN": "智能体是最小可理解的执行单元，例如提醒、OCR 提取、联网检索、分析与归档。",
+      "ja-JP": "エージェントは最小の実行単位で、リマインダー、OCR、検索、分析、保存などを担当します。",
+      "en-US": "Agents are the smallest understandable execution units, such as reminders, OCR extraction, search, analysis, or archival."
+    },
+    models: {
+      "zh-CN": "AI 模型是智能体可调用的推理能力层，包括本地模型、云模型，以及按能力归类的模型目录。",
+      "ja-JP": "AI モデルはエージェントが呼び出す推論レイヤーで、ローカルモデル、クラウドモデル、能力別カタログを含みます。",
+      "en-US": "AI models are the reasoning layer agents can call, including local models, cloud models, and capability-specific catalogs."
+    }
+  };
+  return bundle[kind]?.[currentLocale] || bundle[kind]?.["en-US"] || "";
+}
+
+function activateSettingsSection(sectionId, focusButton = false) {
+  activeSettingsSection = settingsSectionCatalog()[sectionId] ? sectionId : "language";
+  if (latestDashboard) {
+    renderSettings(latestDashboard);
+  }
+  if (focusButton) {
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-settings-section="${activeSettingsSection}"]`)?.focus();
+    });
+  }
+}
+
+function renderSettingsDirectory() {
+  const nav = document.getElementById("settings-directory-list");
+  if (!nav) return;
+  nav.innerHTML = Object.entries(settingsSectionCatalog()).map(([id, item]) => `
+    <button
+      type="button"
+      class="settings-directory-item remote-target ${activeSettingsSection === id ? "is-selected" : ""}"
+      data-settings-section="${id}"
+      data-title="${escapeHtml(localizeCatalogText(item.label))}"
+    >
+      <strong>${escapeHtml(localizeCatalogText(item.label))}</strong>
+      <span>${escapeHtml(localizeCatalogText(item.summary))}</span>
+    </button>
+  `).join("");
+  nav.querySelectorAll("[data-settings-section]").forEach((button) => {
+    button.onclick = () => activateSettingsSection(button.dataset.settingsSection, true);
+  });
+}
+
+async function saveMailboxSettings() {
+  syncMailboxSettingsFromDom();
+  mailboxSettingsState.isSaving = true;
+  renderSettings(latestDashboard);
+  try {
+    const response = await fetch("/api/settings/secrets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mailAddress: mailboxSettingsState.mailAddress,
+        mailPassword: mailboxSettingsState.mailPassword,
+        mailSmtpHost: mailboxSettingsState.mailSmtpHost,
+        mailSmtpPort: mailboxSettingsState.mailSmtpPort,
+        mailImapHost: mailboxSettingsState.mailImapHost,
+        mailImapPort: mailboxSettingsState.mailImapPort
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Failed to save mailbox settings.");
+    }
+    mailboxSettingsState.status = currentLocale === "zh-CN"
+      ? "HomeHub：邮箱配置已保存。"
+      : currentLocale === "ja-JP"
+        ? "HomeHub: メール設定を保存しました。"
+        : "HomeHub: Mailbox settings saved.";
+    updateSpokenLine(mailboxSettingsState.status);
+    await loadDashboard();
+  } catch (error) {
+    mailboxSettingsState.status = currentLocale === "zh-CN"
+      ? `HomeHub：邮箱配置保存失败。${String(error.message || error)}`
+      : currentLocale === "ja-JP"
+        ? `HomeHub: メール設定の保存に失敗しました。${String(error.message || error)}`
+        : `HomeHub: Failed to save mailbox settings. ${String(error.message || error)}`;
+    updateSpokenLine(mailboxSettingsState.status);
+    renderSettings(latestDashboard);
+  } finally {
+    mailboxSettingsState.isSaving = false;
+    renderSettings(latestDashboard);
+  }
+}
+
+function populateAiModelsSection(data, language) {
   const catalog = data.audioProviders?.catalog || {};
   const secrets = data.audioProviders?.secrets || {};
   const modelCatalog = data.modelCatalog || [];
   const counts = data.audioProviders?.counts || { total: modelCatalog.length, editable: 0 };
   const runtimeProfile = data.runtimeProfile || null;
-  const mailConfig = data.externalChannels?.mailConfig || {};
-  const mailData = data.externalChannels?.mail || {};
-  const defaultRecipient = mailTesterState.to || "ying.hahn@gmail.com";
-  const defaultSubject = mailTesterState.subject || "HomeHub mail test";
-  const defaultBody = mailTesterState.body || "Hello from HomeHub.";
+  const modelStackCards = document.getElementById("model-stack-cards");
+  const audioStack = document.getElementById("audio-stack");
+  if (!modelStackCards || !audioStack) return;
 
-  document.getElementById("languages").innerHTML = `
-    <div class="settings-card">
-      <strong>${escapeHtml(language?.label || currentLocale)}</strong>
-      <select id="language-select" class="settings-input remote-target" data-title="${escapeHtml(language?.label || currentLocale)}">
-        ${(data.languageSettings?.supported || []).map((item) => `
-          <option value="${escapeHtml(item.code)}" ${item.code === language?.code ? "selected" : ""}>
-            ${escapeHtml(item.label)} · ${escapeHtml(item.code)}
-          </option>
-        `).join("")}
-      </select>
-      <p>${escapeHtml(language?.sample || "")}</p>
-    </div>
-  `;
-  const languageSelect = document.getElementById("language-select");
-  if (languageSelect) {
-    languageSelect.onchange = async (event) => {
-      const nextCode = String(event.target?.value || "").trim();
-      if (nextCode) {
-        await persistLanguage(nextCode);
-      }
-    };
-  }
-
-  document.getElementById("model-stack-cards").innerHTML = modelCatalog.map((item) => `
+  modelStackCards.innerHTML = modelCatalog.map((item) => `
     <div class="provider-card focusable-card ${item.editable ? "is-selected-provider" : ""}" tabindex="0" data-title="${escapeHtml(item.label)}">
       <strong>${item.label}</strong>
       <div class="meta-row">
@@ -1486,83 +1979,342 @@ function renderSettings(data) {
     </div>
   `).join("");
 
-  document.getElementById("audio-stack").innerHTML = `
-    <div class="settings-card">
-      <strong>${t("settings.speechToText")}</strong>
-      <p>${t("settings.provider")}: ${data.audioStack.stt.provider}</p>
-      <p>${t("settings.primary")}: ${data.audioStack.stt.primaryModel}</p>
-      <p>${t("settings.fallback")}: ${data.audioStack.stt.fallbackModel}</p>
-      <p>${t("settings.mode")}: ${data.audioStack.stt.mode}</p>
-    </div>
-    <div class="settings-card">
-      <strong>${t("settings.textToSpeech")}</strong>
-      <p>${t("settings.provider")}: ${data.audioStack.tts.provider}</p>
-      <p>${t("settings.primary")}: ${data.audioStack.tts.primaryModel}</p>
-      <p>${t("settings.fallback")}: ${data.audioStack.tts.fallbackModel}</p>
-      <p>${t("settings.mode")}: ${data.audioStack.tts.mode}</p>
-    </div>
-    <div class="settings-card">
-      <strong>${t("settings.realtimeRecommendation")}</strong>
-      <p>${data.audioStack.recommendedRealtime}</p>
-      <p>${t("settings.currentUiLanguage")}: ${language?.label || data.voiceProfile.locale}</p>
-      <p>${t("settings.totalStacks")}: ${counts.total}</p>
-      <p>${t("settings.googleKey")}: ${secrets.googleConfigured ? t("settings.configured") : t("settings.missing")}</p>
-      <p>${t("settings.openaiKey")}: ${secrets.openaiConfigured ? t("settings.configured") : t("settings.missing")}</p>
-    </div>
-    <div class="settings-card">
-      <strong>${t("settings.syncOpenclaw")}</strong>
-      <p>${Object.values(catalog).some((provider) => provider.sync?.openclaw) ? "Manual import / export" : "Not set"}</p>
-      <p>${t("settings.syncWorkbuddy")}: Public sync API not confirmed</p>
-    </div>
-    ${runtimeProfile ? `
+  audioStack.innerHTML = `
+    <div class="settings-detail-grid">
       <div class="settings-card">
-        <strong>Runtime Strategy</strong>
-        <p>${escapeHtml(runtimeProfile.label || "-")}</p>
-        <p>${escapeHtml(runtimeProfile.summary || "-")}</p>
-        <p>Local: ${escapeHtml((runtimeProfile.localRoles || []).join(" / ") || "-")}</p>
-        <p>Cloud: ${escapeHtml((runtimeProfile.cloudRoles || []).join(" / ") || "-")}</p>
-        <p>Installed local models: ${escapeHtml((runtimeProfile.localDetected || []).slice(0, 5).join(", ") || "-")}</p>
+        <strong>${t("settings.speechToText")}</strong>
+        <p>${t("settings.provider")}: ${data.audioStack.stt.provider}</p>
+        <p>${t("settings.primary")}: ${data.audioStack.stt.primaryModel}</p>
+        <p>${t("settings.fallback")}: ${data.audioStack.stt.fallbackModel}</p>
+        <p>${t("settings.mode")}: ${data.audioStack.stt.mode}</p>
       </div>
-    ` : ""}
+      <div class="settings-card">
+        <strong>${t("settings.textToSpeech")}</strong>
+        <p>${t("settings.provider")}: ${data.audioStack.tts.provider}</p>
+        <p>${t("settings.primary")}: ${data.audioStack.tts.primaryModel}</p>
+        <p>${t("settings.fallback")}: ${data.audioStack.tts.fallbackModel}</p>
+        <p>${t("settings.mode")}: ${data.audioStack.tts.mode}</p>
+      </div>
+      <div class="settings-card">
+        <strong>${t("settings.realtimeRecommendation")}</strong>
+        <p>${data.audioStack.recommendedRealtime}</p>
+        <p>${t("settings.currentUiLanguage")}: ${language?.label || data.voiceProfile.locale}</p>
+        <p>${t("settings.totalStacks")}: ${counts.total}</p>
+        <p>${t("settings.googleKey")}: ${secrets.googleConfigured ? t("settings.configured") : t("settings.missing")}</p>
+        <p>${t("settings.openaiKey")}: ${secrets.openaiConfigured ? t("settings.configured") : t("settings.missing")}</p>
+      </div>
+      <div class="settings-card">
+        <strong>${currentLocale === "zh-CN" ? "模型运行策略" : currentLocale === "ja-JP" ? "モデル実行戦略" : "Runtime Strategy"}</strong>
+        ${runtimeProfile ? `
+          <p>${escapeHtml(runtimeProfile.label || "-")}</p>
+          <p>${escapeHtml(runtimeProfile.summary || "-")}</p>
+          <p>Local: ${escapeHtml((runtimeProfile.localRoles || []).join(" / ") || "-")}</p>
+          <p>Cloud: ${escapeHtml((runtimeProfile.cloudRoles || []).join(" / ") || "-")}</p>
+          <p>Installed local models: ${escapeHtml((runtimeProfile.localDetected || []).slice(0, 5).join(", ") || "-")}</p>
+        ` : `<p>-</p>`}
+      </div>
+    </div>
   `;
+  setupCustomProviderControls();
+}
 
-  const mailCard = document.getElementById("mail-tester-card");
-  if (mailCard) {
-    mailCard.innerHTML = `
-      <div class="settings-card mail-tester-card">
-        <div class="panel-header compact">
-          <h3>${t("mail.title")}</h3>
-          <span class="pill">${t("mail.badge")}</span>
+function buildSettingsOverview(data, language) {
+  const pairing = data.pairingSession || {};
+  const mailConfig = data.externalChannels?.mailConfig || {};
+  const modelCount = data.audioProviders?.counts?.total || 0;
+  return `
+    <div class="settings-overview-strip">
+      <div class="settings-overview-card">
+        <strong>${currentLocale === "zh-CN" ? "语言" : currentLocale === "ja-JP" ? "言語" : "Language"}</strong>
+        <span>${escapeHtml(language?.label || currentLocale)}</span>
+      </div>
+      <div class="settings-overview-card">
+        <strong>${currentLocale === "zh-CN" ? "配对" : currentLocale === "ja-JP" ? "ペアリング" : "Pairing"}</strong>
+        <span>${escapeHtml(pairing.code || "-")}</span>
+      </div>
+      <div class="settings-overview-card">
+        <strong>${currentLocale === "zh-CN" ? "邮箱" : currentLocale === "ja-JP" ? "メール" : "Mailbox"}</strong>
+        <span>${escapeHtml(mailConfig.address || (mailConfig.configured ? "configured" : "-"))}</span>
+      </div>
+      <div class="settings-overview-card">
+        <strong>${currentLocale === "zh-CN" ? "AI模型" : currentLocale === "ja-JP" ? "AI モデル" : "AI Models"}</strong>
+        <span>${escapeHtml(String(modelCount))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingsDetail(data) {
+  const detail = document.getElementById("settings-detail");
+  if (!detail) return;
+  const language = getCurrentLanguage(data);
+  const mailConfig = data.externalChannels?.mailConfig || {};
+  const mailData = data.externalChannels?.mail || {};
+  const agentTypes = data.agentTypes || [];
+  const defaultRecipient = mailTesterState.to || mailboxSettingsState.mailAddress || "";
+  const defaultSubject = mailTesterState.subject || "HomeHub mail test";
+  const defaultBody = mailTesterState.body || "Hello from HomeHub.";
+  const overview = buildSettingsOverview(data, language);
+
+  if (activeSettingsSection === "language") {
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("language"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("language"))}</h3>
         </div>
-        <p><strong>${t("mail.address")}:</strong> ${escapeHtml(mailConfig.address || "-")}</p>
-        <p>Inbox: ${Array.isArray(mailData.inbox) ? mailData.inbox.length : 0} · Outbox: ${Array.isArray(mailData.outbox) ? mailData.outbox.length : 0} · Last sync: ${escapeHtml(mailData.lastSyncAt || "-")}</p>
-        <div class="mail-tester-grid">
-          <input id="mail-test-to" class="settings-input full-span" type="email" placeholder="${escapeHtml(t("mail.recipient"))}" value="${escapeHtml(defaultRecipient)}" />
-          <input id="mail-test-subject" class="settings-input full-span" type="text" placeholder="${escapeHtml(t("mail.subject"))}" value="${escapeHtml(defaultSubject)}" />
-          <textarea id="mail-test-body" class="settings-input full-span custom-summary" placeholder="${escapeHtml(t("mail.body"))}">${escapeHtml(defaultBody)}</textarea>
+        <span class="pill">${escapeHtml(t("settings.languageBadge"))}</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("language"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <strong>${escapeHtml(language?.label || currentLocale)}</strong>
+          <select id="language-select" class="settings-input remote-target" data-title="${escapeHtml(language?.label || currentLocale)}">
+            ${(data.languageSettings?.supported || []).map((item) => `
+              <option value="${escapeHtml(item.code)}" ${item.code === language?.code ? "selected" : ""}>${escapeHtml(item.label)} · ${escapeHtml(item.code)}</option>
+            `).join("")}
+          </select>
+          <p>${escapeHtml(language?.sample || "")}</p>
         </div>
-        <div class="mail-tester-actions">
-          <button id="mail-sync-button" class="remote-target" type="button">${mailTesterState.isSyncing ? `${t("mail.sync")}...` : t("mail.sync")}</button>
-          <button id="mail-send-button" class="remote-target" type="button">${mailTesterState.isSending ? `${t("mail.send")}...` : t("mail.send")}</button>
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "会话" : currentLocale === "ja-JP" ? "会話" : "Session"}</strong>
+          <p>${escapeHtml(buildConceptText("session"))}</p>
         </div>
-        <div class="mail-tester-status" id="mail-tester-status">${escapeHtml(mailTesterState.status || t("mail.statusIdle"))}</div>
       </div>
     `;
-    const syncButton = document.getElementById("mail-sync-button");
-    const sendButton = document.getElementById("mail-send-button");
-    if (syncButton) {
-      syncButton.disabled = mailTesterState.isSyncing;
-      syncButton.onclick = async () => {
-        await syncMailTester();
+    const languageSelect = document.getElementById("language-select");
+    if (languageSelect) {
+      languageSelect.onchange = async (event) => {
+        const nextCode = String(event.target?.value || "").trim();
+        if (nextCode) await persistLanguage(nextCode);
       };
     }
-    if (sendButton) {
-      sendButton.disabled = mailTesterState.isSending;
-      sendButton.onclick = async () => {
-        await sendMailTester();
-      };
-    }
+    return;
   }
+
+  if (activeSettingsSection === "pairing") {
+    const pairing = data.pairingSession || {};
+    const relayMessages = data.relayMessages || [];
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("pairing"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("pairing"))}</h3>
+        </div>
+        <span class="pill">QR + Relay</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("pairing"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <div class="qr-box">
+            <div class="fake-qr remote-target focusable-card" aria-label="pairing qr" tabindex="0">
+              <span id="pairing-code">${escapeHtml(pairing.code || "-")}</span>
+            </div>
+            <div>
+              <p id="pairing-description">${escapeHtml(t("pairing.description"))}</p>
+              <p id="pairing-expiry">${escapeHtml(t("pairing.expiresIn"))}: ${escapeHtml(String(pairing.expiresInSeconds || 0))}s</p>
+              <small id="pairing-payload">${escapeHtml(pairing.qrPayload || "-")}</small>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <div class="panel-header compact">
+            <h3>${currentLocale === "zh-CN" ? "中转消息" : currentLocale === "ja-JP" ? "中継メッセージ" : "Relay Messages"}</h3>
+            <span class="pill">${relayMessages.length}</span>
+          </div>
+          <div class="mini-list" id="relay">
+            ${relayMessages.map((message) => `
+              <div class="relay-item remote-target focusable-card" tabindex="0" data-title="${escapeHtml(message.source)}">
+                <strong>${escapeHtml(message.source)}</strong>
+                <span>${escapeHtml(message.preview)}</span>
+              </div>
+            `).join("") || `<div class="settings-card"><p>${currentLocale === "zh-CN" ? "暂时没有新的中转消息。" : currentLocale === "ja-JP" ? "新しい中継メッセージはありません。" : "No relay messages right now."}</p></div>`}
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if (activeSettingsSection === "mailbox") {
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("mailbox"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("mailbox"))}</h3>
+        </div>
+        <span class="pill">${escapeHtml(t("mail.badge"))}</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("mailbox"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "邮箱配置" : currentLocale === "ja-JP" ? "メール設定" : "Mailbox Configuration"}</strong>
+          <div class="mail-tester-grid">
+            <input id="mailbox-address" class="settings-input full-span" type="email" placeholder="${escapeHtml(t("mail.address"))}" value="${escapeHtml(mailboxSettingsState.mailAddress)}" />
+            <input id="mailbox-password" class="settings-input full-span" type="password" placeholder="${currentLocale === "zh-CN" ? "邮箱密码 / 应用专用密码" : currentLocale === "ja-JP" ? "メールパスワード / アプリパスワード" : "Mailbox password / app password"}" value="${escapeHtml(mailboxSettingsState.mailPassword)}" />
+            <input id="mailbox-smtp-host" class="settings-input" type="text" placeholder="SMTP Host" value="${escapeHtml(mailboxSettingsState.mailSmtpHost)}" />
+            <input id="mailbox-smtp-port" class="settings-input" type="text" placeholder="SMTP Port" value="${escapeHtml(mailboxSettingsState.mailSmtpPort)}" />
+            <input id="mailbox-imap-host" class="settings-input" type="text" placeholder="IMAP Host" value="${escapeHtml(mailboxSettingsState.mailImapHost)}" />
+            <input id="mailbox-imap-port" class="settings-input" type="text" placeholder="IMAP Port" value="${escapeHtml(mailboxSettingsState.mailImapPort)}" />
+          </div>
+          <div class="mail-tester-actions">
+            <button id="mailbox-save-button" class="remote-target" type="button">${mailboxSettingsState.isSaving ? (currentLocale === "zh-CN" ? "保存中..." : currentLocale === "ja-JP" ? "保存中..." : "Saving...") : (currentLocale === "zh-CN" ? "保存邮箱配置" : currentLocale === "ja-JP" ? "メール設定を保存" : "Save Mailbox Settings")}</button>
+          </div>
+          <div class="mail-tester-status">${escapeHtml(mailboxSettingsState.status || (mailConfig.configured ? (currentLocale === "zh-CN" ? "当前邮箱已配置，可直接收发邮件。" : currentLocale === "ja-JP" ? "現在のメールは設定済みで送受信できます。" : "The current mailbox is configured and ready.") : (currentLocale === "zh-CN" ? "请先填写邮箱地址、密码和服务器信息。" : currentLocale === "ja-JP" ? "先にメールアドレス、パスワード、サーバー情報を入力してください。" : "Fill in the mailbox address, password, and server settings first.")))}</div>
+        </div>
+        <div class="settings-card mail-tester-card">
+          <div class="panel-header compact">
+            <h3>${t("mail.title")}</h3>
+            <span class="pill">${t("mail.badge")}</span>
+          </div>
+          <p><strong>${t("mail.address")}:</strong> ${escapeHtml(mailConfig.address || mailboxSettingsState.mailAddress || "-")}</p>
+          <p>Inbox: ${Array.isArray(mailData.inbox) ? mailData.inbox.length : 0} · Outbox: ${Array.isArray(mailData.outbox) ? mailData.outbox.length : 0} · Last sync: ${escapeHtml(mailData.lastSyncAt || "-")}</p>
+          <div class="mail-tester-grid">
+            <input id="mail-test-to" class="settings-input full-span" type="email" placeholder="${escapeHtml(t("mail.recipient"))}" value="${escapeHtml(defaultRecipient)}" />
+            <input id="mail-test-subject" class="settings-input full-span" type="text" placeholder="${escapeHtml(t("mail.subject"))}" value="${escapeHtml(defaultSubject)}" />
+            <textarea id="mail-test-body" class="settings-input full-span custom-summary" placeholder="${escapeHtml(t("mail.body"))}">${escapeHtml(defaultBody)}</textarea>
+          </div>
+          <div class="mail-tester-actions">
+            <button id="mail-sync-button" class="remote-target" type="button">${mailTesterState.isSyncing ? `${t("mail.sync")}...` : t("mail.sync")}</button>
+            <button id="mail-send-button" class="remote-target" type="button">${mailTesterState.isSending ? `${t("mail.send")}...` : t("mail.send")}</button>
+          </div>
+          <div class="mail-tester-status" id="mail-tester-status">${escapeHtml(mailTesterState.status || t("mail.statusIdle"))}</div>
+        </div>
+      </div>
+    `;
+    const mailboxSaveButton = document.getElementById("mailbox-save-button");
+    const mailSyncButton = document.getElementById("mail-sync-button");
+    const mailSendButton = document.getElementById("mail-send-button");
+    if (mailboxSaveButton) mailboxSaveButton.onclick = async () => { await saveMailboxSettings(); };
+    if (mailSyncButton) mailSyncButton.onclick = async () => { await syncMailTester(); };
+    if (mailSendButton) mailSendButton.onclick = async () => { await sendMailTester(); };
+    return;
+  }
+
+  if (activeSettingsSection === "skills") {
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("skills"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("skills"))}</h3>
+        </div>
+        <span class="pill">${escapeHtml(String((data.skillCatalog || []).length))}</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("skills"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "会话" : currentLocale === "ja-JP" ? "会話" : "Session"}</strong>
+          <p>${escapeHtml(buildConceptText("session"))}</p>
+        </div>
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "技能" : currentLocale === "ja-JP" ? "スキル" : "Skills"}</strong>
+          <p>${escapeHtml(buildConceptText("skills"))}</p>
+        </div>
+      </div>
+      <div class="settings-stack">
+        ${(data.skillCatalog || []).map((skill) => `
+          <div class="settings-card">
+            <strong>${escapeHtml(skill.name)}</strong>
+            <p>${escapeHtml(skill.description)}</p>
+            <small>${escapeHtml((skill.inputModes || []).join(" / "))}</small>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  if (activeSettingsSection === "agents") {
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("agents"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("agents"))}</h3>
+        </div>
+        <span class="pill">${escapeHtml(String((data.activeAgents || []).length))}</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("agents"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "智能体" : currentLocale === "ja-JP" ? "エージェント" : "Agents"}</strong>
+          <p>${escapeHtml(buildConceptText("agents"))}</p>
+        </div>
+        <div class="settings-card">
+          <strong>${currentLocale === "zh-CN" ? "可创建类型" : currentLocale === "ja-JP" ? "作成可能タイプ" : "Available Types"}</strong>
+          <p>${escapeHtml(agentTypes.map((item) => item.name).slice(0, 4).join(" / ") || "-")}</p>
+        </div>
+      </div>
+      <div class="settings-stack">
+        ${(data.activeAgents || []).map((agent) => `
+          <div class="agent-card remote-target focusable-card" tabindex="0" data-title="${escapeHtml(agent.name)}">
+            <div class="agent-row">
+              <strong>${escapeHtml(agent.name)}</strong>
+              <span class="pill ${stateColor[agent.status] || "is-muted"}">${escapeHtml(localizeStatusWord(agent.status))}</span>
+            </div>
+            <p>${escapeHtml(agent.role)}</p>
+            <div class="progress"><div style="width:${agent.progress}%"></div></div>
+            <small>${escapeHtml(agent.lastUpdate)}</small>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    return;
+  }
+
+  detail.innerHTML = `
+    ${overview}
+    <div class="settings-section-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(settingsSectionHeading("ai-models"))}</p>
+        <h3>${escapeHtml(settingsSectionHeading("ai-models"))}</h3>
+      </div>
+      <span class="pill">${escapeHtml(t("settings.catalogBadge"))}</span>
+    </div>
+    <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("ai-models"))}</p>
+    <div class="settings-detail-grid">
+      <div class="settings-card">
+        <strong>${currentLocale === "zh-CN" ? "技能" : currentLocale === "ja-JP" ? "スキル" : "Skills"}</strong>
+        <p>${escapeHtml(buildConceptText("skills"))}</p>
+      </div>
+      <div class="settings-card">
+        <strong>${currentLocale === "zh-CN" ? "AI 模型" : currentLocale === "ja-JP" ? "AI モデル" : "AI Models"}</strong>
+        <p>${escapeHtml(buildConceptText("models"))}</p>
+      </div>
+    </div>
+    <div class="settings-stack" id="audio-stack"></div>
+    <div class="catalog-grid" id="model-stack-cards"></div>
+    <div class="custom-provider-form">
+      <div class="panel-header compact">
+        <h3 id="custom-stack-title">${t("settings.customStackTitle")}</h3>
+        <span class="pill" id="custom-stack-pill">${t("settings.customStackBadge")}</span>
+      </div>
+      <div class="custom-provider-grid">
+        <input id="custom-provider-id" class="settings-input" type="text" placeholder="entry-id" />
+        <input id="custom-provider-label" class="settings-input" type="text" placeholder="Display name" />
+        <input id="custom-source" class="settings-input" type="text" placeholder="Source: OpenClaw / WorkBuddy / Custom" />
+        <input id="custom-capabilities" class="settings-input" type="text" placeholder="Capabilities: Wake Word, ASR, LLM, RAG" />
+        <input id="custom-models" class="settings-input full-span" type="text" placeholder="Models: Porcupine, Whisper, Qwen2.5" />
+        <textarea id="custom-summary" class="settings-input full-span custom-summary" placeholder="Summary of what this stack or capability does"></textarea>
+        <select id="custom-sync-openclaw" class="settings-input"><option value="manual">OpenClaw sync: Manual</option><option value="aligned">OpenClaw sync: Aligned</option><option value="config-compatible">OpenClaw sync: Config compatible</option></select>
+        <select id="custom-sync-workbuddy" class="settings-input"><option value="manual">WorkBuddy sync: Manual</option><option value="not-supported">WorkBuddy sync: Not supported</option><option value="conceptual">WorkBuddy sync: Conceptual only</option></select>
+        <input id="custom-languages" class="settings-input full-span" type="text" placeholder="zh-CN,en-US,ja-JP" />
+      </div>
+      <button id="custom-provider-save" class="custom-provider-save remote-target" type="button">${t("settings.customSave")}</button>
+    </div>
+  `;
+  populateAiModelsSection(data, language);
+}
+
+function renderSettings(data) {
+  syncMailboxSettingsFromDom();
+  initializeMailboxSettingsState(data);
+  renderSettingsDirectory(data);
+  renderSettingsDetail(data);
 }
 
 function readMailTesterForm() {
@@ -1636,13 +2388,14 @@ async function sendMailTester() {
 }
 
 function updateSpokenLine(text) {
-  document.getElementById("spoken-line").textContent = text;
+  setTextIfPresent("spoken-line", text);
   renderFloatingBuddy();
 }
 
 function updateConversation(conversation) {
   if (!latestDashboard) return;
   latestDashboard.conversation = conversation;
+  testConversation = Array.isArray(conversation) ? [...conversation] : [];
   renderVoice(latestDashboard);
   renderTestLab();
 }
@@ -1667,12 +2420,18 @@ function focusUiNode(node, selector = "") {
 
 function executeUiAction(action) {
   if (!action || typeof action !== "object") return false;
-  if (action.type === "switch_tab" && action.tab && tabs.includes(action.tab)) {
+  if (action.type === "switch_tab" && action.tab) {
+    if (action.tab === "pairing") {
+      activeSettingsSection = "pairing";
+    }
     activateTab(action.tab);
     return true;
   }
   if (action.type === "focus_element") {
-    if (action.tab && tabs.includes(action.tab)) {
+    if (action.tab === "pairing") {
+      activeSettingsSection = "pairing";
+    }
+    if (action.tab) {
       activateTab(action.tab, false);
     }
     requestAnimationFrame(() => {
@@ -1685,7 +2444,7 @@ function executeUiAction(action) {
     return true;
   }
   if (action.type === "select_agent") {
-    if (action.tab && tabs.includes(action.tab)) {
+    if (action.tab) {
       activateTab(action.tab, false);
     }
     if (action.agentId) {
@@ -1750,22 +2509,7 @@ async function sendTestMessage() {
       await sendTestAttachmentMessage(message);
       testUploadAttachment = null;
     } else {
-      const selected = getSelectedStudioAgent();
-      if (selected && selected.status === "complete") {
-        await sendTestAgentMessage(message, selected);
-      } else {
-        const payload = await sendVoiceMessage(message, { speakReply: false });
-        const replyText = String(payload?.reply || "").trim();
-        if (replyText) {
-          testConversation.push({
-            speaker: "HomeHub",
-            text: replyText,
-            time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" }),
-            artifacts: Array.isArray(payload?.artifacts) ? payload.artifacts : []
-          });
-          renderTestLab();
-        }
-      }
+      await sendVoiceMessage(message, { speakReply: false });
     }
   } finally {
     customAgentStudio.isThinking = false;
@@ -1816,7 +2560,18 @@ async function sendTestAgentMessage(message, selected = null) {
 async function sendTestAttachmentMessage(message) {
   const selected = getSelectedStudioAgent();
   if (!selected || selected.status !== "complete") {
-    updateSpokenLine("HomeHub: Select a completed blueprint before sending an image.");
+    const replyText = currentLocale === "zh-CN"
+      ? "HomeHub：当前还没有可接收附件的已完成智能体，请先到“智能体”标签中完成一个蓝图。"
+      : currentLocale === "ja-JP"
+        ? "HomeHub: 添付を受け取れる完成済みエージェントがまだありません。先に「エージェント」タブでブループリントを完成させてください。"
+        : "HomeHub: There is no completed smart unit ready for attachments yet. Finish one in the Agents tab first.";
+    testConversation.push({
+      speaker: "HomeHub",
+      text: replyText,
+      time: new Date().toLocaleTimeString(currentLocale, { hour: "2-digit", minute: "2-digit" })
+    });
+    renderTestLab();
+    updateSpokenLine(replyText);
     return;
   }
   const userText = message || `[Image uploaded] ${testUploadAttachment?.name || ""}`.trim();
@@ -1883,7 +2638,7 @@ async function generateSelectedFeature() {
 }
 
 function revealInScrollableParent(target) {
-  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice, #test-conversation, #studio-blueprints, #studio-actions-log");
+  const scrollParent = target.closest("#modules, #timeline, #agents, #models, #skills, #relay, #conversation, #voice, #test-conversation, #studio-blueprints, #studio-actions-log, #settings-directory-list, #settings-detail-scroll");
   if (!scrollParent) return;
   target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
@@ -1956,6 +2711,14 @@ async function triggerRemoteAction(target) {
     }
     return;
   }
+  if (target.id === "test-file-pick") {
+    const fileInput = document.getElementById("test-file-input");
+    if (fileInput) {
+      fileInput.value = "";
+      fileInput.click();
+    }
+    return;
+  }
   if (target.id === "test-generate-feature") {
     await generateSelectedFeature();
     return;
@@ -1987,11 +2750,14 @@ async function triggerRemoteAction(target) {
 }
 
 function activateTab(tabName, focusTab = true) {
-  activeTab = tabName;
+  const normalized = normalizeTabName(tabName);
+  if (tabName === "pairing") activeSettingsSection = "pairing";
+  activeTab = normalized;
   tabs.forEach((name) => {
     const tab = document.getElementById(`tab-${name}`);
     const panel = document.getElementById(`panel-${name}`);
-    const selected = name === tabName;
+    if (!tab || !panel) return;
+    const selected = name === normalized;
     tab.classList.toggle("is-selected", selected);
     tab.setAttribute("aria-selected", String(selected));
     tab.tabIndex = selected ? 0 : -1;
@@ -2000,21 +2766,27 @@ function activateTab(tabName, focusTab = true) {
     panel.classList.toggle("is-visible", selected);
   });
   renderFloatingBuddy();
+  if (normalized === "cortex" && !latestCortexUnpacked) {
+    loadCortexUnpacked().catch((error) => console.warn("Failed to load cortex unpacked view.", error));
+  }
 }
 
 function goToPreviousTab() {
   const currentIndex = tabs.indexOf(activeTab);
   if (currentIndex > 0) {
     activateTab(tabs[currentIndex - 1]);
-    updateSpokenLine(t("prompts.returnedTab", { tab: document.getElementById(`tab-${tabs[currentIndex - 1]}`).textContent }));
+    const previousTabLabel = document.getElementById(`tab-${tabs[currentIndex - 1]}`)?.textContent || tabs[currentIndex - 1];
+    updateSpokenLine(t("prompts.returnedTab", { tab: previousTabLabel }));
   } else {
     activateTab("home");
-    updateSpokenLine(t("prompts.returnedTab", { tab: document.getElementById("tab-home").textContent }));
+    updateSpokenLine(t("prompts.returnedTab", { tab: document.getElementById("tab-home")?.textContent || "home" }));
   }
 }
 
 function setupTabs() {
-  document.getElementById("tabbar").addEventListener("click", (event) => {
+  const tabbar = document.getElementById("tabbar");
+  if (!tabbar) return;
+  tabbar.addEventListener("click", (event) => {
     const button = event.target.closest("[data-tab]");
     if (!button) return;
     activateTab(button.dataset.tab);
@@ -2048,6 +2820,11 @@ function setupRemoteNavigation() {
         event.preventDefault();
         await sendTestMessage();
       }
+      if (event.key === "Enter" && activeElement.id === "cortex-request-input" && !event.shiftKey) {
+        event.preventDefault();
+        readCortexTesterInputs();
+        await loadCortexUnpacked();
+      }
       return;
     }
     const keyToDirection = { ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down" };
@@ -2075,6 +2852,24 @@ function setupRemoteNavigation() {
 }
 
 function setupTestControls() {
+  const applyAttachment = (file, kind) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.includes(",") ? result.split(",")[1] : "";
+      testUploadAttachment = {
+        name: file.name,
+        mimeType: file.type || (kind === "image" ? "image/png" : "application/octet-stream"),
+        sizeBytes: file.size || 0,
+        imageBase64: kind === "image" ? base64 : "",
+        fileBase64: kind === "file" ? base64 : "",
+        kind
+      };
+      updateSpokenLine(`HomeHub: Attached ${kind === "file" ? "file" : "image"} ${file.name}.`);
+      renderTestLab();
+    };
+    reader.readAsDataURL(file);
+  };
   const imageInput = document.getElementById("test-image-input");
   if (imageInput) {
     imageInput.addEventListener("change", (event) => {
@@ -2084,21 +2879,21 @@ function setupTestControls() {
         renderTestLab();
         return;
       }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = String(reader.result || "");
-        const base64 = result.includes(",") ? result.split(",")[1] : "";
-        testUploadAttachment = {
-          name: file.name,
-          mimeType: file.type || "image/png",
-          sizeBytes: file.size || 0,
-          imageBase64: base64
-        };
-        updateSpokenLine(`HomeHub: Attached image ${file.name}.`);
+      applyAttachment(file, "image");
+      imageInput.value = "";
+    });
+  }
+  const fileInput = document.getElementById("test-file-input");
+  if (fileInput) {
+    fileInput.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        testUploadAttachment = null;
         renderTestLab();
-        imageInput.value = "";
-      };
-      reader.readAsDataURL(file);
+        return;
+      }
+      applyAttachment(file, file.type.startsWith("image/") ? "image" : "file");
+      fileInput.value = "";
     });
   }
 }
@@ -2239,6 +3034,7 @@ async function loadDashboard() {
     testConversation = data.conversation;
   }
   await refreshCustomAgentStudio();
+  ensureCortexTesterState();
   applyStaticTranslations();
   renderClock();
   renderStatusStrip(data);
@@ -2253,8 +3049,12 @@ async function loadDashboard() {
   renderTestLab();
   renderReminderOverlay(data);
   renderSettings(data);
+  renderCortexUnpacked(latestCortexUnpacked);
   renderFloatingBuddy();
   renderBootstrapOverlay(data.bootstrap || {});
+  if (!latestCortexUnpacked) {
+    await loadCortexUnpacked();
+  }
 }
 
 function refreshDashboardInBackground() {
@@ -2312,17 +3112,30 @@ async function persistAudioProvider(providerType, providerId) {
 }
 
 async function saveCustomProvider() {
+  const idInput = document.getElementById("custom-provider-id");
+  const labelInput = document.getElementById("custom-provider-label");
+  const sourceInput = document.getElementById("custom-source");
+  const capabilitiesInput = document.getElementById("custom-capabilities");
+  const modelsInput = document.getElementById("custom-models");
+  const summaryInput = document.getElementById("custom-summary");
+  const syncOpenclawInput = document.getElementById("custom-sync-openclaw");
+  const syncWorkbuddyInput = document.getElementById("custom-sync-workbuddy");
+  const languagesInput = document.getElementById("custom-languages");
+  if (!idInput || !labelInput || !sourceInput || !capabilitiesInput || !modelsInput || !summaryInput || !syncOpenclawInput || !syncWorkbuddyInput || !languagesInput) {
+    updateSpokenLine(currentLocale === "zh-CN" ? "HomeHub：AI 模型目录尚未打开。" : currentLocale === "ja-JP" ? "HomeHub: AI モデル画面がまだ開かれていません。" : "HomeHub: The AI models section is not open yet.");
+    return;
+  }
   const body = {
     entryType: "capability",
-    id: document.getElementById("custom-provider-id").value.trim(),
-    label: document.getElementById("custom-provider-label").value.trim(),
-    source: document.getElementById("custom-source").value.trim(),
-    capabilities: document.getElementById("custom-capabilities").value.trim(),
-    models: document.getElementById("custom-models").value.trim(),
-    summary: document.getElementById("custom-summary").value.trim(),
-    syncOpenclaw: document.getElementById("custom-sync-openclaw").value,
-    syncWorkbuddy: document.getElementById("custom-sync-workbuddy").value,
-    supportedLanguages: document.getElementById("custom-languages").value.trim()
+    id: idInput.value.trim(),
+    label: labelInput.value.trim(),
+    source: sourceInput.value.trim(),
+    capabilities: capabilitiesInput.value.trim(),
+    models: modelsInput.value.trim(),
+    summary: summaryInput.value.trim(),
+    syncOpenclaw: syncOpenclawInput.value,
+    syncWorkbuddy: syncWorkbuddyInput.value,
+    supportedLanguages: languagesInput.value.trim()
   };
   const response = await fetch("/api/settings/audio-provider", {
     method: "POST",
@@ -2334,13 +3147,13 @@ async function saveCustomProvider() {
     updateSpokenLine(payload.error || t("prompts.saveCustomProviderFailed"));
     return;
   }
-  document.getElementById("custom-provider-id").value = "";
-  document.getElementById("custom-provider-label").value = "";
-  document.getElementById("custom-source").value = "";
-  document.getElementById("custom-capabilities").value = "";
-  document.getElementById("custom-models").value = "";
-  document.getElementById("custom-summary").value = "";
-  document.getElementById("custom-languages").value = "zh-CN,en-US,ja-JP";
+  idInput.value = "";
+  labelInput.value = "";
+  sourceInput.value = "";
+  capabilitiesInput.value = "";
+  modelsInput.value = "";
+  summaryInput.value = "";
+  languagesInput.value = "zh-CN,en-US,ja-JP";
   await loadDashboard();
   updateSpokenLine(t("prompts.customProviderSaved", { label: body.label || body.id }));
 }
@@ -2537,13 +3350,14 @@ function setupFloatingBuddyControls() {
 
 function setupCustomProviderControls() {
   const saveButton = document.getElementById("custom-provider-save");
+  if (!saveButton) return;
   const languagesInput = document.getElementById("custom-languages");
   if (languagesInput && !languagesInput.value) {
     languagesInput.value = "zh-CN,en-US,ja-JP";
   }
-  saveButton.addEventListener("click", async () => {
+  saveButton.onclick = async () => {
     await saveCustomProvider();
-  });
+  };
 }
 
 function setupBootstrapControls() {
@@ -2577,6 +3391,7 @@ setupTabs();
 setupRemoteNavigation();
 setupVoiceControls();
 setupTestControls();
+setupCortexControls();
 setupCustomProviderControls();
 setupBootstrapControls();
 setupReminderOverlayControls();

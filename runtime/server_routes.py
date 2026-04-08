@@ -4,6 +4,10 @@ from copy import deepcopy
 from urllib.parse import parse_qs
 
 
+def _parse_bool(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def handle_get_route(handler, parsed, runtime, context: dict) -> bool:
     path = parsed.path
     feature_response = context["feature_manager"].handle_api("GET", path, parse_qs(parsed.query), None, runtime)
@@ -21,6 +25,20 @@ def handle_get_route(handler, parsed, runtime, context: dict) -> bool:
 
     if path == "/api/bootstrap/status":
         handler._send_json(context["bootstrap_snapshot"]())
+        return True
+
+    if path == "/api/cortex/unpacked":
+        params = parse_qs(parsed.query)
+        request = {
+            "command": str(params.get("command", [""])[0]).strip(),
+            "locale": context["normalize_locale"](params.get("locale", [context["persisted_settings"]["language"]])[0], context["persisted_settings"]["language"]),
+            "taskType": str(params.get("taskType", ["general_chat"])[0]).strip() or "general_chat",
+            "inputModes": context["normalize_string_list"](params.get("inputModes", ["text"])[0]) or ["text"],
+            "requireArtifacts": _parse_bool(params.get("requireArtifacts", ["false"])[0]),
+            "requiresNetwork": _parse_bool(params.get("requiresNetwork", ["true"])[0]),
+            "speakReply": _parse_bool(params.get("speakReply", ["false"])[0]),
+        }
+        handler._send_json(context["build_cortex_unpacked"](request))
         return True
 
     if path == "/api/providers":
@@ -145,6 +163,20 @@ def handle_post_route(handler, parsed, runtime, preview_body, raw_text: str, req
         context["persisted_settings"]["language"] = language
         context["save_persisted_settings"](context["persisted_settings"])
         handler._send_json({"ok": True, "language": language})
+        return True
+
+    if parsed.path == "/api/cortex/unpacked":
+        body = preview_body if isinstance(preview_body, dict) else {}
+        request = {
+            "command": str(body.get("command", "")).strip(),
+            "locale": context["normalize_locale"](body.get("locale", context["persisted_settings"]["language"]), context["persisted_settings"]["language"]),
+            "taskType": str(body.get("taskType", "general_chat")).strip() or "general_chat",
+            "inputModes": context["normalize_string_list"](body.get("inputModes", ["text"])) or ["text"],
+            "requireArtifacts": bool(body.get("requireArtifacts", False)),
+            "requiresNetwork": bool(body.get("requiresNetwork", False)),
+            "speakReply": bool(body.get("speakReply", False)),
+        }
+        handler._send_json(context["build_cortex_unpacked"](request))
         return True
 
     if parsed.path == "/api/semantic-memory/record":

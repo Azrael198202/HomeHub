@@ -1,6 +1,68 @@
 {
   "items": [
     {
+      "id": "custom-agent-20260408140535",
+      "type": "general_chat",
+      "name": "Handle demand: 你好，智能体",
+      "status": "review",
+      "createdAt": "2026-04-08T14:05",
+      "updatedAt": "2026-04-08T14:05",
+      "profile": {
+        "name": "Handle demand: 你好，智能体",
+        "goal": "你好，能说话吗",
+        "primaryUser": "",
+        "trigger": "",
+        "inputs": "[]",
+        "output": "先完成需求处理，再返回结果、建议或可交付物。",
+        "constraints": "Required capabilities: semantic-understanding, network-research | Runtime hooks: controlled network lookup",
+        "checkPrompt": "",
+        "noInputAction": "",
+        "hasInputAction": "False",
+        "allowNetworkLookup": "False",
+        "preferredSources": "[]",
+        "lookupPolicy": "official-only"
+      },
+      "qaHistory": [],
+      "artifact": "# Handle demand: 你好，智能体\n\n## Goal\n你好，能说话吗\n\n## Primary User\n\n\n## Trigger\n\n\n## Required Inputs\n[]\n\n## Output\n先完成需求处理，再返回结果、建议或可交付物。\n\n## Proactive Check Prompt\n\n\n## If No New Input\n\n\n## If New Input Arrives\nFalse\n\n## Network Lookup\nAllowed: False\nPreferred Sources: []\nLookup Policy: official-only\n\n## Constraints\nRequired capabilities: semantic-understanding, network-research | Runtime hooks: controlled network lookup\n\n## HomeHub Execution Notes\n- 在语音或文字对话中识别用户需求。\n- 如果资料不完整，先主动追问，再执行。\n- 在允许范围内复用本地家庭记忆、文档、日程和消息桥接输入。\n- 在执行过程中持续给用户简短进度反馈。",
+      "generatedFeaturePath": "",
+      "generatedFeatureId": "",
+      "records": [],
+      "autonomousCreation": {
+        "createdFromDemand": "你好，能说话吗",
+        "requirement": {
+          "command": "你好，能说话吗",
+          "taskType": "general_chat",
+          "inputModes": [
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "network-research"
+          ],
+          "decisionHints": {
+            "requireSearch": true,
+            "requireArchive": false,
+            "requireFollowUp": false,
+            "requireArtifact": false
+          }
+        },
+        "proposedBrain": {
+          "agentType": "general_chat",
+          "mission": "Handle demand: 你好，能说话吗",
+          "inputModes": [
+            "text"
+          ],
+          "requiredCapabilities": [
+            "semantic-understanding",
+            "network-research"
+          ],
+          "featureHooks": [
+            "controlled network lookup"
+          ]
+        }
+      }
+    },
+    {
       "id": "custom-agent-20260406173904",
       "type": "custom-agent",
       "name": "Tommy Hahn，你好：\r\n\r\n验证这个邮箱\r\n\r\n你好，\r\n\r\n我们正在发送验证码来验证这个邮箱，以便我们在审核你的身份证件后联系你。\r\n\r\n427142\r\n\r\n切勿与任何人分享这组验证码。\r\n\r\n如果有人索要这组验证码\r\n\r\n切勿将这组验证码分享给任何人，即使是对方声称是 Facebook 或 Meta 工作人员时，如出现这种情况，对方可能企图入侵你的账户。\r\n\r\n并未期望收到此邮件？\r\n\r\n如果你收到这封邮件，但并未尝试过验证身份，则可能是有人企图入侵你的账户。只要你未将这组验证码分享给任何人，就无需执行其他任何步骤。如果你想加强账户安全，请访问账户安全检查。\r\n\r\n谢谢！ Facebook 安全团队\r\n\r\n想知道这封邮件是不是我们发送的？请访问帮助中心进行确认：www.facebook.com/help/check-email\r\n\r\n谢谢！\r\nFacebook 团队\r\n\r\n\r\n\r\n========================================\r\n此邮件按你请求已发送至 futuredreamworkshop@gmail.com 。\r\nMeta Platforms, Inc., Attention: Community Support, 1 Meta Way, Menlo Park, CA 94025",
@@ -304,6 +366,11 @@
   ],
   "recentActions": [
     {
+      "id": "custom-act-2026-04-08T14:05",
+      "summary": "Autonomously prepared agent draft 'Handle demand: 你好，智能体' from a detected capability gap.",
+      "createdAt": "2026-04-08T14:05"
+    },
+    {
       "id": "custom-act-2026-04-06T18:17",
       "summary": "Recorded artifact_generation payload for '家庭账单'.",
       "createdAt": "2026-04-06T18:17"
@@ -357,11 +424,6 @@
       "id": "custom-act-2026-04-06T16:42",
       "summary": "Recorded artifact_generation payload for '家庭账单'.",
       "createdAt": "2026-04-06T16:42"
-    },
-    {
-      "id": "custom-act-2026-04-06T16:41",
-      "summary": "Recorded attachment_input payload for '家庭账单'.",
-      "createdAt": "2026-04-06T16:41"
     }
   ]
 }
