@@ -1,0 +1,20 @@
+{
+  "settings": {
+    "enabled": true
+  },
+  "items": [],
+  "recentActions": [
+    {
+      "id": "handle_demand-20260409T2217",
+      "summary": "Exported 0 records from Handle demand: 你好智能体.",
+      "createdAt": "2026-04-09T22:17"
+    },
+    {
+      "id": "handle_demand-ready",
+      "summary": "Handle demand: 你好智能体 is ready.",
+      "createdAt": "2026-04-09T22:17"
+    }
+  ],
+  "lastRun": "2026-04-09T22:17",
+  "lastSummary": {}
+}

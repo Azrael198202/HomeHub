@@ -1566,6 +1566,133 @@ function getSelectedProviders() {
   return latestDashboard?.audioProviders?.selected || { stt: "google", tts: "google" };
 }
 
+function localizeInline(zh, ja, en) {
+  if (currentLocale === "zh-CN") return zh;
+  if (currentLocale === "ja-JP") return ja;
+  return en;
+}
+
+function buildHomeWorkspaceSummary(data) {
+  const assistantMemory = data?.assistantMemory || {};
+  const dueReminders = Array.isArray(assistantMemory.dueReminders) ? assistantMemory.dueReminders : [];
+  const pendingReminders = Array.isArray(assistantMemory.pendingReminders) ? assistantMemory.pendingReminders : [];
+  const upcomingEvents = Array.isArray(assistantMemory.upcomingEvents) ? assistantMemory.upcomingEvents : [];
+  const customAgents = Array.isArray(data?.customAgents) ? data.customAgents : [];
+  const collectingAgents = customAgents.filter((item) => ["collecting", "review"].includes(String(item?.status || "")));
+  const completedAgents = customAgents.filter((item) => String(item?.status || "") === "complete");
+  const features = Array.isArray(data?.features) ? data.features : [];
+  const conversation = Array.isArray(data?.conversation) ? data.conversation : [];
+  const externalChannels = data?.externalChannels || {};
+  const apps = externalChannels.apps || {};
+  const mail = externalChannels.mail || {};
+  const weather = data?.weather || {};
+  const lineInbox = Array.isArray(apps?.line?.inbox) ? apps.line.inbox.length : 0;
+  const wechatInbox = Array.isArray(apps?.wechatOfficial?.inbox) ? apps.wechatOfficial.inbox.length : 0;
+  const mailInbox = Array.isArray(mail?.inbox) ? mail.inbox.length : 0;
+  const inboundCount = lineInbox + wechatInbox + mailInbox;
+  const hasWeather = weather && weather.temperatureC !== null && weather.temperatureC !== undefined && weather.location;
+  const hour = new Date().getHours();
+  const greeting = currentLocale === "zh-CN"
+    ? (hour < 12 ? "早上好，HomeHub 已经准备好了。" : hour < 18 ? "下午好，HomeHub 正在待命。" : "晚上好，HomeHub 已经在线。")
+    : currentLocale === "ja-JP"
+      ? (hour < 12 ? "おはようございます。HomeHub の準備ができています。" : hour < 18 ? "こんにちは。HomeHub は待機中です。" : "こんばんは。HomeHub はオンラインです。")
+      : (hour < 12 ? "Good morning. HomeHub is ready." : hour < 18 ? "Good afternoon. HomeHub is standing by." : "Good evening. HomeHub is online.");
+
+  let focusTitle = localizeInline("系统待命中", "待機中です", "System is ready");
+  let focusSummary = localizeInline("可以直接提问、创建提醒，或者开始新的蓝图。", "質問、リマインダー作成、新しいブループリント作成をそのまま始められます。", "You can ask a question, create a reminder, or start a new blueprint right away.");
+
+  if (dueReminders.length) {
+    focusTitle = localizeInline("有提醒到时间了", "今すぐ処理すべきリマインダーがあります", "A reminder is due now");
+    focusSummary = localizeInline(
+      `当前最紧急的是“${dueReminders[0].title || "提醒"}”。进入交流区后可以直接完成它。`,
+      `最優先は「${dueReminders[0].title || "リマインダー"}」です。会話タブですぐに処理できます。`,
+      `The most urgent item is "${dueReminders[0].title || "Reminder"}". Open Exchange to complete it.`
+    );
+  } else if (collectingAgents.length) {
+    focusTitle = localizeInline("有蓝图还在收集中", "収集中のブループリントがあります", "A blueprint is still in progress");
+    focusSummary = localizeInline(
+      `“${collectingAgents[0].name || "未命名蓝图"}” 还没有完成确认，继续补充后就可以生成 feature。`,
+      `「${collectingAgents[0].name || "無題のブループリント"}」はまだ確認前です。続きを補えば feature を生成できます。`,
+      `"${collectingAgents[0].name || "Untitled blueprint"}" still needs confirmation before feature generation.`
+    );
+  } else if (pendingReminders.length) {
+    focusTitle = localizeInline("今天已有待处理提醒", "今日のリマインダーがあります", "There are reminders queued");
+    focusSummary = localizeInline(
+      `接下来是“${pendingReminders[0].title || "提醒"}”，时间 ${formatReminderTimestamp(pendingReminders[0].triggerAt)}。`,
+      `次は「${pendingReminders[0].title || "リマインダー"}」、時刻は ${formatReminderTimestamp(pendingReminders[0].triggerAt)} です。`,
+      `Next up is "${pendingReminders[0].title || "Reminder"}" at ${formatReminderTimestamp(pendingReminders[0].triggerAt)}.`
+    );
+  } else if (upcomingEvents.length) {
+    focusTitle = localizeInline("本地日程已经排好", "ローカル予定が入っています", "Local schedule is active");
+    focusSummary = localizeInline(
+      `下一项安排是“${upcomingEvents[0].title || "事件"}”，时间 ${formatReminderTimestamp(upcomingEvents[0].startAt || upcomingEvents[0].triggerAt)}。`,
+      `次の予定は「${upcomingEvents[0].title || "イベント"}」、時刻は ${formatReminderTimestamp(upcomingEvents[0].startAt || upcomingEvents[0].triggerAt)} です。`,
+      `The next event is "${upcomingEvents[0].title || "Event"}" at ${formatReminderTimestamp(upcomingEvents[0].startAt || upcomingEvents[0].triggerAt)}.`
+    );
+  } else if (hasWeather) {
+    focusTitle = localizeInline("当前天气已经同步", "現在の天気が同期されています", "Weather is synced");
+    focusSummary = localizeInline(
+      `${weather.location} 当前 ${weather.condition}，${weather.temperatureC}°C。你可以继续追问温度、体感或出行建议。`,
+      `${weather.location} は現在 ${weather.condition}、${weather.temperatureC}°C です。体感や外出の相談も続けてできます。`,
+      `${weather.location} is currently ${weather.condition} at ${weather.temperatureC}°C. You can follow up with travel or outfit questions.`
+    );
+  } else if (inboundCount) {
+    focusTitle = localizeInline("外部通道有新动态", "外部チャネルに動きがあります", "External channels have activity");
+    focusSummary = localizeInline(
+      `目前共有 ${inboundCount} 条外部收件，设置页可以继续配置邮件、LINE 或微信桥接。`,
+      `現在 ${inboundCount} 件の外部受信があります。設定タブでメール、LINE、WeChat 連携を続けて設定できます。`,
+      `There are ${inboundCount} inbound external items. Configure mail, LINE, or WeChat from Settings.`
+    );
+  }
+
+  const featureNames = features.map((item) => item?.name).filter(Boolean).slice(0, 3);
+  const cards = [
+    {
+      id: "overview-home",
+      label: localizeInline("提醒", "リマインダー", "Reminders"),
+      value: dueReminders.length
+        ? localizeInline(`${dueReminders.length} 个到点提醒`, `${dueReminders.length} 件の期限リマインダー`, `${dueReminders.length} due reminders`)
+        : pendingReminders.length
+          ? localizeInline(`${pendingReminders.length} 条待处理`, `${pendingReminders.length} 件の待機中`, `${pendingReminders.length} queued`)
+          : "0",
+      meta: dueReminders.length
+        ? (dueReminders[0].title || localizeInline("提醒", "リマインダー", "Reminder"))
+        : pendingReminders.length
+          ? localizeInline("当前没有到点提醒", "期限の通知はまだありません", "No reminder is due yet")
+          : localizeInline("当前没有待处理提醒", "現在保留中の通知はありません", "No active reminders"),
+      state: dueReminders.length ? "attention" : (pendingReminders.length ? "active" : "ready"),
+      buttonLabel: localizeInline("进入交流", "会話へ", "Open Exchange"),
+      tab: "exchange",
+    },
+    {
+      id: "overview-blueprints",
+      label: localizeInline("蓝图", "ブループリント", "Blueprints"),
+      value: localizeInline(`${completedAgents.length} 已创建 / ${collectingAgents.length} 创建中`, `${completedAgents.length} 作成済み / ${collectingAgents.length} 作成中`, `${completedAgents.length} created / ${collectingAgents.length} in progress`),
+      meta: collectingAgents.length
+        ? localizeInline("继续补字段，确认后即可生成 feature。", "項目を補い、確認後に feature を生成できます。", "Finish the missing fields, then generate a feature.")
+        : localizeInline("可以直接从语音开始新的业务蓝图。", "音声から新しい業務ブループリントを始められます。", "You can start a new business blueprint by voice."),
+      state: collectingAgents.length ? "attention" : (completedAgents.length ? "active" : "ready"),
+      buttonLabel: localizeInline("打开蓝图", "ブループリントを開く", "Open Blueprints"),
+      tab: "blueprints",
+    },
+    {
+      id: "overview-channels",
+      label: localizeInline("通道", "チャネル", "Channels"),
+      value: localizeInline(`${inboundCount} 条收件`, `${inboundCount} 件の受信`, `${inboundCount} inbound`),
+      meta: localizeInline(
+        `LINE ${lineInbox} / 微信 ${wechatInbox} / 邮件 ${mailInbox}`,
+        `LINE ${lineInbox} / WeChat ${wechatInbox} / Mail ${mailInbox}`,
+        `LINE ${lineInbox} / WeChat ${wechatInbox} / Mail ${mailInbox}`
+      ),
+      state: inboundCount ? "active" : "ready",
+      buttonLabel: localizeInline("打开设置", "設定を開く", "Open Settings"),
+      tab: "settings",
+    },
+  ];
+
+  return { greeting, focusTitle, focusSummary, cards };
+}
+
 function applyStaticTranslations() {
   document.documentElement.lang = currentLocale;
   document.title = t("metaTitle");
@@ -1577,10 +1704,10 @@ function applyStaticTranslations() {
   setTextIfPresent("tab-blueprints", t("tabs.blueprints"));
   setTextIfPresent("tab-agents", t("tabs.agents"));
   setTextIfPresent("tab-settings", t("tabs.settings"));
-  setTextIfPresent("home-assistant-title", t("top.homeAssistant"));
-  setTextIfPresent("home-assistant-pill", t("top.starterLayer"));
-  setTextIfPresent("home-dev-title", t("top.aiBoard"));
-  setTextIfPresent("home-dev-pill", t("top.liveWorkflow"));
+  setTextIfPresent("home-assistant-title", localizeInline("当前能力", "現在の能力", "Current Capabilities"));
+  setTextIfPresent("home-assistant-pill", localizeInline("可直接使用", "すぐ使える", "Ready Now"));
+  setTextIfPresent("home-dev-title", localizeInline("最近动态", "最近の動き", "Recent Activity"));
+  setTextIfPresent("home-dev-pill", localizeInline("真实运行", "実行中", "Live Feed"));
   setTextIfPresent("agents-title", t("top.parallelAgents"));
   setTextIfPresent("agents-pill", t("top.coreEngine"));
   setTextIfPresent("models-skills-title", t("top.modelsSkills"));
@@ -1746,12 +1873,31 @@ function getCurrentLanguage(data) {
 function renderHero(data) {
   const hero = document.getElementById("hero");
   if (!hero) return;
+  const homeSummary = buildHomeWorkspaceSummary(data);
+  const reminderCount = (data.assistantMemory?.pendingReminders || []).length + (data.assistantMemory?.dueReminders || []).length;
+  const collectingCount = (data.customAgents || []).filter((item) => ["collecting", "review"].includes(String(item?.status || ""))).length;
+  const inboundCount = (data.externalChannels?.apps?.line?.inbox || []).length
+    + (data.externalChannels?.apps?.wechatOfficial?.inbox || []).length
+    + (data.externalChannels?.mail?.inbox || []).length;
   hero.innerHTML = `
     <div class="hero-copy">
       <p class="eyebrow">${t("brandEyebrow")}</p>
       <h2 class="hero-title">${data.hero.title}</h2>
-      <p class="tagline">${t("hero.tagline")}</p>
-      <p class="hero-hint">${t("hero.hint")}</p>
+      <p class="tagline">${homeSummary.greeting}</p>
+      <p class="hero-focus">${homeSummary.focusTitle}</p>
+      <div class="hero-mini-tabs" aria-label="${localizeInline("首页状态概览", "ホーム状態の概要", "Home status summary")}">
+        ${homeSummary.cards.map((card) => `
+          <button type="button" class="hero-mini-tab remote-target ${stateColor[card.state] || "is-ready"}" data-tab="${escapeHtml(card.tab || "home")}">
+            <span class="hero-mini-tab-label">${escapeHtml(card.label)}</span>
+            <strong class="hero-mini-tab-value">${escapeHtml(String(card.value || "-"))}</strong>
+            <small class="hero-mini-tab-meta">${escapeHtml(String(card.meta || ""))}</small>
+          </button>
+        `).join("")}
+      </div>
+      <div class="hero-actions">
+        <button type="button" class="hero-action-button is-primary remote-target" data-tab="exchange">${localizeInline("开始交流", "会話を始める", "Start Exchange")}</button>
+        <button type="button" class="hero-action-button remote-target" data-tab="blueprints">${localizeInline("创建蓝图", "ブループリント作成", "Create Blueprint")}</button>
+      </div>
       <div class="hero-ambient" aria-hidden="true">
         <svg viewBox="0 0 420 120" class="hero-wave">
           <defs>
@@ -1766,23 +1912,31 @@ function renderHero(data) {
       </div>
     </div>
     <div class="hero-meta">
-      ${statCard(t("hero.pairedDevices"), data.boxProfile.pairedClients)}
-      ${statCard(t("hero.voice"), data.boxProfile.voiceReady ? t("hero.ready") : t("hero.off"))}
-      ${statCard(t("hero.network"), data.boxProfile.networkState)}
+      ${statCard(localizeInline("提醒", "リマインダー", "Reminders"), String(reminderCount), reminderCount ? localizeInline("已进入本地提醒链路", "ローカル通知チェーンで管理中", "Managed by the local reminder chain") : localizeInline("当前没有待处理提醒", "現在保留中のリマインダーはありません", "No queued reminders right now"), "tip")}
+      ${statCard(localizeInline("蓝图", "ブループリント", "Blueprints"), String(collectingCount), collectingCount ? localizeInline("仍有创建中的业务蓝图", "作成途中のブループリントがあります", "There are still blueprints in progress") : localizeInline("当前没有未完成蓝图", "未完了のブループリントはありません", "No unfinished blueprints"), "status")}
+      ${statCard(localizeInline("通道", "チャネル", "Channels"), String(inboundCount), localizeInline(`${data.boxProfile.networkState} · ${data.boxProfile.pairedClients} 设备`, `${data.boxProfile.networkState} · ${data.boxProfile.pairedClients} 台`, `${data.boxProfile.networkState} · ${data.boxProfile.pairedClients} devices`), "box")}
     </div>
   `;
+}
+
+function renderHomeOverview(data) {
+  const container = document.getElementById("home-overview");
+  if (!container) return;
+  container.innerHTML = "";
 }
 
 function renderTimeline(events) {
   const timeline = document.getElementById("timeline");
   if (!timeline) return;
+  if (!Array.isArray(events) || !events.length) {
+    timeline.innerHTML = `<div class="timeline-log-empty">${localizeInline("HomeHub 已准备好，新的交流、邮件、外部设备和处理记录会持续显示在这里。", "HomeHub の準備ができました。新しい会話、メール、外部デバイス、処理ログがここに流れます。", "HomeHub is ready. New conversations, mail, external device events, and processing logs will appear here.")}</div>`;
+    return;
+  }
   timeline.innerHTML = events.slice().reverse().map((item) => translateItem(item, timelineTranslations)).map((event) => `
-    <div class="timeline-item remote-target focusable-card" tabindex="0">
-      <span class="timeline-time">${event.time}</span>
-      <div>
-        <strong>${event.title}</strong>
-        <p>${event.detail}</p>
-      </div>
+    <div class="timeline-log-line" tabindex="0">
+      <span class="timeline-log-time">${escapeHtml(event.time || "")}</span>
+      <span class="timeline-log-title">${escapeHtml(event.title || "")}</span>
+      <span class="timeline-log-detail">${escapeHtml(event.detail || "")}</span>
     </div>
   `).join("");
   requestAnimationFrame(() => syncAllManagedScrollContainers());
@@ -1791,33 +1945,102 @@ function renderTimeline(events) {
 function renderModules(modules) {
   const container = document.getElementById("modules");
   if (!container) return;
-  const weather = latestDashboard?.weather || {};
+  const data = latestDashboard || {};
+  const weather = data.weather || {};
   const hasWeather = weather && weather.temperatureC !== null && weather.temperatureC !== undefined && weather.location;
-  const weatherModule = {
-    id: "weather-live",
-    name: currentLocale === "zh-CN" ? "实时天气" : currentLocale === "ja-JP" ? "ライブ天気" : "Live Weather",
-    summary: hasWeather
-      ? `${weather.location || "-"} · ${weather.condition || "-"} · ${weather.temperatureC ?? "-"}°C`
-      : (currentLocale === "zh-CN" ? "等待浏览器定位天气" : currentLocale === "ja-JP" ? "ブラウザの位置情報を待っています" : "Waiting for browser location weather"),
-    actionLabel: currentLocale === "zh-CN" ? "查看天气" : currentLocale === "ja-JP" ? "天気を見る" : "View Weather",
-    state: "ready",
-  };
-  const allModules = [weatherModule, ...(Array.isArray(modules) ? modules : [])];
+  const assistantMemory = data.assistantMemory || {};
+  const pendingReminders = Array.isArray(assistantMemory.pendingReminders) ? assistantMemory.pendingReminders : [];
+  const dueReminders = Array.isArray(assistantMemory.dueReminders) ? assistantMemory.dueReminders : [];
+  const upcomingEvents = Array.isArray(assistantMemory.upcomingEvents) ? assistantMemory.upcomingEvents : [];
+  const customAgents = Array.isArray(data.customAgents) ? data.customAgents : [];
+  const collectingAgents = customAgents.filter((item) => ["collecting", "review"].includes(String(item?.status || "")));
+  const completedAgents = customAgents.filter((item) => String(item?.status || "") === "complete");
+  const featureNames = Array.isArray(data.features) ? data.features.map((item) => item?.name).filter(Boolean) : [];
+  const externalChannels = data.externalChannels || {};
+  const externalApps = externalChannels.apps || {};
+  const lineInbox = Array.isArray(externalApps?.line?.inbox) ? externalApps.line.inbox.length : 0;
+  const wechatInbox = Array.isArray(externalApps?.wechatOfficial?.inbox) ? externalApps.wechatOfficial.inbox.length : 0;
+  const mailInbox = Array.isArray(externalChannels?.mail?.inbox) ? externalChannels.mail.inbox.length : 0;
+  const latestConversation = Array.isArray(data.conversation) ? data.conversation.slice(-1)[0] : null;
+  const allModules = [
+    {
+      id: "weather-live",
+      name: currentLocale === "zh-CN" ? "实时天气" : currentLocale === "ja-JP" ? "ライブ天気" : "Live Weather",
+      summary: hasWeather
+        ? `${weather.location || "-"} · ${weather.condition || "-"} · ${weather.temperatureC ?? "-"}°C`
+        : localizeInline("等待浏览器定位天气", "ブラウザの位置情報を待っています", "Waiting for browser location weather"),
+      actionLabel: localizeInline("去交流里继续追问天气", "会話で天気の続きを聞く", "Ask follow-up weather questions in Exchange"),
+      buttonLabel: localizeInline("进入交流", "会話へ", "Open Exchange"),
+      buttonTab: "exchange",
+      state: hasWeather ? "active" : "ready",
+    },
+    {
+      id: "schedule-live",
+      name: localizeInline("本地提醒与日程", "ローカル予定と通知", "Local Schedule and Reminders"),
+      summary: dueReminders.length
+        ? localizeInline(`当前有 ${dueReminders.length} 条提醒到时间，最紧急的是 ${dueReminders[0].title || "提醒"}。`, `現在 ${dueReminders.length} 件のリマインダーが期限です。最優先は ${dueReminders[0].title || "リマインダー"} です。`, `${dueReminders.length} reminders are due now. Next up: ${dueReminders[0].title || "Reminder"}.`)
+        : pendingReminders.length
+          ? localizeInline(`已有 ${pendingReminders.length} 条待处理提醒，下一条在 ${formatReminderTimestamp(pendingReminders[0].triggerAt)}。`, `${pendingReminders.length} 件のリマインダーがあります。次は ${formatReminderTimestamp(pendingReminders[0].triggerAt)} です。`, `${pendingReminders.length} reminders are queued. Next at ${formatReminderTimestamp(pendingReminders[0].triggerAt)}.`)
+          : upcomingEvents.length
+            ? localizeInline(`最近的本地安排是 ${upcomingEvents[0].title || "事件"}。`, `次のローカル予定は ${upcomingEvents[0].title || "イベント"} です。`, `The next local event is ${upcomingEvents[0].title || "Event"}.`)
+            : localizeInline("还没有本地提醒或日程，可以直接用语音创建。", "ローカル予定や通知はまだありません。音声ですぐ作成できます。", "No local reminders or events yet. Create one by voice."),
+      actionLabel: localizeInline("提醒我今晚八点联系家人", "今夜8時に家族へ連絡するよう通知して", "Remind me at 8 PM to contact my family"),
+      buttonLabel: localizeInline("进入交流", "会話へ", "Open Exchange"),
+      buttonTab: "exchange",
+      state: dueReminders.length ? "attention" : (pendingReminders.length || upcomingEvents.length ? "active" : "ready"),
+    },
+    {
+      id: "conversation-live",
+      name: localizeInline("交流工作区", "会話ワークスペース", "Conversation Workspace"),
+      summary: latestConversation
+        ? localizeInline(`最近一条是 ${latestConversation.speaker === "You" ? "你" : "HomeHub"}：${String(latestConversation.text || "").slice(0, 48)}`, `直近は ${latestConversation.speaker === "You" ? "あなた" : "HomeHub"}：${String(latestConversation.text || "").slice(0, 48)}`, `Latest line: ${String(latestConversation.text || "").slice(0, 56)}`)
+        : localizeInline("还没有开始交流，可以先问天气、航班或创建智能体。", "まだ会話がありません。天気、フライト、ブループリント作成から始められます。", "No conversation yet. Start with weather, flights, or blueprint creation."),
+      actionLabel: localizeInline("你好", "こんにちは", "Hello"),
+      buttonLabel: localizeInline("打开交流", "会話を開く", "Open Exchange"),
+      buttonTab: "exchange",
+      state: latestConversation ? "active" : "ready",
+    },
+    {
+      id: "blueprint-live",
+      name: localizeInline("蓝图工作室", "ブループリント工房", "Blueprint Studio"),
+      summary: collectingAgents.length
+        ? localizeInline(`当前有 ${collectingAgents.length} 个蓝图尚未完成，最近的是 ${collectingAgents[0].name || "未命名蓝图"}。`, `現在 ${collectingAgents.length} 件のブループリントが未完了です。最新は ${collectingAgents[0].name || "無題のブループリント"} です。`, `${collectingAgents.length} blueprints are still in progress. Latest: ${collectingAgents[0].name || "Untitled blueprint"}.`)
+        : completedAgents.length
+          ? localizeInline(`当前已有 ${completedAgents.length} 个已创建蓝图，可以继续生成或查看 feature。`, `現在 ${completedAgents.length} 件の作成済みブループリントがあります。feature 生成や確認を続けられます。`, `${completedAgents.length} blueprints have already been created. You can inspect or generate features.`)
+          : localizeInline("还没有业务蓝图，可以直接从需求描述开始创建。", "業務ブループリントはまだありません。要件を話せばそのまま作成できます。", "No business blueprints yet. Start by describing the workflow you want."),
+      actionLabel: localizeInline("创建智能体，名称为提醒", "エージェントを作成、名前はリマインダー", "Create an agent named Reminder"),
+      buttonLabel: localizeInline("打开蓝图", "ブループリントを開く", "Open Blueprints"),
+      buttonTab: "blueprints",
+      state: collectingAgents.length ? "attention" : (completedAgents.length ? "active" : "ready"),
+    },
+    {
+      id: "features-live",
+      name: localizeInline("功能运行", "機能ランタイム", "Feature Runtime"),
+      summary: featureNames.length
+        ? localizeInline(`当前已加载 ${featureNames.length} 个功能：${featureNames.slice(0, 3).join(" / ")}`, `現在 ${featureNames.length} 個の機能を読込済み：${featureNames.slice(0, 3).join(" / ")}`, `${featureNames.length} features are loaded: ${featureNames.slice(0, 3).join(" / ")}`)
+        : localizeInline("当前只有 HomeHub 核心能力，还没有新生成的业务 feature。", "現在は HomeHub の中核機能のみで、新しく生成した business feature はありません。", "Only the HomeHub core capabilities are loaded right now."),
+      actionLabel: localizeInline("查看当前智能体和功能运行状态", "現在のエージェントと機能状態を見る", "Inspect the current agent and feature runtime"),
+      buttonLabel: localizeInline("查看智能体", "エージェントを見る", "View Agents"),
+      buttonTab: "agents",
+      state: featureNames.length ? "active" : "ready",
+    },
+  ];
   container.innerHTML = allModules.map((item) => {
     const localized = moduleTranslations[item.id]?.[currentLocale] || {};
     return {
       ...item,
       name: localized.name || item.name,
+      summary: localized.summary || item.summary,
       actionLabel: localized.actionLabel || item.actionLabel
     };
   }).map((module) => `
-      <div class="module-card remote-target focusable-card" tabindex="0" data-action-text="${escapeHtml(module.actionLabel)}" data-title="${escapeHtml(module.name)}">
+      <div class="module-card ${stateColor[module.state] || "is-ready"} remote-target focusable-card" tabindex="0" data-action-text="${escapeHtml(module.actionLabel)}" data-title="${escapeHtml(module.name)}">
         <div class="dot ${stateColor[module.state] || "is-muted"}"></div>
         <div>
           <strong>${module.name}</strong>
         <p>${module.summary}</p>
       </div>
-      <button type="button">${module.actionLabel}</button>
+      <button type="button" class="remote-target" ${module.buttonTab ? `data-tab="${escapeHtml(module.buttonTab)}"` : ""}>${escapeHtml(module.buttonLabel || module.actionLabel)}</button>
     </div>
   `).join("");
   requestAnimationFrame(() => syncAllManagedScrollContainers());
@@ -4671,6 +4894,7 @@ async function loadDashboard() {
   renderClock();
   renderStatusStrip(data);
   renderHero(data);
+  renderHomeOverview(data);
   renderTimeline(data.timelineEvents);
   renderModules(data.householdModules);
   renderAgents(data.activeAgents);

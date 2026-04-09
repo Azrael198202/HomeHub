@@ -301,6 +301,12 @@ class Feature(HomeHubFeature):
             "use that agent",
             "let the agent",
         ]
+        if self.message_looks_bill_like(text):
+            return self.find_matching_operational_agent(text, runtime) is not None
+        if any(token in text for token in ["记录数", "总额", "汇总", "导出", "表格", "提醒"]) or any(
+            token in lowered for token in ["records", "total", "summary", "export", "spreadsheet", "remind"]
+        ):
+            return self.find_matching_operational_agent(text, runtime) is not None
         return any(token in text or token in lowered for token in explicit_tokens)
 
     def enrich_agent_runtime_stats(self, agent: dict, runtime: RuntimeBridge) -> dict:
@@ -504,15 +510,18 @@ class Feature(HomeHubFeature):
 
     def find_matching_operational_agent(self, message: str, runtime: RuntimeBridge) -> dict | None:
         candidates: list[tuple[float, dict]] = []
-        request_is_bill_like = self.is_expense_or_bill_agent({}, message)
+        request_is_bill_like = self.message_looks_bill_like(message)
         for agent in self.sorted_agents(runtime):
             if agent.get("status") != "complete":
                 continue
             if not any(str(agent.get("profile", {}).get(key, "")).strip() for key in ["checkPrompt", "noInputAction", "hasInputAction"]):
                 continue
-            if self.is_expense_or_bill_agent(agent, message) and not request_is_bill_like:
+            agent_is_bill_like = self.is_expense_or_bill_agent(agent)
+            if agent_is_bill_like and not request_is_bill_like:
                 continue
             score = self.business_match_score(agent, message)
+            if request_is_bill_like and agent_is_bill_like:
+                score = max(score, 4.0)
             if score > 0:
                 candidates.append((score, agent))
         if not candidates:
@@ -539,11 +548,11 @@ class Feature(HomeHubFeature):
             str(draft_profile.get(key, "")).strip()
             for key in ["name", "goal", "primaryUser", "trigger", "inputs", "output", "constraints"]
         )
-        draft_is_bill_like = self.is_expense_or_bill_agent({"name": draft_profile.get("name", ""), "profile": draft_profile}, draft_haystack)
+        draft_is_bill_like = self.message_looks_bill_like(draft_haystack)
         for agent in self.sorted_agents(runtime):
             if agent.get("status") not in {"complete", "review"}:
                 continue
-            if self.is_expense_or_bill_agent(agent, draft_haystack) and not draft_is_bill_like:
+            if self.is_expense_or_bill_agent(agent) and not draft_is_bill_like:
                 continue
             score = self.similarity_score(draft, agent)
             if score >= 0.26:
@@ -753,14 +762,20 @@ class Feature(HomeHubFeature):
             return []
         return [item.strip() for item in re.split(r"[,，;\n]+", raw) if item.strip()]
 
-    def is_expense_or_bill_agent(self, agent: dict, message: str) -> bool:
+    def message_looks_bill_like(self, message: str) -> bool:
+        combined = str(message or "").lower()
+        tokens = ["账单", "消费", "费用", "支出", "记账", "明细", "bill", "expense", "receipt", "receipt", "budget"]
+        return any(token in combined for token in tokens)
+
+    def is_expense_or_bill_agent(self, agent: dict) -> bool:
         haystacks = [
             str(agent.get("name", "")),
             str(agent.get("generatedFeatureId", "")),
             str(agent.get("profile", {}).get("goal", "")),
             str(agent.get("profile", {}).get("inputs", "")),
             str(agent.get("profile", {}).get("output", "")),
-            message,
+            str(agent.get("profile", {}).get("checkPrompt", "")),
+            str(agent.get("profile", {}).get("hasInputAction", "")),
         ]
         combined = " ".join(haystacks).lower()
         tokens = ["账单", "消费", "费用", "支出", "记账", "明细", "bill", "expense", "receipt", "receipt", "budget"]
@@ -857,11 +872,14 @@ class Feature(HomeHubFeature):
     def best_existing_agent_for_request(self, request: dict, runtime: RuntimeBridge) -> dict | None:
         scored: list[tuple[float, dict, dict]] = []
         message = str(request.get("command", "")).strip()
-        request_is_bill_like = self.is_expense_or_bill_agent({}, message)
+        request_is_bill_like = self.message_looks_bill_like(message)
         for agent in self.sorted_agents(runtime):
             if agent.get("status") != "complete":
                 continue
-            if self.is_expense_or_bill_agent(agent, message) and not request_is_bill_like:
+            agent_is_bill_like = self.is_expense_or_bill_agent(agent)
+            if request_is_bill_like and not agent_is_bill_like:
+                continue
+            if agent_is_bill_like and not request_is_bill_like:
                 continue
             agent_id = str(agent.get("id", "")).strip()
             if not agent_id:
@@ -985,6 +1003,26 @@ class Feature(HomeHubFeature):
         requires_network: bool = False,
         attachments: list[dict] | None = None,
     ) -> dict | None:
+        operational = self.find_matching_operational_agent(message, runtime)
+        if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
+            artifact_result = self.handle_artifact_generation(operational, message, runtime, locale)
+            if artifact_result:
+                artifact_result["autonomousAction"] = "reuse_operational"
+                return artifact_result
+            result = self.handle_operational_report(operational, message, runtime, locale)
+            if result:
+                result["autonomousAction"] = "reuse_operational"
+                return result
+        named_agent = self.find_agent_by_hint(message, runtime)
+        if named_agent and named_agent.get("status") == "complete" and str(named_agent.get("generatedFeatureId", "")).strip():
+            artifact_result = self.handle_artifact_generation(named_agent, message, runtime, locale)
+            if artifact_result:
+                artifact_result["autonomousAction"] = "reuse_named_agent"
+                return artifact_result
+            result = self.handle_operational_report(named_agent, message, runtime, locale)
+            if result:
+                result["autonomousAction"] = "reuse_named_agent"
+                return result
         request = self.build_request_context(
             message,
             locale,
@@ -1563,7 +1601,7 @@ class Feature(HomeHubFeature):
         extracted_expenses = self.extract_expenses_from_analysis(analysis, message)
         recommended_action = str(analysis.get("recommendedAction", "")).strip().lower()
         should_record_expense = generated_feature_id and extracted_expenses and (
-            recommended_action == "record_expense" or self.is_expense_or_bill_agent(agent, message)
+            recommended_action == "record_expense" or self.is_expense_or_bill_agent(agent)
         )
         if should_record_expense:
             forwarded = runtime.call_feature(
@@ -1586,7 +1624,7 @@ class Feature(HomeHubFeature):
                     "featureResult": forwarded,
                     "artifacts": forwarded.get("artifacts", []) if isinstance(forwarded.get("artifacts"), list) else [],
                 }
-        if self.is_expense_or_bill_agent(agent, message) and not extracted_expenses:
+        if self.is_expense_or_bill_agent(agent) and not extracted_expenses:
             no_amount_reply = zh(
                 locale,
                 f"我看过这张图片了，但还没有从里面识别到可入账的金额，所以这次没有记到账单里。你可以换一张更清晰的图片，或者直接补一句金额。",
@@ -1913,6 +1951,19 @@ class Feature(HomeHubFeature):
             ]
         return items[:max(1, limit)]
 
+    def extract_delete_keyword(self, message: str) -> str:
+        text = str(message or "").strip()
+        patterns = [
+            r"(?:名为|叫做|标题为|标题是)\s+(.+?)(?:的记录|记录)?$",
+            r"(?:删除|移除).+?(?:名为|叫做)\s+(.+?)(?:的记录|记录)?$",
+            r"(?:delete|remove).+?(?:named|called)\s+(.+)$",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return text
+
     def delete_record(self, runtime: RuntimeBridge, record_id: str = "", keyword: str = "") -> dict | None:
         store = self.get_store(runtime)
         items = store.get("items", [])
@@ -2159,7 +2210,7 @@ class Feature(HomeHubFeature):
                 "blueprint": BLUEPRINT,
             }}
         if action == "delete_record":
-            target = self.delete_record(runtime, str(request.get("id", "")), str(request.get("keyword", "")) or message)
+            target = self.delete_record(runtime, str(request.get("id", "")), str(request.get("keyword", "")) or self.extract_delete_keyword(message))
             if not target:
                 return {{"ok": False, "error": "record_not_found", "reply": "没有找到可删除的记录。" if locale == "zh-CN" else "No matching record was found."}}
             return {{
@@ -2396,7 +2447,7 @@ def load_feature() -> HomeHubFeature:
         return any(token in message or token in lowered for token in weather_tokens + clock_tokens)
 
     def looks_like_small_talk(self, message: str) -> bool:
-        normalized = str(message or "").strip().lower()
+        normalized = re.sub(r"[，。！？!?,.\s]+", "", str(message or "").strip().lower())
         return normalized in {
             "你好",
             "您好",
@@ -2407,13 +2458,25 @@ def load_feature() -> HomeHubFeature:
             "早上好",
             "下午好",
             "晚上好",
-            "good morning",
-            "good afternoon",
-            "good evening",
+            "goodmorning",
+            "goodafternoon",
+            "goodevening",
         }
+
+    def looks_like_file_system_request(self, message: str) -> bool:
+        text = str(message or "")
+        lowered = text.lower()
+        file_tokens = [
+            "文件", "文件夹", "目录", "文档", "文稿", "路径", "桌面", "下载", "发送文件", "发给我", "附件", "下载链接",
+            "documents", "downloads", "desktop", "directory", "folder", "file", "attachment", "send me", "download link",
+            "~/", "/users/", "/volumes/", ".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv",
+        ]
+        return any(token in text or token in lowered for token in file_tokens)
 
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if self.looks_like_small_talk(message):
+            return None
+        if self.looks_like_file_system_request(message):
             return None
         lowered = message.lower()
         collecting = self.get_collecting_agent(runtime)
@@ -2463,6 +2526,8 @@ def load_feature() -> HomeHubFeature:
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if self.looks_like_small_talk(message):
+            return None
+        if self.looks_like_file_system_request(message):
             return None
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)

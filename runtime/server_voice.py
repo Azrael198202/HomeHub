@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -12,7 +13,7 @@ def normalize_resolution_reply(reply_value: Any, fallback: str) -> str:
 
 
 def is_simple_greeting(text: str) -> bool:
-    normalized = str(text or "").strip().lower()
+    normalized = re.sub(r"[，。！？!?,.\s]+", "", str(text or "").strip().lower())
     return normalized in {
         "你好",
         "您好",
@@ -23,9 +24,9 @@ def is_simple_greeting(text: str) -> bool:
         "早上好",
         "下午好",
         "晚上好",
-        "good morning",
-        "good afternoon",
-        "good evening",
+        "goodmorning",
+        "goodafternoon",
+        "goodevening",
     }
 
 
@@ -96,32 +97,36 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             if locale == "zh-CN"
             else ("こんにちは。何をお手伝いしましょうか？" if locale == "ja-JP" else "Hello, how can I help?")
         )
+        route_payload = {
+            "kind": "general",
+            "selected": {
+                "intent": "general-chat",
+                "featureId": "homehub-core",
+                "featureName": "HomeHub Core",
+                "action": "general_reply",
+                "score": 0.99,
+            },
+            "candidates": [],
+            "reasoning": "Detected a simple greeting and kept the response local.",
+            "taskSpec": {
+                "taskType": "general_chat",
+                "summary": "Simple greeting exchange.",
+            },
+        }
         return {
             "reply": normalize_resolution_reply(reply, "你好，有什么可以帮忙的？" if locale == "zh-CN" else "Hello, how can I help?"),
-            "route": {
-                "kind": "general",
-                "selected": {
-                    "intent": "general-chat",
-                    "featureId": "homehub-core",
-                    "featureName": "HomeHub Core",
-                    "action": "general_reply",
-                    "score": 0.99,
-                },
-                "candidates": [],
-                "reasoning": "Detected a simple greeting and kept the response local.",
-                "taskSpec": {
-                    "taskType": "general_chat",
-                    "summary": "Simple greeting exchange.",
-                },
-            },
+            "route": route_payload,
             "pendingClarification": None,
             "uiAction": None,
         }
     ui_action = context["detect_ui_action"](original_text, locale)
     text_lower = str(original_text or "").lower()
+    local_file_hint = bool(context.get("looks_like_local_file_request") and context["looks_like_local_file_request"](original_text))
     network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方网站", "官方消息", "最新消息", "最新新闻"]) or any(
         token in text_lower for token in ["search", "lookup", "look up", "official website", "latest news", "breaking news", "web search", "online search"]
     )
+    if local_file_hint:
+        network_hint = False
 
     if ui_action and not clarification_context:
         context["clear_pending_voice_clarification"]()
@@ -177,9 +182,8 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         }
         lookup_result = context["perform_autonomous_network_lookup"](original_text, locale, "official-only")
         if not lookup_result.get("ok"):
-            fallback_reply = context["build_general_voice_reply"](original_text, locale, route.get("modelRoute"))
             return {
-                "reply": fallback_reply,
+                "reply": context["build_network_unavailable_reply"](original_text, locale, "network_lookup"),
                 "route": context["serialize_voice_route"](route),
                 "pendingClarification": None,
                 "uiAction": None,
@@ -234,7 +238,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
         lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
         if not lookup_result.get("ok"):
-            reply = fallback_reply
+            reply = context["build_network_unavailable_reply"](combined_text if clarification_context else original_text, locale, "network_lookup")
         else:
             reply = normalize_resolution_reply(context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale), fallback_reply)
         artifacts = []
@@ -268,6 +272,15 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             artifacts = []
 
     context["clear_pending_voice_clarification"]()
+    recorder = context.get("record_route_semantic_example")
+    if callable(recorder):
+        source_text = (
+            str((clarification_context or {}).get("originalRequest", "")).strip()
+            if clarification_context
+            else str(original_text or "").strip()
+        )
+        if source_text:
+            recorder(source_text, locale, route)
     return {
         "reply": normalize_resolution_reply(reply, fallback_reply),
         "route": context["serialize_voice_route"](route),

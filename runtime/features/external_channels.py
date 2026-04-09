@@ -203,6 +203,157 @@ class Feature(HomeHubFeature):
             return f"[email]\nfrom: {sender.get('address') or sender.get('id')}\nsubject: {subject}\ncontent: {content}"
         return f"[{channel}]\nuser: {sender.get('displayName') or sender.get('id')}\ncontent: {content}"
 
+    def extract_wrapped_content(self, text: str) -> str:
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        match = re.search(r"(?im)^content:\s*(.+)$", raw)
+        if match:
+            candidate = match.group(1).strip()
+            if candidate:
+                return candidate
+        return raw
+
+    def detect_translation_request(self, text: str) -> dict | None:
+        raw = self.extract_wrapped_content(text)
+        if not raw:
+            return None
+        lowered = raw.lower()
+        target = ""
+        if "翻译成中文" in raw or "译成中文" in raw or "translate to chinese" in lowered:
+            target = "zh-CN"
+        elif "翻译成英文" in raw or "译成英文" in raw or "translate to english" in lowered:
+            target = "en-US"
+        elif "翻译成日文" in raw or "翻译成日语" in raw or "译成日文" in raw or "translate to japanese" in lowered:
+            target = "ja-JP"
+        if not target:
+            return None
+        source = raw
+        source = re.sub(r"(请)?翻译成中文", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"(请)?翻译成英文", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"(请)?翻译成日文", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"(请)?翻译成日语", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"translate to chinese", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"translate to english", "", source, flags=re.IGNORECASE).strip()
+        source = re.sub(r"translate to japanese", "", source, flags=re.IGNORECASE).strip()
+        source = source.strip("：:，, ")
+        if not source:
+            return None
+        return {"target": target, "source": source}
+
+    def translate_text(self, runtime: RuntimeBridge, source_text: str, target_locale: str) -> str:
+        prompt_target = "Chinese" if target_locale == "zh-CN" else "Japanese" if target_locale == "ja-JP" else "English"
+        payload = runtime.openai_json(
+            "You are a translation engine. Return JSON with one field: translation. Do not explain.",
+            f"Translate the following text into {prompt_target}.\nText:\n{source_text}",
+            "gpt-4o-mini",
+        ) or {}
+        translation = str(payload.get("translation", "")).strip()
+        if translation:
+            return translation
+        return source_text
+
+    def classify_inbound_semantics(
+        self,
+        runtime: RuntimeBridge,
+        channel: str,
+        content: str,
+        locale: str,
+        subject: str = "",
+        attachments: list[dict] | None = None,
+    ) -> dict:
+        raw_content = self.extract_wrapped_content(content)
+        attachment_lines: list[str] = []
+        for item in attachments or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            preview = str(item.get("preview", "")).strip()
+            mime_type = str(item.get("mimeType", "")).strip()
+            parts = [part for part in [name, mime_type, preview[:160]] if part]
+            if parts:
+                attachment_lines.append(" | ".join(parts))
+        attachment_summary = "\n".join(attachment_lines[:6]).strip()
+        payload = runtime.openai_json(
+            (
+                "You classify inbound assistant-channel messages for HomeHub. "
+                "Return JSON only with fields: "
+                "intent, targetLocale, sourceText, shouldUsePlainContent, needsMetadata, normalizedText, confidence. "
+                "intent must be one of: translation, weather, travel_search, file_operation, reminder, create_agent, general, unknown. "
+                "Infer intent from semantics, not fixed trigger words. "
+                "If the message asks to translate text, extract the text into sourceText and the target language locale into targetLocale. "
+                "Use locales zh-CN, en-US, ja-JP when possible. "
+                "Set shouldUsePlainContent true for normal user utterances that should be sent directly to HomeHub. "
+                "Set needsMetadata true only when channel/event wrappers materially change meaning."
+            ),
+            (
+                f"channel: {channel}\n"
+                f"locale: {locale}\n"
+                f"subject: {subject}\n"
+                f"content:\n{raw_content}\n\n"
+                f"attachments:\n{attachment_summary or '(none)'}"
+            ),
+            "gpt-4o-mini",
+        ) or {}
+        intent = str(payload.get("intent", "")).strip().lower()
+        target_locale = str(payload.get("targetLocale", "")).strip()
+        source_text = str(payload.get("sourceText", "")).strip()
+        normalized_text = str(payload.get("normalizedText", "")).strip() or raw_content
+        return {
+            "intent": intent or "unknown",
+            "targetLocale": target_locale,
+            "sourceText": source_text,
+            "normalizedText": normalized_text,
+            "shouldUsePlainContent": bool(payload.get("shouldUsePlainContent", True)),
+            "needsMetadata": bool(payload.get("needsMetadata", False)),
+            "confidence": float(payload.get("confidence", 0.0) or 0.0),
+        }
+
+    def summarize_artifacts(self, artifacts: list[dict] | None) -> list[str]:
+        summaries: list[str] = []
+        for item in artifacts or []:
+            if not isinstance(item, dict):
+                continue
+            file_name = str(item.get("fileName", "")).strip()
+            url = str(item.get("url", "")).strip()
+            path = str(item.get("path", "")).strip()
+            label = file_name or url or path
+            if not label:
+                continue
+            if url:
+                summaries.append(f"{label} ({url})")
+            elif path:
+                summaries.append(f"{label} ({path})")
+            else:
+                summaries.append(label)
+        return summaries
+
+    def attach_artifact_note(self, reply: str, artifacts: list[dict] | None, channel: str) -> str:
+        base = str(reply or "").strip()
+        artifact_lines = self.summarize_artifacts(artifacts)
+        if not artifact_lines:
+            return base
+        if channel == "email":
+            return base
+        if channel.startswith("wechat"):
+            prefix = "已生成文件："
+        elif channel == "line":
+            prefix = "已生成文件："
+        else:
+            prefix = "Generated files: " if re.search(r"[A-Za-z]", base) and not re.search(r"[\u4e00-\u9fff]", base) else "已生成文件："
+        note = prefix + "；".join(artifact_lines[:3])
+        return f"{base}\n\n{note}".strip()
+
+    def should_resolve_plain_content(self, channel: str, content: str, attachments: list[dict] | None = None) -> bool:
+        if channel == "email":
+            return False
+        if attachments:
+            return False
+        stripped = self.extract_wrapped_content(content)
+        if not stripped:
+            return False
+        return not stripped.startswith("[")
+
     def looks_like_generic_resolution(self, resolution: dict | None) -> bool:
         if not isinstance(resolution, dict) or not resolution:
             return True
@@ -857,6 +1008,7 @@ class Feature(HomeHubFeature):
         return message_type, str(payload.get("Content", "")).strip()
 
     def resolve_inbound(self, runtime: RuntimeBridge, channel: str, sender: dict, content: str, locale: str, subject: str = "", attachments: list[dict] | None = None) -> dict:
+        raw_content = self.extract_wrapped_content(content)
         attachment_text = "\n".join(
             filter(
                 None,
@@ -868,9 +1020,35 @@ class Feature(HomeHubFeature):
             )
         ).strip()
         effective_locale = detect_text_locale(
-            "\n".join(filter(None, [content, attachment_text])),
+            "\n".join(filter(None, [raw_content, attachment_text])),
             normalize_locale(locale, str(runtime.get_setting("language", "zh-CN"))),
         )
+        semantic = self.classify_inbound_semantics(runtime, channel, raw_content, effective_locale, subject, attachments)
+        translation_request = None
+        if semantic.get("intent") == "translation":
+            target_locale = str(semantic.get("targetLocale", "")).strip()
+            source_text = str(semantic.get("sourceText", "")).strip() or raw_content
+            if target_locale and source_text:
+                translation_request = {"target": target_locale, "source": source_text}
+        if not translation_request:
+            translation_request = self.detect_translation_request(raw_content)
+        if translation_request:
+            translated = self.translate_text(runtime, translation_request["source"], translation_request["target"])
+            return {
+                "reply": translated,
+                "effectiveLocale": translation_request["target"],
+                "resolutionStrategy": "direct_translation",
+                "semanticIntent": semantic.get("intent", ""),
+                "route": {
+                    "kind": "feature",
+                    "selected": {
+                        "featureId": self.feature_id,
+                        "featureName": self.feature_name,
+                        "action": "direct_translation",
+                        "score": 1.0,
+                    },
+                },
+            }
         if runtime.resolve_message:
             try:
                 if channel == "email":
@@ -896,10 +1074,22 @@ class Feature(HomeHubFeature):
                     fallback["resolutionStrategy"] = "email_none"
                     fallback["resolutionAttempts"] = attempts
                     return fallback
-                payload = str(content or "").strip() if channel.startswith("wechat") and str(content or "").strip() else self.build_inbound_payload(channel, sender, content, locale, subject)
+                should_use_plain = bool(semantic.get("shouldUsePlainContent", True)) and not bool(semantic.get("needsMetadata", False))
+                payload = (
+                    str(semantic.get("normalizedText", "")).strip() or raw_content
+                    if should_use_plain and self.should_resolve_plain_content(channel, raw_content, attachments)
+                    else self.build_inbound_payload(channel, sender, raw_content, locale, subject)
+                )
                 resolution = runtime.resolve_message(payload, effective_locale) or {}
                 if isinstance(resolution, dict):
                     resolution["effectiveLocale"] = effective_locale
+                    resolution["semanticIntent"] = semantic.get("intent", "")
+                    resolution["semanticConfidence"] = semantic.get("confidence", 0.0)
+                    resolution["reply"] = self.attach_artifact_note(
+                        str(resolution.get("reply", "")).strip(),
+                        resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
+                        channel,
+                    )
                 return resolution
             except Exception as exc:
                 return {"reply": f"HomeHub could not process the inbound {channel} message: {exc}"}
@@ -1577,6 +1767,7 @@ class Feature(HomeHubFeature):
                 "body": {
                     "ok": True,
                     "reply": reply_text,
+                    "artifacts": resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else [],
                     "resolution": resolution,
                 },
             }
@@ -1598,30 +1789,36 @@ class Feature(HomeHubFeature):
                 return {"status": 404, "body": {"ok": False, "error": "message_not_found"}}
             target_user = str((completed.get("sender") or {}).get("id", "")).strip()
             channel = str(completed.get("channel", "")).strip()
+            reply_artifacts = resolution.get("artifacts", []) if isinstance(resolution.get("artifacts"), list) else []
+            delivered_reply = self.attach_artifact_note(reply, reply_artifacts, channel)
             send_ok = False
             send_error = ""
-            if channel == "wechat-official" and target_user and reply:
-                send_ok, send_error = self.send_wechat_official_text(runtime, target_user, reply)
+            if channel == "wechat-official" and target_user and delivered_reply:
+                send_ok, send_error = self.send_wechat_official_text(runtime, target_user, delivered_reply)
                 out_item = self.queue_outbound(
                     wechat,
                     {"id": target_user, "displayName": target_user},
-                    reply,
+                    delivered_reply,
                     "wechat-official",
                 )
                 out_item["status"] = "sent" if send_ok else "failed"
                 if send_error:
                     out_item["error"] = send_error
-            elif channel == "line" and target_user and reply:
-                send_ok, send_error = self.send_line_push_text(runtime, target_user, reply)
+                if reply_artifacts:
+                    out_item["attachments"] = [str(item.get("fileName", "")).strip() for item in reply_artifacts if isinstance(item, dict)]
+            elif channel == "line" and target_user and delivered_reply:
+                send_ok, send_error = self.send_line_push_text(runtime, target_user, delivered_reply)
                 out_item = self.queue_outbound(
                     line,
                     {"id": target_user, "displayName": target_user},
-                    reply,
+                    delivered_reply,
                     "line",
                 )
                 out_item["status"] = "sent" if send_ok else "failed"
                 if send_error:
                     out_item["error"] = send_error
+                if reply_artifacts:
+                    out_item["attachments"] = [str(item.get("fileName", "")).strip() for item in reply_artifacts if isinstance(item, dict)]
             self.save_store(store, runtime)
             self.write_debug_log(
                 runtime,
@@ -1630,9 +1827,10 @@ class Feature(HomeHubFeature):
                     "messageId": message_id,
                     "channel": channel,
                     "targetUser": target_user,
-                    "replyPreview": reply[:240],
+                    "replyPreview": delivered_reply[:240],
                     "sendOk": send_ok,
                     "sendError": send_error,
+                    "attachments": [str(item.get("fileName", "")).strip() for item in reply_artifacts if isinstance(item, dict)],
                 },
             )
             self.write_processing_log(
@@ -1643,12 +1841,13 @@ class Feature(HomeHubFeature):
                     "messageId": message_id,
                     "sender": completed.get("sender", {}),
                     "content": str(completed.get("content", ""))[:4000],
-                    "reply": reply,
+                    "reply": delivered_reply,
                     "sendOk": send_ok,
                     "sendError": send_error,
                     "route": resolution.get("route", {}),
                     "effectiveLocale": resolution.get("effectiveLocale", completed.get("locale", "")),
                     "resolutionStrategy": resolution.get("resolutionStrategy", ""),
+                    "artifacts": reply_artifacts,
                 },
             )
             return {"status": 200, "body": {"ok": True, "sendOk": send_ok, "sendError": send_error}}

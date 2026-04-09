@@ -274,39 +274,18 @@ BASE_TIMELINE = [
 
 HOUSEHOLD_MODULES = [
     {
-        "id": "briefing",
-        "name": "Morning Briefing",
-        "summary": "Weather, calendar, tasks, and bills have been merged.",
-        "state": "active",
-        "actionLabel": "Open Briefing",
-    },
-    {
         "id": "schedule",
-        "name": "Family Schedule Sync",
-        "summary": "Two time conflicts were detected for tonight.",
-        "state": "attention",
-        "actionLabel": "Resolve Now",
-    },
-    {
-        "id": "travel",
-        "name": "Travel Checklist",
-        "summary": "Power bank and document copies are still missing.",
+        "name": "Local Schedule",
+        "summary": "No local events yet.",
         "state": "ready",
-        "actionLabel": "Open List",
-    },
-    {
-        "id": "knowledge",
-        "name": "Local Knowledge Q&A",
-        "summary": "Policies, manuals, and receipts are locally indexed.",
-        "state": "ready",
-        "actionLabel": "Ask Now",
+        "actionLabel": "Create by Voice",
     },
     {
         "id": "messages",
-        "name": "Unified Messages",
-        "summary": "Recent updates from LINE, WeChat, and the companion app.",
-        "state": "active",
-        "actionLabel": "View Inbox",
+        "name": "Reminder Center",
+        "summary": "No reminders yet.",
+        "state": "ready",
+        "actionLabel": "Create Reminder",
     },
 ]
 
@@ -1774,6 +1753,7 @@ def run_background_bridge_pull():
                                 "messageId": item.get("id", ""),
                                 "reply": bridge_body.get("reply", ""),
                                 "resolution": bridge_body.get("resolution", {}),
+                                "artifacts": bridge_body.get("artifacts", []),
                             },
                             ensure_ascii=False,
                         ).encode("utf-8"),
@@ -2249,6 +2229,34 @@ def build_grounded_network_reply(query_text, lookup_result, locale):
     return fallback
 
 
+def build_network_unavailable_reply(query_text, locale, task_type="network_lookup"):
+    query = str(query_text or "").strip()
+    lowered = query.lower()
+    weather_like = task_type == "weather" or any(token in query for token in ["天气", "气温", "天気"]) or any(
+        token in lowered for token in ["weather", "temperature", "forecast"]
+    )
+    flight_like = any(token in query for token in ["航班", "机票", "飞机"]) or any(
+        token in lowered for token in ["flight", "flights", "airfare", "ticket", "plane"]
+    )
+    if locale == "zh-CN":
+        if weather_like:
+            return "我已经理解成天气查询了，但当前外部天气服务没有返回可用结果。请稍后重试，或在浏览器允许定位后再查询。"
+        if flight_like:
+            return "我已经理解成航班与价格查询了，但当前外部检索没有返回可用结果。请稍后重试，或换成更具体的出发地、目的地和日期。"
+        return "我已经理解你的联网查询需求了，但当前外部检索没有返回可用结果。请稍后重试，或把条件说得更具体一些。"
+    if locale == "ja-JP":
+        if weather_like:
+            return "天気の問い合わせとして理解しましたが、現在は外部の天気サービスから有効な結果を取得できませんでした。後でもう一度お試しください。"
+        if flight_like:
+            return "フライトと料金の検索として理解しましたが、現在は外部検索から有効な結果を取得できませんでした。出発地や日付をより具体的にすると改善する場合があります。"
+        return "オンライン検索の依頼として理解しましたが、現在は有効な結果を取得できませんでした。少し時間をおいて再試行してください。"
+    if weather_like:
+        return "I understood this as a weather request, but the external weather service did not return usable results right now. Please try again shortly."
+    if flight_like:
+        return "I understood this as a flight-and-price lookup, but external search did not return usable results right now. Please try again with more specific route details."
+    return "I understood this as an online lookup request, but external search did not return usable results right now. Please try again shortly."
+
+
 def is_weak_grounded_reply(reply_text):
     text = str(reply_text or "").strip().lower()
     if not text:
@@ -2504,10 +2512,10 @@ def build_weather_reply(user_text, locale):
         if lookup_result.get("ok"):
             return build_grounded_network_reply(user_text, lookup_result, locale)
         if locale == "zh-CN":
-            return "还没有拿到可用的天气数据。请先允许浏览器定位，或者直接告诉我要查询的城市。"
+            return build_network_unavailable_reply(user_text, locale, "weather")
         if locale == "ja-JP":
-            return "まだ利用可能な天気データがありません。ブラウザの位置情報を許可するか、都市名を直接指定してください。"
-        return "I do not have usable weather data yet. Please allow browser location access or tell me the city directly."
+            return build_network_unavailable_reply(user_text, locale, "weather")
+        return build_network_unavailable_reply(user_text, locale, "weather")
     if locale == "zh-CN":
         return f"{location} 当前{condition}，现在 {temperature} 度，最高 {high_c} 度，最低 {low_c} 度。"
     if locale == "ja-JP":
@@ -2521,9 +2529,10 @@ def route_voice_request(user_text, locale):
         user_text,
         locale,
         detect_ui_action=detect_ui_action,
-        infer_task_spec=lambda text, lang: infer_task_spec_with_openai(
+        infer_task_spec=lambda text, lang, semantic_examples: infer_task_spec_with_openai(
             text,
             lang,
+            semantic_examples,
             ai_available=bool(SECRETS.get("openaiApiKey")),
             openai_chat_json=openai_chat_json,
         ),
@@ -2580,6 +2589,13 @@ def route_voice_request(user_text, locale):
             routed["kind"] = "feature"
             routed["selected"] = schedule_candidate
             routed["reasoning"] = "Task spec identified schedule work, so HomeHub pinned the request to the local schedule feature."
+    if looks_like_local_file_request(user_text):
+        local_files_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "local-files"), None)
+        if local_files_candidate:
+            routed["kind"] = "feature"
+            routed["selected"] = local_files_candidate
+            routed["clarificationQuestion"] = ""
+            routed["reasoning"] = "HomeHub detected a local file-system request and pinned the request to the Local Files feature."
     if task_spec["taskType"] == "weather":
         routed["kind"] = "general"
         routed["selected"] = {
@@ -2660,6 +2676,34 @@ def learn_from_clarification(clarification_context, route, combined_text, locale
         locale,
         task_spec,
         correction_text=clarified_text,
+    )
+
+
+def record_route_semantic_example(user_text, locale, route):
+    if not isinstance(route, dict):
+        return
+    normalized = str(user_text or "").strip()
+    if not normalized or len(normalized) > 400:
+        return
+    if normalized.startswith("[") and "content:" in normalized:
+        return
+    task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
+    if not task_spec:
+        return
+    task_type = str(task_spec.get("taskType", "")).strip()
+    if task_type not in {"weather", "network_lookup", "reminder", "schedule", "agent_creation", "document_workflow", "bill_intake"}:
+        return
+    selected = route.get("selected", {}) if isinstance(route.get("selected", {}), dict) else {}
+    score = float(selected.get("score", 0.0) or 0.0)
+    if score < 0.72:
+        return
+    record_semantic_example(
+        normalized,
+        locale,
+        task_spec,
+        agent_id=str(selected.get("featureId", "")).strip(),
+        agent_name=str(selected.get("featureName", "")).strip(),
+        accepted=True,
     )
 
 
@@ -2793,6 +2837,7 @@ def _voice_context():
         "build_general_voice_reply": build_general_voice_reply,
         "build_grounded_network_reply": build_grounded_network_reply,
         "perform_autonomous_network_lookup": perform_autonomous_network_lookup,
+        "build_network_unavailable_reply": build_network_unavailable_reply,
         "build_weather_reply": build_weather_reply,
         "build_network_lookup_reply": build_network_lookup_reply,
         "build_pending_clarification_snapshot": build_pending_clarification_snapshot,
@@ -2807,7 +2852,9 @@ def _voice_context():
         "get_pending_voice_clarification": _get_pending_voice_clarification,
         "learn_from_clarification": learn_from_clarification,
         "load_ollama_inventory": load_ollama_inventory,
+        "looks_like_local_file_request": looks_like_local_file_request,
         "perform_network_lookup": perform_network_lookup,
+        "record_route_semantic_example": record_route_semantic_example,
         "route_voice_request": route_voice_request,
         "select_model_route": select_model_route,
         "serialize_voice_route": serialize_voice_route,
@@ -2869,6 +2916,17 @@ def should_cortex_require_network(user_text, task_spec):
         task_type == "network_lookup"
         or any(token in lowered for token in ["latest", "news", "official", "search", "lookup", "look up", "research", "价格", "最新", "官网", "上网", "联网"])
     )
+
+
+def looks_like_local_file_request(user_text):
+    text = str(user_text or "")
+    lowered = text.lower()
+    tokens = [
+        "文件", "文件夹", "目录", "文档", "文稿", "桌面", "下载", "路径", "读取", "打开文件", "发给我", "发送文件", "附件",
+        "documents", "downloads", "desktop", "directory", "folder", "file", "path", "read file", "open file", "send me", "attachment",
+        "~/", "/users/", "/volumes/", ".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv",
+    ]
+    return any(token in text or token in lowered for token in tokens)
 
 
 def build_cortex_route_plan(user_text, locale, task_spec, route=None):

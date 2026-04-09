@@ -19,6 +19,7 @@ CONFIG_FILE = Path(__file__).resolve().parent.parent / "semantic_memory.local.js
 MAX_ITEMS = 500
 DEFAULT_THRESHOLD = 0.33
 DEFAULT_RECALL_THRESHOLD = 0.18
+EMBEDDING_SCHEMA_VERSION = 1
 NOISY_TEXT_MARKERS = [
     "line公式アカウント",
     "運用事務局",
@@ -85,6 +86,21 @@ def _embedding(text: str) -> list[float]:
     return make_dense_vector(_tokenize(text), dimension=VECTOR_DIMENSION)
 
 
+def _dense_cosine(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = 0.0
+    left_norm = 0.0
+    right_norm = 0.0
+    for left_value, right_value in zip(left, right):
+        dot += left_value * right_value
+        left_norm += left_value * left_value
+        right_norm += right_value * right_value
+    if left_norm <= 0 or right_norm <= 0:
+        return 0.0
+    return dot / math.sqrt(left_norm * right_norm)
+
+
 def _item_search_text(item: dict) -> str:
     task_spec = item.get("taskSpec", {}) if isinstance(item.get("taskSpec", {}), dict) else {}
     parts = [
@@ -96,6 +112,28 @@ def _item_search_text(item: dict) -> str:
         str(task_spec.get("taskType", "")).strip(),
     ]
     return " ".join(part for part in parts if part)
+
+
+def _normalize_item_index_fields(item: dict) -> tuple[dict, bool]:
+    if not isinstance(item, dict):
+        return {}, False
+    normalized = dict(item)
+    changed = False
+    search_text = str(normalized.get("searchText", "")).strip()
+    if not search_text:
+        search_text = _item_search_text(normalized)
+        normalized["searchText"] = search_text
+        changed = True
+    embedding = normalized.get("embedding")
+    if not isinstance(embedding, list) or len(embedding) != VECTOR_DIMENSION or not all(isinstance(value, (int, float)) for value in embedding):
+        normalized["embedding"] = _embedding(search_text)
+        changed = True
+    schema_version = int(normalized.get("embeddingSchemaVersion", 0) or 0)
+    if schema_version != EMBEDDING_SCHEMA_VERSION:
+        normalized["embedding"] = _embedding(search_text)
+        normalized["embeddingSchemaVersion"] = EMBEDDING_SCHEMA_VERSION
+        changed = True
+    return normalized, changed
 
 
 def _looks_like_noisy_training_text(text: str) -> bool:
@@ -158,7 +196,7 @@ def default_payload() -> dict:
     return {
         "meta": {
             "schemaVersion": "1.0",
-            "backend": "json-hybrid-similarity",
+            "backend": "json-hybrid-indexed",
             "brainFamily": "homehub-semantic-memory",
             "updatedAt": now_iso(),
         },
@@ -224,11 +262,26 @@ def load_memory() -> dict:
     meta = data.get("meta", {})
     items = data.get("items", [])
     merged_meta = {**default_payload()["meta"], **(meta if isinstance(meta, dict) else {})}
-    if str(merged_meta.get("backend", "")).strip() == "json-cosine":
-        merged_meta["backend"] = "json-hybrid-similarity"
+    if str(merged_meta.get("backend", "")).strip() in {"json-cosine", "json-hybrid-similarity"}:
+        merged_meta["backend"] = "json-hybrid-indexed"
+    normalized_items: list[dict] = []
+    changed = False
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            changed = True
+            continue
+        normalized_item, item_changed = _normalize_item_index_fields(item)
+        normalized_items.append(normalized_item)
+        changed = changed or item_changed
+    payload = {
+        "meta": merged_meta,
+        "items": normalized_items,
+    }
+    if changed:
+        save_memory(payload)
     return {
         "meta": merged_meta,
-        "items": items if isinstance(items, list) else [],
+        "items": normalized_items,
     }
 
 
@@ -300,6 +353,7 @@ def query_semantic_memory(text: str, locale: str, limit: int = 5, threshold: flo
                 if not bool(config.get("mirrorToJson", True)):
                     return []
     query_vector = _vectorize(query_text)
+    query_dense = _embedding(query_text)
     if not query_vector:
         return []
     scored: list[dict] = []
@@ -309,14 +363,18 @@ def query_semantic_memory(text: str, locale: str, limit: int = 5, threshold: flo
         item_locale = str(item.get("locale", "")).strip()
         if item_locale and locale and item_locale != locale:
             continue
-        search_text = _item_search_text(item)
-        score = _similarity(query_vector, _vectorize(search_text))
+        normalized_item, _ = _normalize_item_index_fields(item)
+        search_text = str(normalized_item.get("searchText", "")).strip() or _item_search_text(normalized_item)
+        lexical_score = _similarity(query_vector, _vectorize(search_text))
+        dense_score = _dense_cosine(query_dense, normalized_item.get("embedding", []))
+        prefix_bonus = 0.02 if query_text.lower() in search_text.lower() else 0.0
+        score = max(lexical_score, dense_score, (lexical_score * 0.55) + (dense_score * 0.45) + prefix_bonus)
         if score < threshold:
             continue
         scored.append(
             {
                 "score": round(score, 3),
-                "item": item,
+                "item": normalized_item,
             }
         )
     scored.sort(key=lambda entry: (entry["score"], str(entry["item"].get("updatedAt", ""))), reverse=True)
@@ -383,9 +441,12 @@ def upsert_semantic_memory_item(
         "createdAt": now_iso(),
         "updatedAt": now_iso(),
     }
+    search_text = _item_search_text(item)
+    item["searchText"] = search_text
+    item["embedding"] = _embedding(search_text)
+    item["embeddingSchemaVersion"] = EMBEDDING_SCHEMA_VERSION
     updated.insert(0, item)
     backend, config = get_active_backend()
-    search_text = _item_search_text(item)
     if bool(config.get("mirrorToJson", True)) or backend is None:
         payload["items"] = updated[:MAX_ITEMS]
         save_memory(payload)

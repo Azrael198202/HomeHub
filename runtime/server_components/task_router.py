@@ -5,9 +5,9 @@ import re
 from typing import Any, Callable
 
 try:
-    from server_components.semantic_memory import infer_from_semantic_memory
+    from server_components.semantic_memory import infer_from_semantic_memory, query_semantic_memory
 except ModuleNotFoundError:
-    from runtime.server_components.semantic_memory import infer_from_semantic_memory
+    from runtime.server_components.semantic_memory import infer_from_semantic_memory, query_semantic_memory
 
 
 TaskSpec = dict[str, Any]
@@ -69,12 +69,14 @@ def detect_input_modes(user_text: str) -> list[str]:
 def infer_task_spec_with_openai(
     user_text: str,
     locale: str,
+    semantic_examples: list[dict[str, Any]] | None = None,
     *,
     ai_available: bool,
     openai_chat_json: Callable[[str, str, str], dict[str, Any] | None],
 ) -> dict[str, Any] | None:
     if not ai_available:
         return None
+    examples = semantic_examples if isinstance(semantic_examples, list) else []
     payload = openai_chat_json(
         (
             "You are HomeHub's task-spec parser. Return JSON only with keys: "
@@ -84,12 +86,34 @@ def infer_task_spec_with_openai(
             "study_plan, ui_navigation, network_lookup, document_workflow, weather, time_query. "
             "Valid urgency values: low, normal, high. "
             "Valid preferredExecution values: local, cloud, hybrid. "
-            "Set confidence between 0 and 1."
+            "Set confidence between 0 and 1. "
+            "You may receive similar resolved examples. Use them as semantic routing hints, not as rigid templates."
         ),
-        json.dumps({"locale": locale, "message": user_text}, ensure_ascii=False),
+        json.dumps({"locale": locale, "message": user_text, "similarExamples": examples[:3]}, ensure_ascii=False),
         "gpt-4o-mini",
     )
     return payload if isinstance(payload, dict) else None
+
+
+def build_semantic_route_examples(user_text: str, locale: str, limit: int = 3) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for entry in query_semantic_memory(user_text, locale, limit=limit, threshold=0.12):
+        item = entry.get("item", {}) if isinstance(entry.get("item", {}), dict) else {}
+        task_spec = item.get("taskSpec", {}) if isinstance(item.get("taskSpec", {}), dict) else {}
+        if not task_spec:
+            continue
+        examples.append(
+            {
+                "sourceText": str(item.get("sourceText", "")).strip(),
+                "correctionText": str(item.get("correctionText", "")).strip(),
+                "taskType": str(task_spec.get("taskType", "")).strip(),
+                "intent": str(task_spec.get("intent", "")).strip(),
+                "summary": str(task_spec.get("summary", "")).strip(),
+                "preferredExecution": str(task_spec.get("preferredExecution", "")).strip(),
+                "score": float(entry.get("score", 0.0) or 0.0),
+            }
+        )
+    return examples
 
 
 def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
@@ -205,7 +229,7 @@ def build_task_spec(
     locale: str,
     *,
     detect_ui_action: Callable[[str, str], dict[str, Any] | None],
-    infer_task_spec: Callable[[str, str], dict[str, Any] | None],
+    infer_task_spec: Callable[[str, str, list[dict[str, Any]]], dict[str, Any] | None],
 ) -> TaskSpec:
     spec: TaskSpec = {
         "taskType": "general_chat",
@@ -249,9 +273,11 @@ def build_task_spec(
             spec["preferredExecution"] = preferred
         if isinstance(memory_spec.get("missingInfo"), list):
             spec["missingInfo"] = [str(item).strip() for item in memory_spec.get("missingInfo", []) if str(item).strip()]
+        spec["reasoning"] = str(memory_spec.get("reasoning", "semantic-memory-match")).strip() or "semantic-memory-match"
         return spec
 
-    ai_spec = infer_task_spec(user_text, locale)
+    semantic_examples = build_semantic_route_examples(user_text, locale)
+    ai_spec = infer_task_spec(user_text, locale, semantic_examples)
     ai_used = False
     if ai_spec:
         task_type = str(ai_spec.get("taskType", "")).strip()
@@ -277,4 +303,8 @@ def build_task_spec(
             ai_used = True
     if not ai_used:
         spec = apply_rule_based_task_hints(spec, user_text)
+        if semantic_examples:
+            spec["reasoning"] = "semantic-example-assisted-rules"
+    elif semantic_examples:
+        spec["reasoning"] = "semantic-example-assisted-ai"
     return spec
