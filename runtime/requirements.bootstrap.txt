@@ -4,3 +4,4 @@ python-pptx>=1.0.2
 pypdf>=5.4.0
 pillow>=11.0.0
 rapidocr-onnxruntime>=1.4.4
+trafilatura>=2.0.0

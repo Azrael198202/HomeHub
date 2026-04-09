@@ -79,9 +79,17 @@ from runtime.server_components.semantic_memory import (
 from runtime.cortex.architect import CortexArchitect
 from runtime.cortex.models import default_agent_cortex
 from runtime.server_network import (
+    build_source_labels,
     build_network_lookup_reply,
     perform_controlled_network_lookup as perform_controlled_network_lookup_impl,
     perform_network_lookup as perform_network_lookup_impl,
+)
+from runtime.server_weather import (
+    default_weather_state as default_weather_state_payload,
+    load_weather_state as load_weather_state_payload,
+    lookup_weather_from_query as lookup_weather_from_query_payload,
+    refresh_weather_from_coordinates as refresh_weather_from_coordinates_payload,
+    save_weather_state as save_weather_state_payload,
 )
 from runtime.server_routes import handle_get_route, handle_post_route
 from runtime.server_components.task_router import build_task_spec, infer_task_spec_with_openai
@@ -96,6 +104,8 @@ HOME_MEMORY_FILE = ROOT / "home_memory.json"
 SECRETS_LOCAL_FILE = ROOT / "secrets.local.json"
 SECRETS_PROD_FILE = ROOT / "secrets.prod.json"
 USAGE_LOG_FILE = ROOT / "usage-cost-log.jsonl"
+CONVERSATION_LOG_FILE = ROOT / "conversation_log.jsonl"
+WEATHER_STATE_FILE = ROOT / "weather_state.json"
 GOOGLE_SERVICE_ACCOUNT_FILE = ROOT / "google-cloud-service-account.json"
 RUNTIME_ENV = os.environ.get("HOMEHUB_ENV", "local").lower()
 RUNTIME_HOST = os.environ.get("HOMEHUB_HOST", "127.0.0.1")
@@ -1408,15 +1418,8 @@ SECRETS = get_effective_secrets()
 SECRET_SOURCES = get_secret_sources()
 maybe_start_bootstrap_install()
 HOME_MEMORY = load_home_memory()
-
-
-WEATHER = {
-    "location": "Tokyo",
-    "condition": "Cloudy",
-    "temperatureC": 22,
-    "highC": 25,
-    "lowC": 18,
-}
+WEATHER = load_weather_state_payload(WEATHER_STATE_FILE)
+CONVERSATION_LOG_FILE.touch(exist_ok=True)
 
 SYSTEM_STATUS = {
     "mode": "Listening",
@@ -1534,6 +1537,7 @@ VOICE_CONVERSATION = build_initial_conversation(PERSISTED_SETTINGS["language"])
 CURRENT_CONVERSATION = deepcopy(VOICE_CONVERSATION)
 LAST_VOICE_ROUTE = {
     "kind": "general",
+    "requestText": "",
     "selected": {
         "intent": "general-chat",
         "featureId": "homehub-core",
@@ -2076,16 +2080,26 @@ def detect_local_assistant_action(user_text, locale):
 
 
 def append_conversation_turn(speaker, text_value, artifacts=None):
-    CURRENT_CONVERSATION.append(
-        {
-            "speaker": speaker,
-            "text": text_value,
-            "time": now_hhmm(),
-            "artifacts": artifacts or [],
-        }
-    )
+    entry = {
+        "speaker": speaker,
+        "text": text_value,
+        "time": now_hhmm(),
+        "artifacts": artifacts or [],
+    }
+    CURRENT_CONVERSATION.append(entry)
     if len(CURRENT_CONVERSATION) > 24:
         del CURRENT_CONVERSATION[0 : len(CURRENT_CONVERSATION) - 24]
+    try:
+        with CONVERSATION_LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def refresh_weather_from_coordinates(latitude, longitude, label=""):
+    global WEATHER
+    WEATHER = refresh_weather_from_coordinates_payload(WEATHER_STATE_FILE, float(latitude), float(longitude), str(label or "").strip())
+    return WEATHER
 
 
 def build_household_modules(locale):
@@ -2187,6 +2201,141 @@ def openai_chat_reply(system_prompt, user_prompt, model_name="gpt-4o-mini"):
         return text or None
     except Exception:
         return ollama_chat_raw(system_prompt, user_prompt, select_local_chat_model())
+
+
+def build_grounded_network_reply(query_text, lookup_result, locale):
+    fallback = build_network_lookup_reply(lookup_result, locale)
+    if not isinstance(lookup_result, dict) or not lookup_result.get("ok"):
+        return fallback
+    sources = lookup_result.get("sources", []) if isinstance(lookup_result.get("sources", []), list) else []
+    source_briefs = []
+    for item in sources[:3]:
+        title = str(item.get("title", "")).strip()
+        excerpt = str(item.get("excerpt", "")).strip()
+        url = str(item.get("url", "")).strip()
+        source_briefs.append(
+            {
+                "title": title,
+                "excerpt": excerpt[:600],
+                "url": url,
+            }
+        )
+    if locale == "zh-CN":
+        system_prompt = (
+            "你是 HomeHub 的联网结果整理助手。"
+            "用户已经完成联网查询，你要把来源内容整理成简洁、自然、可直接回答用户的话。"
+            "不要输出原始网页碎片，不要逐字复读标题，不要编造未在来源中出现的事实。"
+            "如果来源信息不足，就基于现有来源保守回答。"
+            "正文不要带链接，来源会由系统单独追加。"
+        )
+    elif locale == "ja-JP":
+        system_prompt = (
+            "You are HomeHub's grounded web-results summarizer. "
+            "Turn the fetched source content into a short, natural answer for the user. "
+            "Do not dump raw webpage fragments, do not invent facts, and do not include links in the main answer."
+        )
+    else:
+        system_prompt = (
+            "You are HomeHub's grounded web-results summarizer. "
+            "Turn the fetched source content into a short, natural answer for the user. "
+            "Do not dump raw webpage fragments, do not invent facts, and do not include links in the main answer."
+        )
+    user_prompt = json.dumps(
+        {
+            "locale": locale,
+            "userQuery": str(query_text or "").strip(),
+            "networkAnswer": str(lookup_result.get("answer", "")).strip(),
+            "sources": source_briefs,
+        },
+        ensure_ascii=False,
+    )
+    ai_reply = openai_chat_reply(system_prompt, user_prompt, "gpt-4o-mini")
+    if ai_reply:
+        source_labels = build_source_labels(sources)
+        if locale == "zh-CN":
+            return f"{ai_reply}\n来源：{'；'.join(source_labels)}" if source_labels else ai_reply
+        return f"{ai_reply}\nSources: {'; '.join(source_labels)}" if source_labels else ai_reply
+    return fallback
+
+
+def is_weak_grounded_reply(reply_text):
+    text = str(reply_text or "").strip().lower()
+    if not text:
+        return True
+    weak_markers = [
+        "无法直接确定",
+        "还没有拿到可用",
+        "请先允许浏览器定位",
+        "you can check",
+        "not enough",
+        "insufficient",
+        "unable to determine",
+        "没有提取到足够",
+        "sources did not contain enough",
+    ]
+    return any(marker in text for marker in weak_markers)
+
+
+def build_network_query_candidates(query_text, locale, preferred_sources=None):
+    query = str(query_text or "").strip()
+    candidates = [query] if query else []
+    preferred_sources = preferred_sources if isinstance(preferred_sources, list) else []
+    lowered = query.lower()
+    weather_like = any(token in query for token in ["天气", "气温", "天気"]) or any(
+        token in lowered for token in ["weather", "temperature", "forecast"]
+    )
+    if weather_like:
+        if locale == "zh-CN":
+            candidates.extend(
+                [
+                    f"{query} 实时天气 气温",
+                    f"{query} 今日天气 最高 最低 气温",
+                ]
+            )
+        elif locale == "ja-JP":
+            candidates.extend(
+                [
+                    f"{query} 天気 気温",
+                    f"{query} 今日の天気 最高 最低 気温",
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    f"{query} weather temperature today",
+                    f"{query} forecast high low temperature",
+                ]
+            )
+        for source in preferred_sources:
+            candidates.append(f"{query} site:{source}")
+    unique = []
+    for item in candidates:
+        normalized = str(item or "").strip()
+        if normalized and normalized not in unique:
+            unique.append(normalized)
+    return unique
+
+
+def perform_autonomous_network_lookup(query_text, locale, policy_id="official-only", preferred_sources=None, allowed_domains=None):
+    best_result = {"ok": False, "error": "no_query"}
+    best_score = -1
+    for candidate in build_network_query_candidates(query_text, locale, preferred_sources):
+        result = perform_network_lookup(candidate, locale, policy_id, preferred_sources, allowed_domains)
+        if not isinstance(result, dict):
+            continue
+        sources = result.get("sources", []) if isinstance(result.get("sources", []), list) else []
+        score = len(sources) * 10 + len(str(result.get("answer", "")).strip())
+        if score > best_score:
+            best_score = score
+            best_result = result
+        if result.get("ok") and sources:
+            reply = build_grounded_network_reply(candidate, result, locale)
+            if not is_weak_grounded_reply(reply):
+                result["autonomousQuery"] = candidate
+                return result
+    if isinstance(best_result, dict):
+        best_result["autonomousQuery"] = next(iter(build_network_query_candidates(query_text, locale, preferred_sources)), str(query_text or "").strip())
+    return best_result
 
 
 def build_feature_intent_catalog(locale):
@@ -2327,21 +2476,52 @@ def build_general_voice_reply(user_text, locale, model_route=None):
         return ai_reply
 
     lowered = user_text.lower()
+    weather_line = f"{WEATHER.get('location', '-')}: {WEATHER.get('condition', '-')}, {WEATHER.get('temperatureC', '-') }C, high {WEATHER.get('highC', '-') }C, low {WEATHER.get('lowC', '-') }C."
     if locale == "zh-CN":
         if "天气" in user_text:
-            return "你可以切到天气卡片查看当前天气；如果你愿意，我后面也可以把天气问答接成直接语音回答。"
+            return f"当前天气是：{WEATHER.get('location', '-')}{WEATHER.get('condition', '-')}，现在 {WEATHER.get('temperatureC', '-')} 度，最高 {WEATHER.get('highC', '-')} 度，最低 {WEATHER.get('lowC', '-')} 度。"
         if "学习计划" in user_text or "智能体" in user_text:
             return "如果你想创建新的助手，可以直接说出目标，例如“帮我创建一个儿子四年级学习计划智能体”。"
         if any(token in user_text for token in ["几点", "时间"]):
             return f"现在是 {datetime.now().strftime('%H:%M')}。"
         return "你可以直接告诉我你想做什么，比如问问题、创建日程、添加提醒，或者让我帮你创建一个智能体。"
     if locale == "ja-JP":
-        if "weather" in lowered:
-            return "天気カードも確認できます。必要なら音声で直接答える流れも続けて追加できます。"
+        if "weather" in lowered or "天気" in user_text:
+            return f"現在の天気です。{WEATHER.get('location', '-')}、{WEATHER.get('condition', '-')}、現在 {WEATHER.get('temperatureC', '-')} 度、最高 {WEATHER.get('highC', '-')} 度、最低 {WEATHER.get('lowC', '-')} 度です。"
         return "予定やリマインダー以外でも、そのまま用件を話してください。できる範囲で続けて案内します。"
     if "weather" in lowered:
-        return "You can also open the weather card, and I can keep expanding direct voice answers from here."
+        return weather_line
     return "You can just tell me what you need, and I will either answer directly or help you create a schedule, reminder, or agent."
+
+
+def build_weather_reply(user_text, locale):
+    weather_state = lookup_weather_from_query_payload(WEATHER, user_text)
+    active_weather = weather_state if isinstance(weather_state, dict) else WEATHER
+    location = str(active_weather.get("location", "")).strip()
+    condition = str(active_weather.get("condition", "")).strip()
+    temperature = active_weather.get("temperatureC")
+    high_c = active_weather.get("highC")
+    low_c = active_weather.get("lowC")
+    if not location or temperature is None:
+        lookup_result = perform_autonomous_network_lookup(
+            user_text,
+            locale,
+            "official-only",
+            preferred_sources=["weather.com", "weather.com.cn", "weathernews.jp", "weather.gov"],
+            allowed_domains=["weather.com", "weather.com.cn", "weathernews.jp", "weather.gov"],
+        )
+        if lookup_result.get("ok"):
+            return build_grounded_network_reply(user_text, lookup_result, locale)
+        if locale == "zh-CN":
+            return "还没有拿到可用的天气数据。请先允许浏览器定位，或者直接告诉我要查询的城市。"
+        if locale == "ja-JP":
+            return "まだ利用可能な天気データがありません。ブラウザの位置情報を許可するか、都市名を直接指定してください。"
+        return "I do not have usable weather data yet. Please allow browser location access or tell me the city directly."
+    if locale == "zh-CN":
+        return f"{location} 当前{condition}，现在 {temperature} 度，最高 {high_c} 度，最低 {low_c} 度。"
+    if locale == "ja-JP":
+        return f"{location} は現在 {condition}、気温 {temperature} 度、最高 {high_c} 度、最低 {low_c} 度です。"
+    return f"{location} is currently {condition}, {temperature}C now, high {high_c}C, low {low_c}C."
 
 
 def route_voice_request(user_text, locale):
@@ -2357,6 +2537,10 @@ def route_voice_request(user_text, locale):
             openai_chat_json=openai_chat_json,
         ),
     )
+    cortex_plan = build_cortex_route_plan(user_text, locale, task_spec)
+    if cortex_plan.get("shouldNetwork") and task_spec["taskType"] not in {"weather", "time_query", "ui_navigation", "reminder", "schedule"}:
+        task_spec["preferredExecution"] = "hybrid"
+        task_spec["requiresNetwork"] = True
     runtime_strategy = build_runtime_strategy(load_ollama_inventory())
     route = FEATURE_MANAGER.route_voice_intent(user_text, locale, runtime)
     heuristic_route = {
@@ -2382,6 +2566,14 @@ def route_voice_request(user_text, locale):
         "candidates": route.get("candidates", []),
     }
     routed = orchestrate_voice_route(user_text, locale, heuristic_route)
+    routed["cortex"] = cortex_plan
+    routed["reasoning"] = " ".join(
+        item for item in [
+            str(routed.get("reasoning", "")).strip(),
+            str(cortex_plan.get("reasoning", "")).strip(),
+        ]
+        if item
+    )
     if task_spec["taskType"] == "agent_creation" and routed.get("kind") == "general":
         custom_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "custom-agents"), None)
         if custom_candidate:
@@ -2397,9 +2589,35 @@ def route_voice_request(user_text, locale):
             routed["kind"] = "feature"
             routed["selected"] = schedule_candidate
             routed["reasoning"] = "Task spec identified schedule work, so HomeHub pinned the request to the local schedule feature."
+    if task_spec["taskType"] == "weather":
+        routed["kind"] = "general"
+        routed["selected"] = {
+            "intent": "weather-query",
+            "featureId": "homehub-core",
+            "featureName": "HomeHub Core",
+            "action": "weather_reply_directly",
+            "score": 0.95,
+        }
+        routed["clarificationQuestion"] = ""
+        routed["reasoning"] = "Task spec identified a weather request, so HomeHub answered through the dedicated weather path."
+    if cortex_plan.get("shouldNetwork") and routed.get("kind") == "general" and task_spec["taskType"] != "weather":
+        routed["selected"] = {
+            **(routed.get("selected") or {}),
+            "intent": "cortex-general",
+            "featureId": "homehub-core",
+            "featureName": "HomeHub Core",
+            "action": "cortex_network_grounded_reply",
+            "score": max(0.62, float((routed.get("selected") or {}).get("score", 0.4) or 0.4)),
+        }
     routed["taskSpec"] = task_spec
     routed["toolPlan"] = build_tool_plan(task_spec, routed)
     routed["modelRoute"] = select_model_route(task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])})
+    if cortex_plan.get("plannerModel"):
+        routed["modelRoute"]["plannerModel"] = cortex_plan.get("plannerModel")
+    if cortex_plan.get("executorModel"):
+        routed["modelRoute"]["executorModel"] = cortex_plan.get("executorModel")
+    if cortex_plan.get("responseModel"):
+        routed["modelRoute"]["responseModel"] = cortex_plan.get("responseModel")
     return routed
 
 
@@ -2424,6 +2642,7 @@ def serialize_voice_route(route):
         "taskSpec": route.get("taskSpec"),
         "toolPlan": route.get("toolPlan", []),
         "modelRoute": route.get("modelRoute"),
+        "cortex": route.get("cortex"),
     }
 
 
@@ -2433,7 +2652,7 @@ def build_pending_clarification_snapshot():
     return dict(PENDING_VOICE_CLARIFICATION)
 
 
-def learn_from_clarification(clarification_context, route, combined_text, locale):
+def learn_from_clarification(clarification_context, route, combined_text, locale, clarification_answer=""):
     if not clarification_context or not isinstance(route, dict):
         return
     task_spec = route.get("taskSpec", {})
@@ -2442,17 +2661,14 @@ def learn_from_clarification(clarification_context, route, combined_text, locale
     original_request = str(clarification_context.get("originalRequest", "")).strip()
     if not original_request:
         return
-    record_semantic_example(
-        combined_text,
-        locale,
-        task_spec,
-        correction_text=str(clarification_context.get("latestUserMessage", "")).strip(),
-    )
+    clarified_text = str(clarification_answer or "").strip()
+    if not clarified_text:
+        return
     record_semantic_example(
         original_request,
         locale,
         task_spec,
-        correction_text=str(clarification_context.get("latestUserMessage", "")).strip(),
+        correction_text=clarified_text,
     )
 
 
@@ -2584,6 +2800,9 @@ def _voice_context():
         "build_agent_factory_reply": build_agent_factory_reply,
         "build_clarification_reply": build_clarification_reply,
         "build_general_voice_reply": build_general_voice_reply,
+        "build_grounded_network_reply": build_grounded_network_reply,
+        "perform_autonomous_network_lookup": perform_autonomous_network_lookup,
+        "build_weather_reply": build_weather_reply,
         "build_network_lookup_reply": build_network_lookup_reply,
         "build_pending_clarification_snapshot": build_pending_clarification_snapshot,
         "build_runtime_bridge": build_runtime_bridge,
@@ -2613,9 +2832,11 @@ def build_voice_router_snapshot(locale):
     return build_voice_router_snapshot_payload(locale, _voice_context())
 
 
-def set_last_voice_route(route):
+def set_last_voice_route(route, request_text=""):
     global LAST_VOICE_ROUTE
-    LAST_VOICE_ROUTE = route
+    payload = dict(route or {})
+    payload["requestText"] = str(request_text or "").strip()
+    LAST_VOICE_ROUTE = payload
 
 
 def clear_pending_voice_clarification():
@@ -2644,6 +2865,63 @@ def generate_assistant_reply(user_text, locale):
 
 def build_last_voice_route(user_text, locale):
     return build_last_voice_route_payload(user_text, locale, _voice_context())
+
+
+def should_cortex_require_network(user_text, task_spec):
+    lowered = str(user_text or "").lower()
+    task_type = str(task_spec.get("taskType", "")).strip()
+    if task_type in {"ui_navigation", "reminder", "schedule", "time_query"}:
+        return False
+    if task_type == "weather":
+        return False
+    return (
+        task_type == "network_lookup"
+        or any(token in lowered for token in ["latest", "news", "official", "search", "lookup", "look up", "research", "价格", "最新", "官网", "上网", "联网"])
+    )
+
+
+def build_cortex_route_plan(user_text, locale, task_spec, route=None):
+    route = route if isinstance(route, dict) else {}
+    seed_state = default_agent_cortex("homehub-shared-brain", "HomeHub Shared Brain")
+    seed_state["stage"] = "shared-brain"
+    seed_state["blueprint"]["mission"] = "Understand HomeHub requests, choose the right execution lane, and keep outputs grounded in current runtime state."
+    seed_state["blueprint"]["networkEnabled"] = True
+    request = {
+        "command": str(user_text or "").strip(),
+        "locale": locale,
+        "taskType": str(task_spec.get("taskType", "general_chat")).strip() or "general_chat",
+        "inputModes": list(task_spec.get("inputModes", ["text"])) or ["text"],
+        "requireArtifacts": bool(task_spec.get("requiresGeneration", False)),
+        "requiresNetwork": should_cortex_require_network(user_text, task_spec),
+        "speakReply": False,
+    }
+    brain = CORTEX_ARCHITECT.design_state(seed_state, request)
+    requirement = brain.get("requirementSpec", {}) if isinstance(brain.get("requirementSpec", {}), dict) else {}
+    decision_hints = requirement.get("decisionHints", {}) if isinstance(requirement.get("decisionHints", {}), dict) else {}
+    model_plan = brain.get("modelPlan", {}) if isinstance(brain.get("modelPlan", {}), dict) else {}
+    assignments = model_plan.get("assignments", {}) if isinstance(model_plan.get("assignments", {}), dict) else {}
+    capability_list = requirement.get("requiredCapabilities", []) if isinstance(requirement.get("requiredCapabilities", []), list) else []
+    return {
+        "request": request,
+        "summary": brain.get("summary", {}),
+        "requirementSpec": requirement,
+        "decisionHints": decision_hints,
+        "taskflow": brain.get("taskflow", {}),
+        "requestLoop": brain.get("requestLoop", {}),
+        "technologyStack": brain.get("technologyStack", []),
+        "autonomousCreation": brain.get("autonomousCreation", {}),
+        "modelPlan": model_plan,
+        "selectedModels": assignments,
+        "capabilities": capability_list,
+        "reasoning": (
+            f"Cortex classified task={request['taskType']} and inferred capabilities: "
+            f"{', '.join(capability_list) if capability_list else 'semantic-understanding'}."
+        ),
+        "shouldNetwork": bool(request.get("requiresNetwork")) or bool(decision_hints.get("requireSearch")),
+        "plannerModel": assignments.get("planner", ""),
+        "executorModel": assignments.get("executor", ""),
+        "responseModel": assignments.get("response", ""),
+    }
 
 
 def build_dashboard():
@@ -2815,6 +3093,7 @@ class Handler(BaseHTTPRequestHandler):
             "persisted_settings": PERSISTED_SETTINGS,
             "query_semantic_memory": query_semantic_memory,
             "record_semantic_example": record_semantic_example,
+            "refresh_weather_from_coordinates": refresh_weather_from_coordinates,
             "refresh_secrets_state": lambda: self._refresh_secrets_state(),
             "relay_messages": RELAY_MESSAGES,
             "resolve_voice_request": resolve_voice_request,
@@ -2830,6 +3109,7 @@ class Handler(BaseHTTPRequestHandler):
             "synthesize_speech": synthesize_speech,
             "transcribe_audio": transcribe_audio,
             "usage_log_file": USAGE_LOG_FILE,
+            "weather_state_file": WEATHER_STATE_FILE,
             "voice_conversation": VOICE_CONVERSATION,
             "voice_profile": VOICE_PROFILE,
         }

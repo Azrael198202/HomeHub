@@ -153,26 +153,22 @@ def get_google_cloud_headers(secrets: dict, token_cache: dict, service_account_f
 
 
 def load_persisted_settings(settings_file: Path, language_settings: dict, provider_catalog: dict, runtime_profiles: list[dict]):
+    default_settings = {
+        "language": language_settings["current"],
+        "sttProvider": "google",
+        "ttsProvider": "google",
+        "runtimeProfile": "low-memory",
+        "bootstrapConsent": False,
+        "bootstrapCompleted": False,
+        "assistantAvatarMode": "custom",
+        "assistantAvatarCustomModelUrl": "/generated/avatar/pixellabs-glb-3347.glb",
+    }
     if not settings_file.exists():
-        return {
-            "language": language_settings["current"],
-            "sttProvider": "google",
-            "ttsProvider": "google",
-            "runtimeProfile": "low-memory",
-            "bootstrapConsent": False,
-            "bootstrapCompleted": False,
-        }
+        return default_settings
     try:
         data = json.loads(settings_file.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return {
-            "language": language_settings["current"],
-            "sttProvider": "google",
-            "ttsProvider": "google",
-            "runtimeProfile": "low-memory",
-            "bootstrapConsent": False,
-            "bootstrapCompleted": False,
-        }
+        return default_settings
     supported_codes = {item["code"] for item in language_settings["supported"]}
     language = data.get("language", language_settings["current"])
     if language not in supported_codes:
@@ -188,6 +184,12 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
     runtime_profile = data.get("runtimeProfile", "low-memory")
     if runtime_profile not in supported_profiles:
         runtime_profile = "low-memory"
+    assistant_avatar_mode = str(data.get("assistantAvatarMode", "custom")).strip().lower()
+    if assistant_avatar_mode not in {"house", "custom"}:
+        assistant_avatar_mode = "house"
+    assistant_avatar_custom_model_url = str(
+        data.get("assistantAvatarCustomModelUrl", "/generated/avatar/pixellabs-glb-3347.glb")
+    ).strip() or "/generated/avatar/pixellabs-glb-3347.glb"
     return {
         "language": language,
         "sttProvider": stt_provider,
@@ -195,6 +197,8 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
         "runtimeProfile": runtime_profile,
         "bootstrapConsent": bool(data.get("bootstrapConsent", False)),
         "bootstrapCompleted": bool(data.get("bootstrapCompleted", False)),
+        "assistantAvatarMode": assistant_avatar_mode,
+        "assistantAvatarCustomModelUrl": assistant_avatar_custom_model_url,
     }
 
 

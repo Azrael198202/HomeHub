@@ -24,11 +24,16 @@ let isBuddySpeaking = false;
 let isBuddyThinking = false;
 let buddySpeechTimer = null;
 let buddyDragState = { dragging: false, offsetX: 0, offsetY: 0, x: null, y: null };
+let buddyThreeModulesPromise = null;
+let buddyModelViewer = null;
+let avatarSettingsState = { customModelUrl: "", isSaving: false };
+let deviceWeatherSyncState = { inFlight: false, attempted: false, lastSyncAt: 0 };
 let activeReminderId = null;
 let announcedReminderId = null;
 let isCompletingReminder = false;
 let testConversation = [];
 let customAgentStudio = { items: [], recentActions: [], selectedAgentId: "", isLoading: false, isGenerating: false, isThinking: false };
+let activeBlueprintStudioTab = "creating";
 let testUploadAttachment = null;
 let bootstrapPollTimer = null;
 let dashboardRefreshPromise = null;
@@ -200,8 +205,31 @@ const UI_TEXT = {
       send: "Send",
       inputPlaceholder: "Type a message for HomeHub.",
       blueprintsGuidance: "Select a completed blueprint, then generate a stronger feature scaffold with storage and API placeholders.",
+      studioCreating: "In Progress",
+      studioCreated: "Created",
+      studioActions: "Recent Actions",
+      detailTitle: "Blueprint Details",
+      detailEmpty: "Select an item to view details.",
+      detailGoal: "Goal",
+      detailTrigger: "Trigger",
+      detailInputs: "Inputs",
+      detailOutput: "Output",
+      detailConstraints: "Constraints",
+      detailCheckPrompt: "Check Prompt",
+      detailNoInput: "No Input Action",
+      detailHasInput: "Has Input Action",
+      detailFeaturePath: "Feature Path",
+      detailRecentRecord: "Latest Record",
+      deleteDraft: "Delete Draft",
+      deletingDraft: "Deleting...",
+      deleteDraftDone: "HomeHub: Draft deleted.",
+      deleteDraftFailed: "HomeHub: Failed to delete draft. {error}",
+      featureAlreadyGenerated: "Feature already generated",
       emptyConversation: "No text test conversation yet.",
       emptyBlueprints: "No custom blueprints yet.",
+      emptyCreating: "No blueprints are currently being designed.",
+      emptyCreated: "No completed blueprints yet.",
+      emptyActions: "No recent studio actions yet.",
       generate: "Generate Feature from Blueprint",
       generating: "Generating feature scaffold...",
       generated: "HomeHub: Feature scaffold generated for {name}.",
@@ -376,8 +404,31 @@ const UI_TEXT = {
       send: "发送",
       inputPlaceholder: "输入你想让 HomeHub 处理的内容。",
       blueprintsGuidance: "选中一个已完成蓝图后，可以直接生成带持久化存储和 API 占位的 feature 脚手架。",
+      studioCreating: "创建中",
+      studioCreated: "已创建",
+      studioActions: "最近动作",
+      detailTitle: "蓝图详情",
+      detailEmpty: "选中一条蓝图后，在右侧查看详情。",
+      detailGoal: "目标",
+      detailTrigger: "触发方式",
+      detailInputs: "输入",
+      detailOutput: "输出",
+      detailConstraints: "限制与原则",
+      detailCheckPrompt: "主动询问",
+      detailNoInput: "无输入时处理",
+      detailHasInput: "有输入时处理",
+      detailFeaturePath: "Feature 路径",
+      detailRecentRecord: "最新记录",
+      deleteDraft: "删除草稿",
+      deletingDraft: "正在删除...",
+      deleteDraftDone: "HomeHub：草稿已删除。",
+      deleteDraftFailed: "HomeHub：删除草稿失败。{error}",
+      featureAlreadyGenerated: "已生成 feature",
       emptyConversation: "还没有文字测试对话。",
       emptyBlueprints: "还没有通用智能体蓝图。",
+      emptyCreating: "当前没有正在设计的蓝图。",
+      emptyCreated: "还没有已完成的蓝图。",
+      emptyActions: "还没有最近动作。",
       generate: "从蓝图生成 feature",
       generating: "正在生成 feature 脚手架...",
       generated: "HomeHub：已为 {name} 生成 feature 脚手架。",
@@ -552,8 +603,31 @@ const UI_TEXT = {
       send: "送信",
       inputPlaceholder: "HomeHub に処理してほしい内容を入力してください。",
       blueprintsGuidance: "完成済みブループリントを選ぶと、永続ストレージと API の雛形付き feature を生成できます。",
+      studioCreating: "作成中",
+      studioCreated: "作成済み",
+      studioActions: "最近の操作",
+      detailTitle: "ブループリント詳細",
+      detailEmpty: "項目を選ぶと、右側に詳細が表示されます。",
+      detailGoal: "目的",
+      detailTrigger: "トリガー",
+      detailInputs: "入力",
+      detailOutput: "出力",
+      detailConstraints: "制約",
+      detailCheckPrompt: "確認の質問",
+      detailNoInput: "入力なし時の処理",
+      detailHasInput: "入力あり時の処理",
+      detailFeaturePath: "Feature パス",
+      detailRecentRecord: "最新記録",
+      deleteDraft: "下書きを削除",
+      deletingDraft: "削除中...",
+      deleteDraftDone: "HomeHub: 下書きを削除しました。",
+      deleteDraftFailed: "HomeHub: 下書きの削除に失敗しました。{error}",
+      featureAlreadyGenerated: "feature 生成済み",
       emptyConversation: "まだテキストテスト会話はありません。",
       emptyBlueprints: "まだカスタムブループリントはありません。",
+      emptyCreating: "現在、設計中のブループリントはありません。",
+      emptyCreated: "完成済みブループリントはまだありません。",
+      emptyActions: "最近の操作はまだありません。",
       generate: "ブループリントから feature を生成",
       generating: "feature 雛形を生成しています...",
       generated: "HomeHub: {name} の feature 雛形を生成しました。",
@@ -621,6 +695,14 @@ function settingsSectionCatalog() {
         "zh-CN": "切换界面语言与会话语言。",
         "ja-JP": "UI と会話の言語を切り替えます。",
         "en-US": "Switch UI and conversation language."
+      }
+    },
+    avatar: {
+      label: { "zh-CN": "形象", "ja-JP": "アバター", "en-US": "Avatar" },
+      summary: {
+        "zh-CN": "切换自定义 GLB 机器人与默认房子小机器人。",
+        "ja-JP": "カスタム GLB ロボットと家型マスコットを切り替えます。",
+        "en-US": "Switch between the custom GLB robot and the default house mascot."
       }
     },
     pairing: {
@@ -948,6 +1030,267 @@ function currentBuddyMode() {
   return "idle";
 }
 
+function getAssistantAvatarConfig() {
+  return latestDashboard?.assistantAvatar || {
+    mode: "house",
+    customModelUrl: "/generated/avatar/pixellabs-glb-3347.glb",
+    backupMode: "house",
+    defaultMode: "custom",
+    techStack: [],
+  };
+}
+
+function shouldRenderCustomBuddy() {
+  const avatar = getAssistantAvatarConfig();
+  return avatar.mode === "custom" && !!avatar.customModelUrl;
+}
+
+function destroyBuddyModelViewer() {
+  if (!buddyModelViewer) return;
+  if (buddyModelViewer.frameId) cancelAnimationFrame(buddyModelViewer.frameId);
+  if (buddyModelViewer.mixer) {
+    buddyModelViewer.mixer.stopAllAction();
+  }
+  if (buddyModelViewer.renderer) {
+    buddyModelViewer.renderer.dispose();
+    const canvas = buddyModelViewer.renderer.domElement;
+    if (canvas?.parentNode) {
+      canvas.parentNode.removeChild(canvas);
+    }
+  }
+  buddyModelViewer = null;
+}
+
+async function loadBuddyThreeModules() {
+  if (!buddyThreeModulesPromise) {
+    buddyThreeModulesPromise = Promise.all([
+      import("/generated/vendor/three/three.module.js"),
+      import("/generated/vendor/three/GLTFLoader.js"),
+    ]).then(([THREE, loaderModule]) => ({
+      THREE,
+      GLTFLoader: loaderModule.GLTFLoader,
+    })).catch((error) => {
+      buddyThreeModulesPromise = null;
+      throw error;
+    });
+  }
+  return buddyThreeModulesPromise;
+}
+
+function resizeBuddyModelViewer() {
+  if (!buddyModelViewer) return;
+  const rect = buddyModelViewer.container.getBoundingClientRect();
+  const width = Math.max(220, Math.round(rect.width || 280));
+  const height = Math.max(220, Math.round(rect.height || 280));
+  buddyModelViewer.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  buddyModelViewer.renderer.setSize(width, height, false);
+  buddyModelViewer.camera.aspect = width / height;
+  buddyModelViewer.camera.updateProjectionMatrix();
+}
+
+function collectBuddyMorphTargets(root) {
+  const slots = [];
+  root.traverse((node) => {
+    if (!node?.isMesh || !node.morphTargetDictionary || !Array.isArray(node.morphTargetInfluences)) return;
+    const names = Object.keys(node.morphTargetDictionary);
+    const indices = names
+      .filter((name) => /mouth|smile|talk|speak|viseme|phoneme|jaw|open/i.test(name))
+      .map((name) => node.morphTargetDictionary[name])
+      .filter((value) => Number.isInteger(value));
+    if (indices.length) {
+      slots.push({ node, indices });
+    }
+  });
+  return slots;
+}
+
+function collectBuddyAccentMaterials(root) {
+  const materials = [];
+  root.traverse((node) => {
+    if (!node?.isMesh) return;
+    const materialList = Array.isArray(node.material) ? node.material : [node.material];
+    materialList.forEach((material) => {
+      if (!material || typeof material !== "object" || typeof material.emissive === "undefined") return;
+      materials.push({
+        material,
+        baseIntensity: Number(material.emissiveIntensity || 0),
+      });
+    });
+  });
+  return materials;
+}
+
+function animateBuddyState(elapsed, mode, root, stateNodes) {
+  const baseY = stateNodes.baseY ?? -0.5;
+  const baseScale = stateNodes.baseScale ?? 1;
+  const earTilt = mode === "listening" ? Math.sin(elapsed * 4.8) * 0.06 : 0;
+  const thinkTilt = mode === "thinking" ? Math.sin(elapsed * 2.4) * 0.08 : 0;
+  const speakBounce = mode === "speaking" ? Math.abs(Math.sin(elapsed * 7.2)) * 0.09 : 0;
+  const idleBounce = mode === "idle" ? Math.sin(elapsed * 1.1) * 0.035 : 0;
+  const listeningBounce = mode === "listening" ? Math.sin(elapsed * 2.8) * 0.055 : 0;
+  const thinkingBounce = mode === "thinking" ? Math.sin(elapsed * 2.1) * 0.075 : 0;
+  root.rotation.y = Math.sin(elapsed * (mode === "thinking" ? 0.8 : 0.5)) * (mode === "speaking" ? 0.24 : 0.16);
+  root.rotation.z = earTilt + thinkTilt;
+  root.position.y = baseY + idleBounce + listeningBounce + thinkingBounce + speakBounce;
+  const scalePulse = mode === "speaking"
+    ? 1 + Math.abs(Math.sin(elapsed * 7.2)) * 0.02
+    : mode === "thinking"
+      ? 1 + Math.sin(elapsed * 2.1) * 0.012
+      : 1;
+  root.scale.setScalar(baseScale * scalePulse);
+
+  const morphStrength = mode === "speaking"
+    ? 0.18 + Math.abs(Math.sin(elapsed * 9.4)) * 0.82
+    : mode === "listening"
+      ? 0.12 + Math.abs(Math.sin(elapsed * 3.8)) * 0.18
+      : 0;
+  stateNodes.morphTargets.forEach(({ node, indices }) => {
+    indices.forEach((index) => {
+      node.morphTargetInfluences[index] = morphStrength;
+    });
+  });
+
+  const emissiveBoost = mode === "speaking"
+    ? 0.75 + Math.abs(Math.sin(elapsed * 6.4)) * 0.85
+    : mode === "listening"
+      ? 0.35 + Math.abs(Math.sin(elapsed * 3.2)) * 0.45
+      : mode === "thinking"
+        ? 0.28 + Math.abs(Math.sin(elapsed * 2.4)) * 0.4
+        : 0.08 + Math.abs(Math.sin(elapsed * 1.2)) * 0.08;
+  stateNodes.accentMaterials.forEach(({ material, baseIntensity }) => {
+    material.emissiveIntensity = baseIntensity + emissiveBoost;
+  });
+}
+
+async function mountBuddyModelViewer(container, modelUrl) {
+  if (!container) return;
+  if (buddyModelViewer?.modelUrl === modelUrl && buddyModelViewer.container === container) {
+    resizeBuddyModelViewer();
+    return;
+  }
+  destroyBuddyModelViewer();
+  container.innerHTML = "";
+  const status = document.createElement("div");
+  status.className = "floating-buddy-model-status";
+  status.textContent = currentLocale === "zh-CN"
+    ? "正在加载 3D 机器人..."
+    : currentLocale === "ja-JP"
+      ? "3D ロボットを読み込んでいます..."
+      : "Loading the 3D assistant...";
+  container.appendChild(status);
+  try {
+    const { THREE, GLTFLoader } = await loadBuddyThreeModules();
+    if (!container.isConnected) return;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    camera.position.set(0, 0.45, 3.2);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.innerHTML = "";
+    container.appendChild(renderer.domElement);
+
+    const hemi = new THREE.HemisphereLight(0xc7efff, 0x091420, 1.9);
+    const key = new THREE.DirectionalLight(0xffffff, 2.6);
+    key.position.set(2.8, 4.4, 3.6);
+    const rim = new THREE.DirectionalLight(0x76d9ff, 1.6);
+    rim.position.set(-2.4, 2.4, -1.2);
+    scene.add(hemi, key, rim);
+
+    const loader = new GLTFLoader();
+    const gltf = await loader.loadAsync(modelUrl);
+    if (!container.isConnected) return;
+    const root = gltf.scene || gltf.scenes?.[0];
+    if (!root) {
+      throw new Error("GLB scene is empty.");
+    }
+    scene.add(root);
+
+    const box = new THREE.Box3().setFromObject(root);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    root.position.sub(center);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 2.05 / maxDim;
+    root.scale.setScalar(scale);
+    root.position.y = -0.5;
+    const stateNodes = {
+      accentMaterials: collectBuddyAccentMaterials(root),
+      baseScale: scale,
+      baseY: -0.5,
+      morphTargets: collectBuddyMorphTargets(root),
+    };
+
+    let mixer = null;
+    if (Array.isArray(gltf.animations) && gltf.animations.length) {
+      mixer = new THREE.AnimationMixer(root);
+      gltf.animations.slice(0, 3).forEach((clip, index) => {
+        const action = mixer.clipAction(clip);
+        action.enabled = true;
+        action.setEffectiveWeight(index === 0 ? 1 : 0.35);
+        action.play();
+      });
+    }
+
+    const clock = new THREE.Clock();
+    buddyModelViewer = {
+      THREE,
+      camera,
+      container,
+      frameId: 0,
+      mixer,
+      modelUrl,
+      renderer,
+      root,
+      scene,
+      stateNodes,
+    };
+    const animate = () => {
+      if (!buddyModelViewer || buddyModelViewer.modelUrl !== modelUrl) return;
+      const delta = clock.getDelta();
+      const elapsed = clock.elapsedTime;
+      if (mixer) mixer.update(delta);
+      const mode = currentBuddyMode();
+      animateBuddyState(elapsed, mode, root, stateNodes);
+      renderer.render(scene, camera);
+      buddyModelViewer.frameId = requestAnimationFrame(animate);
+    };
+    resizeBuddyModelViewer();
+    animate();
+  } catch (error) {
+    destroyBuddyModelViewer();
+    container.innerHTML = `
+      <div class="floating-buddy-model-status is-error">
+        ${escapeHtml(currentLocale === "zh-CN"
+          ? `3D 模型加载失败，已保留默认房子小机器人作为备份。${String(error.message || error)}`
+          : currentLocale === "ja-JP"
+            ? `3D モデルの読み込みに失敗しました。家型マスコットを予備表示のまま残します。${String(error.message || error)}`
+            : `Failed to load the 3D model. The house mascot remains available as backup. ${String(error.message || error)}`)}
+      </div>
+    `;
+  }
+}
+
+function ensureFloatingBuddyStructure(shell, useCustomAvatar) {
+  const avatarType = useCustomAvatar ? "custom" : "house";
+  if (shell.dataset.avatarType === avatarType) return;
+  destroyBuddyModelViewer();
+  shell.dataset.avatarType = avatarType;
+  shell.innerHTML = `
+    <div class="floating-buddy">
+      <div class="floating-buddy-bubble">
+        <strong data-buddy-name></strong>
+        <em data-buddy-subtitle></em>
+        <span data-buddy-preview></span>
+      </div>
+      <div class="floating-buddy-avatar">
+        ${useCustomAvatar
+          ? `<div class="floating-buddy-model-shell"><div class="floating-buddy-model-stage"></div></div>`
+          : `<div class="floating-buddy-svg-stage"></div>`}
+      </div>
+    </div>
+  `;
+}
+
 function renderFloatingBuddy() {
   const shell = document.getElementById("floating-buddy");
   if (!shell) return;
@@ -958,18 +1301,29 @@ function renderFloatingBuddy() {
   const buddyName = buddyDisplayName();
   const pose = buddyPoseForTab();
   const mode = currentBuddyMode();
-  shell.innerHTML = `
-    <div class="floating-buddy is-${mode} pose-${pose}">
-      <div class="floating-buddy-bubble">
-        <strong>${buddyName}</strong>
-        <em>${escapeHtml(buddySubtitleForTab())}</em>
-        <span>${escapeHtml(preview)}</span>
-      </div>
-      <div class="floating-buddy-avatar">
-        ${mascotSvg(mode, pose)}
-      </div>
-    </div>
-  `;
+  const avatar = getAssistantAvatarConfig();
+  const useCustomAvatar = shouldRenderCustomBuddy();
+  ensureFloatingBuddyStructure(shell, useCustomAvatar);
+  const buddy = shell.querySelector(".floating-buddy");
+  if (!buddy) return;
+  buddy.className = `floating-buddy is-${mode} pose-${pose}`;
+  const nameNode = shell.querySelector("[data-buddy-name]");
+  const subtitleNode = shell.querySelector("[data-buddy-subtitle]");
+  const previewNode = shell.querySelector("[data-buddy-preview]");
+  if (nameNode) nameNode.textContent = buddyName;
+  if (subtitleNode) subtitleNode.textContent = buddySubtitleForTab();
+  if (previewNode) previewNode.textContent = preview;
+  if (useCustomAvatar) {
+    const stage = shell.querySelector(".floating-buddy-model-stage");
+    if (stage) {
+      void mountBuddyModelViewer(stage, avatar.customModelUrl);
+    }
+  } else {
+    const svgStage = shell.querySelector(".floating-buddy-svg-stage");
+    if (svgStage) {
+      svgStage.innerHTML = mascotSvg(mode, pose);
+    }
+  }
   if (buddyDragState.x !== null && buddyDragState.y !== null) {
     shell.style.right = "auto";
     shell.style.bottom = "auto";
@@ -1090,8 +1444,11 @@ function renderStatusStrip(data) {
   const strip = document.getElementById("status-strip");
   const micStatus = document.getElementById("mic-status");
   if (!strip || !micStatus) return;
-  const weatherValue = `${data.weather.condition} ${data.weather.temperatureC}°C`;
-  const weatherMeta = `${data.weather.location} · ${data.weather.highC}° / ${data.weather.lowC}°`;
+  const hasWeather = data.weather && data.weather.temperatureC !== null && data.weather.temperatureC !== undefined && data.weather.location;
+  const weatherValue = hasWeather ? `${data.weather.condition} ${data.weather.temperatureC}°C` : (currentLocale === "zh-CN" ? "等待定位" : currentLocale === "ja-JP" ? "位置情報待機中" : "Waiting for location");
+  const weatherMeta = hasWeather
+    ? `${data.weather.location} · ${data.weather.highC}° / ${data.weather.lowC}°${data.weather.gpsEnabled ? " · GPS" : ""}`
+    : (currentLocale === "zh-CN" ? "允许定位后自动刷新" : currentLocale === "ja-JP" ? "位置情報を許可すると自動更新します" : "Allow location access to refresh automatically");
   const nextReminder = data.assistantMemory?.dueReminders?.[0] || data.assistantMemory?.pendingReminders?.[0];
   const tipValue = nextReminder ? nextReminder.title : t("status.remoteReady");
   const tipMeta = nextReminder ? nextReminder.triggerAt.replace("T", " ") : "Directional navigation enabled";
@@ -1247,7 +1604,19 @@ function renderTimeline(events) {
 function renderModules(modules) {
   const container = document.getElementById("modules");
   if (!container) return;
-  container.innerHTML = modules.map((item) => {
+  const weather = latestDashboard?.weather || {};
+  const hasWeather = weather && weather.temperatureC !== null && weather.temperatureC !== undefined && weather.location;
+  const weatherModule = {
+    id: "weather-live",
+    name: currentLocale === "zh-CN" ? "实时天气" : currentLocale === "ja-JP" ? "ライブ天気" : "Live Weather",
+    summary: hasWeather
+      ? `${weather.location || "-"} · ${weather.condition || "-"} · ${weather.temperatureC ?? "-"}°C`
+      : (currentLocale === "zh-CN" ? "等待浏览器定位天气" : currentLocale === "ja-JP" ? "ブラウザの位置情報を待っています" : "Waiting for browser location weather"),
+    actionLabel: currentLocale === "zh-CN" ? "查看天气" : currentLocale === "ja-JP" ? "天気を見る" : "View Weather",
+    state: "ready",
+  };
+  const allModules = [weatherModule, ...(Array.isArray(modules) ? modules : [])];
+  container.innerHTML = allModules.map((item) => {
     const localized = moduleTranslations[item.id]?.[currentLocale] || {};
     return {
       ...item,
@@ -1264,6 +1633,45 @@ function renderModules(modules) {
       <button type="button">${module.actionLabel}</button>
     </div>
   `).join("");
+}
+
+async function syncDeviceWeatherFromBrowser(force = false) {
+  if (!navigator.geolocation || deviceWeatherSyncState.inFlight) return;
+  const weather = latestDashboard?.weather || {};
+  const shouldSync = force
+    || !weather.gpsEnabled
+    || !deviceWeatherSyncState.attempted
+    || (Date.now() - deviceWeatherSyncState.lastSyncAt > 30 * 60 * 1000);
+  if (!shouldSync) return;
+  deviceWeatherSyncState.inFlight = true;
+  deviceWeatherSyncState.attempted = true;
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 15 * 60 * 1000,
+      });
+    });
+    const response = await fetch("/api/device/location", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Failed to update weather");
+    }
+    deviceWeatherSyncState.lastSyncAt = Date.now();
+    await loadDashboard();
+  } catch (error) {
+    console.warn("GPS weather sync failed.", error);
+  } finally {
+    deviceWeatherSyncState.inFlight = false;
+  }
 }
 
 function renderAgents(agents) {
@@ -1433,9 +1841,123 @@ function getSelectedStudioAgent() {
     || null;
 }
 
+function getBlueprintStudioGroups() {
+  const items = Array.isArray(customAgentStudio.items) ? customAgentStudio.items : [];
+  return {
+    creating: items.filter((item) => item.status !== "complete"),
+    created: items.filter((item) => item.status === "complete"),
+    actions: Array.isArray(customAgentStudio.recentActions) ? customAgentStudio.recentActions : []
+  };
+}
+
+function getSelectedStudioAgentForTab(tabName) {
+  const groups = getBlueprintStudioGroups();
+  const items = tabName === "created" ? groups.created : tabName === "creating" ? groups.creating : [];
+  return items.find((item) => item.id === customAgentStudio.selectedAgentId) || items[0] || null;
+}
+
+function renderStudioDetail(agent, mode) {
+  if (!agent) {
+    return `<div class="settings-card"><p>${escapeHtml(t("test.detailEmpty"))}</p></div>`;
+  }
+  const profile = agent.profile || {};
+  const records = Array.isArray(agent.records) ? agent.records : [];
+  const latestRecord = records[0]?.message || "";
+  const sections = [
+    [t("test.detailGoal"), profile.goal || "-"],
+    [t("test.detailTrigger"), profile.trigger || "-"],
+    [t("test.detailInputs"), profile.inputs || "-"],
+    [t("test.detailOutput"), profile.output || "-"],
+    [t("test.detailConstraints"), profile.constraints || "-"],
+    [t("test.detailCheckPrompt"), profile.checkPrompt || "-"],
+    [t("test.detailNoInput"), profile.noInputAction || "-"],
+    [t("test.detailHasInput"), profile.hasInputAction || "-"],
+  ];
+  if (agent.generatedFeaturePath) {
+    sections.push([t("test.detailFeaturePath"), agent.generatedFeaturePath]);
+  }
+  if (latestRecord) {
+    sections.push([t("test.detailRecentRecord"), latestRecord]);
+  }
+  const generateDisabled = mode !== "created" || !!agent.generatedFeaturePath || customAgentStudio.isGenerating;
+  const generateLabel = agent.generatedFeaturePath
+    ? t("test.featureAlreadyGenerated")
+    : (customAgentStudio.isGenerating ? t("test.generating") : t("test.generate"));
+  return `
+    <div class="studio-detail-card">
+      <div class="studio-detail-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(t("test.detailTitle"))}</p>
+          <h3>${escapeHtml(agent.name || "Blueprint")}</h3>
+        </div>
+        <span class="pill ${stateColor[agent.status] || "is-muted"}">${escapeHtml(localizeStatusWord(agent.status || "draft"))}</span>
+      </div>
+      <div class="studio-detail-grid">
+        ${sections.map(([label, value]) => `
+          <div class="studio-detail-section">
+            <strong>${escapeHtml(label)}</strong>
+            <p>${escapeHtml(value)}</p>
+          </div>
+        `).join("")}
+      </div>
+      <div class="studio-detail-actions">
+        ${mode === "creating" ? `<button id="test-delete-draft" class="test-action remote-target is-secondary" type="button">${escapeHtml(t("test.deleteDraft"))}</button>` : ""}
+        ${mode === "created" ? `<button id="test-generate-feature" class="test-action remote-target" type="button" ${generateDisabled ? "disabled" : ""}>${escapeHtml(generateLabel)}</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function renderStudioAgentCards(items) {
+  return items.map((item) => {
+    const isSelected = item.id === customAgentStudio.selectedAgentId;
+    const tag = item.generatedFeaturePath ? t("test.generatedTag") : t("test.storageTag");
+    const statusClass = stateColor[item.status] || "is-muted";
+    const output = item.profile?.output || "-";
+    const trigger = item.profile?.trigger || "-";
+    const recordCount = Array.isArray(item.records) ? item.records.length : 0;
+    const featureItemCount = Number.isFinite(Number(item.featureItemCount)) ? Number(item.featureItemCount) : null;
+    const countLabel = featureItemCount !== null
+      ? `${featureItemCount} items`
+      : `${recordCount} records`;
+    const latestRecord = featureItemCount !== null
+      ? (item.featureLatestAction || "")
+      : (recordCount ? item.records[0]?.message || "" : "");
+    return `
+      <div
+        class="studio-card remote-target focusable-card ${isSelected ? "is-selected" : ""}"
+        tabindex="0"
+        data-agent-id="${item.id}"
+        data-title="${escapeHtml(item.name || "Blueprint")}"
+      >
+        <div class="studio-head">
+          <strong>${escapeHtml(item.name || "Blueprint")}</strong>
+          <span class="pill ${statusClass}">${escapeHtml(localizeStatusWord(item.status || "draft"))}</span>
+        </div>
+        <p>${escapeHtml(item.profile?.goal || "-")}</p>
+        <div class="studio-meta">
+          <span class="mini-pill">${escapeHtml(trigger)}</span>
+          <span class="mini-pill capability">${escapeHtml(tag)}</span>
+          <span class="mini-pill">${countLabel}</span>
+        </div>
+        <small>${escapeHtml(output)}</small>
+        ${latestRecord ? `<small>${escapeHtml(latestRecord)}</small>` : ""}
+        ${item.generatedFeaturePath ? `<small>${escapeHtml(item.generatedFeaturePath)}</small>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
 function renderTestLab() {
-  const selected = getSelectedStudioAgent();
-  if (!customAgentStudio.selectedAgentId && selected) {
+  const studioGroups = getBlueprintStudioGroups();
+  if (activeBlueprintStudioTab === "created" && !studioGroups.created.length) {
+    activeBlueprintStudioTab = studioGroups.creating.length ? "creating" : "actions";
+  }
+  if (activeBlueprintStudioTab === "creating" && !studioGroups.creating.length) {
+    activeBlueprintStudioTab = studioGroups.created.length ? "created" : "actions";
+  }
+  const selected = getSelectedStudioAgentForTab(activeBlueprintStudioTab) || getSelectedStudioAgent();
+  if (selected && customAgentStudio.selectedAgentId !== selected.id) {
     customAgentStudio.selectedAgentId = selected.id;
   }
 
@@ -1446,58 +1968,37 @@ function renderTestLab() {
     if (!customAgentStudio.items.length) {
       studioContainer.innerHTML = `<div class="settings-card"><p>${t("test.emptyBlueprints")}</p></div>`;
     } else {
-      studioContainer.innerHTML = customAgentStudio.items.map((item) => {
-        const isSelected = item.id === customAgentStudio.selectedAgentId;
-        const tag = item.generatedFeaturePath ? t("test.generatedTag") : t("test.storageTag");
-        const statusClass = stateColor[item.status] || "is-muted";
-        const output = item.profile?.output || "-";
-        const trigger = item.profile?.trigger || "-";
-        const recordCount = Array.isArray(item.records) ? item.records.length : 0;
-        const featureItemCount = Number.isFinite(Number(item.featureItemCount)) ? Number(item.featureItemCount) : null;
-        const countLabel = featureItemCount !== null
-          ? `${featureItemCount} items`
-          : `${recordCount} records`;
-        const latestRecord = featureItemCount !== null
-          ? (item.featureLatestAction || "")
-          : (recordCount ? item.records[0]?.message || "" : "");
-        return `
-          <div
-            class="studio-card remote-target focusable-card ${isSelected ? "is-selected" : ""}"
-            tabindex="0"
-            data-agent-id="${item.id}"
-            data-title="${escapeHtml(item.name || "Blueprint")}"
-          >
-            <div class="studio-head">
-              <strong>${escapeHtml(item.name || "Blueprint")}</strong>
-              <span class="pill ${statusClass}">${escapeHtml(localizeStatusWord(item.status || "draft"))}</span>
-            </div>
-            <p>${escapeHtml(item.profile?.goal || "-")}</p>
-            <div class="studio-meta">
-              <span class="mini-pill">${escapeHtml(trigger)}</span>
-              <span class="mini-pill capability">${escapeHtml(tag)}</span>
-              <span class="mini-pill">${countLabel}</span>
-            </div>
-            <small>${escapeHtml(output)}</small>
-            ${latestRecord ? `<small>${escapeHtml(latestRecord)}</small>` : ""}
-            ${item.generatedFeaturePath ? `<small>${escapeHtml(item.generatedFeaturePath)}</small>` : ""}
-          </div>
-        `;
-      }).join("");
+      let listHtml = "";
+      if (activeBlueprintStudioTab === "actions") {
+        listHtml = studioGroups.actions.length
+          ? studioGroups.actions.map((item) => `<div class="relay-item studio-log-card"><strong>${escapeHtml(item.createdAt || "")}</strong><p>${escapeHtml(item.summary || "")}</p></div>`).join("")
+          : `<div class="settings-card"><p>${t("test.emptyActions")}</p></div>`;
+      } else if (activeBlueprintStudioTab === "created") {
+        listHtml = studioGroups.created.length
+          ? renderStudioAgentCards(studioGroups.created)
+          : `<div class="settings-card"><p>${t("test.emptyCreated")}</p></div>`;
+      } else {
+        listHtml = studioGroups.creating.length
+          ? renderStudioAgentCards(studioGroups.creating)
+          : `<div class="settings-card"><p>${t("test.emptyCreating")}</p></div>`;
+      }
+      studioContainer.innerHTML = `
+        <div class="studio-tab-strip">
+          <button class="studio-mini-tab remote-target ${activeBlueprintStudioTab === "creating" ? "is-active" : ""}" type="button" data-studio-tab="creating">${escapeHtml(t("test.studioCreating"))}<span>${studioGroups.creating.length}</span></button>
+          <button class="studio-mini-tab remote-target ${activeBlueprintStudioTab === "created" ? "is-active" : ""}" type="button" data-studio-tab="created">${escapeHtml(t("test.studioCreated"))}<span>${studioGroups.created.length}</span></button>
+          <button class="studio-mini-tab remote-target ${activeBlueprintStudioTab === "actions" ? "is-active" : ""}" type="button" data-studio-tab="actions">${escapeHtml(t("test.studioActions"))}<span>${studioGroups.actions.length}</span></button>
+        </div>
+        <div class="studio-tab-panel ${activeBlueprintStudioTab === "actions" ? "is-log-view" : ""}">
+          ${activeBlueprintStudioTab === "actions" ? listHtml : `<div class="studio-master-detail"><div class="studio-master-list">${listHtml}</div><div class="studio-detail-pane">${renderStudioDetail(selected, activeBlueprintStudioTab)}</div></div>`}
+        </div>
+      `;
     }
   }
 
   const actionsLog = document.getElementById("studio-actions-log");
   if (actionsLog) {
-    actionsLog.innerHTML = `
-      <strong>${t("test.recentActionsTitle")}</strong>
-      ${(customAgentStudio.recentActions || []).map((item) => `<div class="relay-item"><strong>${escapeHtml(item.createdAt || "")}</strong><p>${escapeHtml(item.summary || "")}</p></div>`).join("")}
-    `;
-  }
-
-  const generateButton = document.getElementById("test-generate-feature");
-  if (generateButton) {
-    generateButton.disabled = customAgentStudio.isGenerating;
-    generateButton.textContent = customAgentStudio.isGenerating ? t("test.generating") : t("test.generate");
+    actionsLog.hidden = true;
+    actionsLog.innerHTML = "";
   }
   const uploadMeta = document.getElementById("test-upload-meta");
   if (uploadMeta) {
@@ -1632,6 +2133,9 @@ function deriveWorkItems() {
     const reply = conversation.slice(item.index + 1).find((entry) => entry.speaker !== "You");
     const isLatest = position === 0;
     const source = inferWorkSource(item.text, isLatest ? testUploadAttachment : null);
+    const latestRoute = latestDashboard?.lastVoiceRoute || latestDashboard?.voiceRoute || null;
+    const latestRouteRequest = String(latestRoute?.requestText || "").trim();
+    const itemText = String(item.text || "").trim();
     const status = isLatest
       ? (customAgentStudio.isThinking ? "working" : reply ? "packed" : "queued")
       : (reply ? "packed" : "sleeping");
@@ -1642,17 +2146,25 @@ function deriveWorkItems() {
       status,
       source,
       reply,
-      route: isLatest ? (latestDashboard?.lastVoiceRoute || latestDashboard?.voiceRoute || null) : null
+      route: isLatest && latestRoute && latestRouteRequest && latestRouteRequest === itemText ? latestRoute : null
     };
   });
 }
 
 function buildWorkPipeline(item) {
   const route = item?.route || {};
-  const selectedAgent = getSelectedStudioAgent();
   const taskSpec = route.taskSpec || {};
+  const cortex = route.cortex || {};
   const toolPlan = Array.isArray(route.toolPlan) ? route.toolPlan : [];
-  const requiresNetwork = Boolean(taskSpec.requiresNetworkLookup || toolPlan.some((tool) => String(tool || "").toLowerCase().includes("network")));
+  const requiresNetwork = Boolean(
+    taskSpec.requiresNetworkLookup
+    || taskSpec.requiresNetwork
+    || cortex.shouldNetwork
+    || toolPlan.some((tool) => String(tool || "").toLowerCase().includes("network"))
+  );
+  const taskType = String(taskSpec.taskType || "").trim() || "general_chat";
+  const requestText = String(item?.text || "").toLowerCase();
+  const isWeatherRequest = taskType === "weather";
   const inputAgents = [];
   inputAgents.push({
     name: item?.source === "voice" ? "Speech Intake" : item?.source === "image" ? "OCR Intake" : item?.source === "file" ? "Document Intake" : "Text Intake",
@@ -1673,16 +2185,32 @@ function buildWorkPipeline(item) {
     });
   }
   const executionAgents = [];
-  if (selectedAgent?.name) {
+  if (isWeatherRequest) {
     executionAgents.push({
-      name: selectedAgent.name,
+      name: "GPS Location",
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+    executionAgents.push({
+      name: "Weather Fetch",
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+  } else if (taskType === "agent_creation" || route.kind === "agent_factory") {
+    executionAgents.push({
+      name: route.selected?.featureName || "Agent Factory",
+      state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
+    });
+  } else if (route.kind === "feature" && route.selected?.featureName) {
+    executionAgents.push({
+      name: route.selected.featureName,
       state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
     });
   }
-  if (toolPlan.length) {
+  if (toolPlan.length && !isWeatherRequest) {
     toolPlan.slice(0, 3).forEach((tool, index) => {
+      const label = String(tool?.label || tool?.name || tool || `Tool ${index + 1}`);
+      if (executionAgents.some((agent) => agent.name === label)) return;
       executionAgents.push({
-        name: String(tool?.label || tool?.name || tool || `Tool ${index + 1}`),
+        name: label,
         state: item?.status === "packed" ? "packed" : item?.status === "working" ? "working" : "sleeping"
       });
     });
@@ -2342,9 +2870,24 @@ function buildSettingsOverview(data, language) {
   `;
 }
 
+function initializeAvatarSettingsState(data) {
+  const avatar = data.assistantAvatar || {};
+  if (!avatarSettingsState.customModelUrl) {
+    avatarSettingsState.customModelUrl = avatar.customModelUrl || "/generated/avatar/pixellabs-glb-3347.glb";
+  }
+}
+
+function syncAvatarSettingsFromDom() {
+  const input = document.getElementById("avatar-custom-model-url");
+  if (input) {
+    avatarSettingsState.customModelUrl = String(input.value || "").trim();
+  }
+}
+
 function renderSettingsDetail(data) {
   const detail = document.getElementById("settings-detail");
   if (!detail) return;
+  initializeAvatarSettingsState(data);
   const language = getCurrentLanguage(data);
   const mailConfig = data.externalChannels?.mailConfig || {};
   const mailData = data.externalChannels?.mail || {};
@@ -2388,6 +2931,82 @@ function renderSettingsDetail(data) {
         if (nextCode) await persistLanguage(nextCode);
       };
     }
+    return;
+  }
+
+  if (activeSettingsSection === "avatar") {
+    const avatar = data.assistantAvatar || getAssistantAvatarConfig();
+    const isCustom = avatar.mode === "custom";
+    const stackList = Array.isArray(avatar.techStack) ? avatar.techStack : [];
+    detail.innerHTML = `
+      ${overview}
+      <div class="settings-section-header">
+        <div>
+          <p class="eyebrow">${escapeHtml(settingsSectionHeading("avatar"))}</p>
+          <h3>${escapeHtml(settingsSectionHeading("avatar"))}</h3>
+        </div>
+        <span class="pill">${escapeHtml(isCustom ? "GLB / Three.js" : (currentLocale === "zh-CN" ? "默认备份" : currentLocale === "ja-JP" ? "標準バックアップ" : "Default Backup"))}</span>
+      </div>
+      <p class="settings-section-copy">${escapeHtml(settingsSectionSummary("avatar"))}</p>
+      <div class="settings-detail-grid">
+        <div class="settings-card">
+          <strong>${escapeHtml(currentLocale === "zh-CN" ? "当前形象" : currentLocale === "ja-JP" ? "現在のアバター" : "Current Avatar")}</strong>
+          <p>${escapeHtml(isCustom ? (currentLocale === "zh-CN" ? "已启用你的 GLB 机器人" : currentLocale === "ja-JP" ? "カスタム GLB ロボットを使用中" : "Your custom GLB robot is active") : (currentLocale === "zh-CN" ? "当前使用房子小机器人备份形象" : currentLocale === "ja-JP" ? "現在は家型マスコットのバックアップ表示です" : "The backup house mascot is active"))}</p>
+          <p>${escapeHtml(currentLocale === "zh-CN" ? "自定义模型地址" : currentLocale === "ja-JP" ? "カスタムモデル URL" : "Custom model URL")}: ${escapeHtml(avatar.customModelUrl || "-")}</p>
+          <input
+            id="avatar-custom-model-url"
+            class="settings-input full-span"
+            type="text"
+            placeholder="/generated/avatar/your-model.glb"
+            value="${escapeHtml(avatarSettingsState.customModelUrl || avatar.customModelUrl || "")}"
+          />
+          <div class="avatar-mode-actions">
+            <button id="avatar-use-custom" class="remote-target ${isCustom ? "is-selected-provider" : ""}" type="button">${escapeHtml(currentLocale === "zh-CN" ? "使用 GLB 机器人" : currentLocale === "ja-JP" ? "GLB ロボットを使う" : "Use GLB Robot")}</button>
+            <button id="avatar-use-house" class="remote-target ${!isCustom ? "is-selected-provider" : ""}" type="button">${escapeHtml(currentLocale === "zh-CN" ? "切回房子小机器人" : currentLocale === "ja-JP" ? "家型マスコットに戻す" : "Return to House Mascot")}</button>
+            <button id="avatar-save-model-url" class="remote-target" type="button">${escapeHtml(avatarSettingsState.isSaving ? (currentLocale === "zh-CN" ? "保存中..." : currentLocale === "ja-JP" ? "保存中..." : "Saving...") : (currentLocale === "zh-CN" ? "保存模型地址" : currentLocale === "ja-JP" ? "モデル URL を保存" : "Save Model URL"))}</button>
+          </div>
+        </div>
+        <div class="settings-card">
+          <strong>${escapeHtml(currentLocale === "zh-CN" ? "接入技术栈" : currentLocale === "ja-JP" ? "導入技術スタック" : "Integrated Stack")}</strong>
+          <div class="avatar-tech-list">
+            ${stackList.map((item) => `
+              <div class="avatar-tech-item">
+                <span>${escapeHtml(item.label || "")}</span>
+                <strong>${escapeHtml(item.value || "")}</strong>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>
+      <div class="settings-stack">
+        <div class="settings-card">
+          <strong>${escapeHtml(currentLocale === "zh-CN" ? "接入说明" : currentLocale === "ja-JP" ? "接続メモ" : "Integration Notes")}</strong>
+          <p>${escapeHtml(currentLocale === "zh-CN" ? "当前实现会优先加载你提供的 GLB 模型，前端渲染使用 Three.js。若 3D 资源加载失败，可以在这里一键切回默认房子小机器人。" : currentLocale === "ja-JP" ? "現在の実装では、提供された GLB を優先し、Three.js で描画します。3D 資産の読み込みに失敗した場合は、ここから家型マスコットへすぐ戻せます。" : "This setup prioritizes your GLB model and renders it with Three.js. If the 3D asset fails to load, you can switch back to the default house mascot here.")}</p>
+          <p>${escapeHtml(currentLocale === "zh-CN" ? "当前这份 GLB 不含内置骨骼动画或 BlendShape 动画轨道，所以 speaking / listening / thinking 是由前端状态动画驱动的。后续替换成带动画的 GLB 后，可以继续接同一个入口。" : currentLocale === "ja-JP" ? "この GLB には内蔵のスケルトンアニメーションや BlendShape アニメーションがないため、speaking / listening / thinking は現在フロント側の状態アニメーションで表現しています。将来アニメーション付き GLB に差し替えても、この同じ入口を使えます。" : "This GLB does not contain built-in skeletal or BlendShape animation tracks, so speaking / listening / thinking are currently driven by frontend state animation. If you later swap in an animated GLB, this same entry point will still work.")}</p>
+        </div>
+      </div>
+    `;
+    const customButton = document.getElementById("avatar-use-custom");
+    const houseButton = document.getElementById("avatar-use-house");
+    const saveModelUrlButton = document.getElementById("avatar-save-model-url");
+    const modelUrlInput = document.getElementById("avatar-custom-model-url");
+    if (modelUrlInput) {
+      modelUrlInput.oninput = () => {
+        syncAvatarSettingsFromDom();
+      };
+    }
+    if (customButton) customButton.onclick = async () => {
+      syncAvatarSettingsFromDom();
+      await persistAssistantAvatar("custom", avatarSettingsState.customModelUrl || avatar.customModelUrl);
+    };
+    if (houseButton) houseButton.onclick = async () => {
+      syncAvatarSettingsFromDom();
+      await persistAssistantAvatar("house", avatarSettingsState.customModelUrl || avatar.customModelUrl);
+    };
+    if (saveModelUrlButton) saveModelUrlButton.onclick = async () => {
+      syncAvatarSettingsFromDom();
+      await persistAssistantAvatar(avatar.mode || "custom", avatarSettingsState.customModelUrl || avatar.customModelUrl);
+    };
     return;
   }
 
@@ -2916,6 +3535,10 @@ async function generateSelectedFeature() {
     updateSpokenLine(t("test.noBlueprintSelected"));
     return;
   }
+  if (selected.generatedFeaturePath) {
+    updateSpokenLine(t("test.featureAlreadyGenerated"));
+    return;
+  }
   customAgentStudio.isGenerating = true;
   renderTestLab();
   try {
@@ -2933,6 +3556,37 @@ async function generateSelectedFeature() {
     updateSpokenLine(t("test.generated", { name: selected.name || "Blueprint" }));
   } catch (error) {
     updateSpokenLine(t("test.generateFailed", { error: String(error.message || error) }));
+  } finally {
+    customAgentStudio.isGenerating = false;
+    renderTestLab();
+    renderWorkTab();
+  }
+}
+
+async function deleteSelectedDraft() {
+  const selected = getSelectedStudioAgentForTab("creating");
+  if (!selected) {
+    updateSpokenLine(t("test.detailEmpty"));
+    return;
+  }
+  customAgentStudio.isGenerating = true;
+  renderTestLab();
+  try {
+    const response = await fetch("/api/custom-agents/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selected.id })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unknown error");
+    }
+    customAgentStudio.selectedAgentId = "";
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.deleteDraftDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.deleteDraftFailed", { error: String(error.message || error) }));
   } finally {
     customAgentStudio.isGenerating = false;
     renderTestLab();
@@ -3024,6 +3678,15 @@ async function triggerRemoteAction(target) {
   }
   if (target.id === "test-generate-feature") {
     await generateSelectedFeature();
+    return;
+  }
+  if (target.id === "test-delete-draft") {
+    await deleteSelectedDraft();
+    return;
+  }
+  if (target.dataset.studioTab) {
+    activeBlueprintStudioTab = target.dataset.studioTab;
+    renderTestLab();
     return;
   }
   if (target.dataset.languageCode) {
@@ -3356,6 +4019,7 @@ async function loadDashboard() {
   renderCortexUnpacked(latestCortexUnpacked);
   renderFloatingBuddy();
   renderBootstrapOverlay(data.bootstrap || {});
+  void syncDeviceWeatherFromBrowser();
   if (!latestCortexUnpacked) {
     await loadCortexUnpacked();
   }
@@ -3413,6 +4077,41 @@ async function persistAudioProvider(providerType, providerId) {
   }
   await loadDashboard();
   updateSpokenLine(t("prompts.audioUpdated", { stt: body.sttProvider, tts: body.ttsProvider }));
+}
+
+async function persistAssistantAvatar(mode, customModelUrl = "") {
+  avatarSettingsState.isSaving = true;
+  if (latestDashboard) renderSettings(latestDashboard);
+  const response = await fetch("/api/settings/avatar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, customModelUrl })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    avatarSettingsState.isSaving = false;
+    if (latestDashboard) renderSettings(latestDashboard);
+    updateSpokenLine(payload.error || (currentLocale === "zh-CN"
+      ? "HomeHub：形象设置保存失败。"
+      : currentLocale === "ja-JP"
+        ? "HomeHub: アバター設定の保存に失敗しました。"
+        : "HomeHub: Failed to save the avatar setting."));
+    return;
+  }
+  avatarSettingsState.customModelUrl = payload.customModelUrl || customModelUrl;
+  avatarSettingsState.isSaving = false;
+  await loadDashboard();
+  updateSpokenLine(mode === "custom"
+    ? (currentLocale === "zh-CN"
+      ? "HomeHub：已切换到你的 GLB 机器人。"
+      : currentLocale === "ja-JP"
+        ? "HomeHub: カスタム GLB ロボットに切り替えました。"
+        : "HomeHub: Switched to your custom GLB robot.")
+    : (currentLocale === "zh-CN"
+      ? "HomeHub：已切回房子小机器人备份形象。"
+      : currentLocale === "ja-JP"
+        ? "HomeHub: 家型マスコットのバックアップ表示に戻しました。"
+        : "HomeHub: Returned to the backup house mascot."));
 }
 
 async function saveCustomProvider() {
@@ -3649,6 +4348,7 @@ function setupFloatingBuddyControls() {
     buddyDragState.y = next.y;
     shell.style.left = `${next.x}px`;
     shell.style.top = `${next.y}px`;
+    resizeBuddyModelViewer();
   });
 }
 

@@ -284,6 +284,22 @@ def build_dashboard(context: dict) -> dict:
             {"stt": stt_provider_id, "tts": tts_provider_id},
         ),
         "runtimeProfile": context["build_runtime_strategy"](local_inventory),
+        "assistantAvatar": {
+            "mode": persisted_settings.get("assistantAvatarMode", "house"),
+            "customModelUrl": persisted_settings.get("assistantAvatarCustomModelUrl", "/generated/avatar/pixellabs-glb-3347.glb"),
+            "backupMode": "house",
+            "defaultMode": "custom",
+            "label": "PixelLabs GLB Assistant",
+            "techStack": [
+                {"label": "3D建模", "value": "Blender"},
+                {"label": "模型格式", "value": "GLB"},
+                {"label": "前端渲染", "value": "Three.js"},
+                {"label": "动画", "value": "骨骼动画 / BlendShape"},
+                {"label": "AI驱动", "value": "Python / 语音 / LLM / 控制逻辑"},
+                {"label": "语音", "value": "Whisper / TTS"},
+                {"label": "实时交互", "value": "WebSocket / API"},
+            ],
+        },
         "languageSettings": {
             **context["language_settings"],
             "current": persisted_settings["language"],

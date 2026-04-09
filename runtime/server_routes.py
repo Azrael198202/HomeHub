@@ -23,6 +23,16 @@ def handle_get_route(handler, parsed, runtime, context: dict) -> bool:
         handler._send_json(context["build_dashboard"]())
         return True
 
+    if path == "/api/conversation/history":
+        usage_log_file = context["usage_log_file"].parent / "conversation_log.jsonl"
+        if not usage_log_file.exists():
+            handler._send_json({"items": [], "path": str(usage_log_file)})
+            return True
+        lines = usage_log_file.read_text(encoding="utf-8").splitlines()[-200:]
+        items = [context["json"].loads(line) for line in lines if line.strip()]
+        handler._send_json({"items": items, "path": str(usage_log_file)})
+        return True
+
     if path == "/api/bootstrap/status":
         handler._send_json(context["bootstrap_snapshot"]())
         return True
@@ -241,6 +251,27 @@ def handle_post_route(handler, parsed, runtime, preview_body, raw_text: str, req
         handler._send_json({"ok": True, "sttProvider": stt_provider, "ttsProvider": tts_provider})
         return True
 
+    if parsed.path == "/api/settings/avatar":
+        body = preview_body if isinstance(preview_body, dict) else {}
+        mode = str(body.get("mode", context["persisted_settings"].get("assistantAvatarMode", "house"))).strip().lower()
+        custom_model_url = str(
+            body.get(
+                "customModelUrl",
+                context["persisted_settings"].get("assistantAvatarCustomModelUrl", "/generated/avatar/pixellabs-glb-3347.glb"),
+            )
+        ).strip() or "/generated/avatar/pixellabs-glb-3347.glb"
+        if mode not in {"house", "custom"}:
+            handler._send_json({"error": "Unsupported avatar mode"}, status=400)
+            return True
+        if not custom_model_url.startswith("/generated/"):
+            handler._send_json({"error": "Custom model must be served from /generated/."}, status=400)
+            return True
+        context["persisted_settings"]["assistantAvatarMode"] = mode
+        context["persisted_settings"]["assistantAvatarCustomModelUrl"] = custom_model_url
+        context["save_persisted_settings"](context["persisted_settings"])
+        handler._send_json({"ok": True, "mode": mode, "customModelUrl": custom_model_url})
+        return True
+
     if parsed.path == "/api/settings/secrets":
         body = preview_body
         if not body:
@@ -346,6 +377,23 @@ def handle_post_route(handler, parsed, runtime, preview_body, raw_text: str, req
         handler._send_json({"ok": result.get("ok", False), **result})
         return True
 
+    if parsed.path == "/api/device/location":
+        body = preview_body if isinstance(preview_body, dict) else {}
+        try:
+            latitude = float(body.get("latitude"))
+            longitude = float(body.get("longitude"))
+        except (TypeError, ValueError):
+            handler._send_json({"error": "latitude and longitude are required"}, status=400)
+            return True
+        label = str(body.get("label", "")).strip()
+        try:
+            weather = context["refresh_weather_from_coordinates"](latitude, longitude, label)
+        except Exception as exc:
+            handler._send_json({"error": f"Failed to refresh weather: {exc}"}, status=502)
+            return True
+        handler._send_json({"ok": True, "weather": weather})
+        return True
+
     if parsed.path == "/api/voice/chat":
         body = preview_body
         if not body or "message" not in body:
@@ -360,8 +408,10 @@ def handle_post_route(handler, parsed, runtime, preview_body, raw_text: str, req
         context["append_conversation_turn"]("You", message)
         resolution = context["resolve_voice_request"](message, locale)
         voice_route = resolution["route"]
-        context["set_last_voice_route"](voice_route)
-        reply_text = resolution["reply"]
+        context["set_last_voice_route"](voice_route, message)
+        reply_text = str(resolution.get("reply") or "").strip()
+        if reply_text.lower() in {"none", "null", "undefined"} or not reply_text:
+            reply_text = "HomeHub is ready." if locale == "en-US" else ("HomeHub 已经准备好了。" if locale == "zh-CN" else "HomeHub の準備ができました。")
         context["append_conversation_turn"]("HomeHub", reply_text, resolution.get("artifacts", []))
         audio_payload = None
         if body.get("speakReply", True):

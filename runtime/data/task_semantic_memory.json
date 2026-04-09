@@ -3,77 +3,7 @@
     "schemaVersion": "1.0",
     "backend": "json-hybrid-similarity",
     "brainFamily": "homehub-semantic-memory",
-    "updatedAt": "2026-04-07T17:27"
+    "updatedAt": "2026-04-09T10:07"
   },
-  "items": [
-    {
-      "id": "sem-20260407172745629209",
-      "sourceText": "帮我整理装修报价单，后续还要帮我比价",
-      "locale": "zh-CN",
-      "taskSpec": {
-        "taskType": "document_workflow",
-        "intent": "quote-analysis",
-        "summary": "Analyze renovation quotes and compare changes over time.",
-        "requiresImage": true,
-        "requiresGeneration": true,
-        "requiresScheduling": false,
-        "requiresLongRunningAgent": true,
-        "preferredExecution": "hybrid",
-        "missingInfo": [],
-        "confidence": 0.91
-      },
-      "correctionText": "要同时建立比价档案",
-      "agentId": "",
-      "agentName": "",
-      "accepted": true,
-      "createdAt": "2026-04-07T17:27",
-      "updatedAt": "2026-04-07T17:27"
-    },
-    {
-      "id": "sem-20260407171936397657",
-      "sourceText": "帮我看一下这个药现在多少钱",
-      "locale": "zh-CN",
-      "taskSpec": {
-        "taskType": "network_lookup",
-        "intent": "lookup",
-        "summary": "lookup price on official site",
-        "requiresImage": false,
-        "requiresGeneration": false,
-        "requiresScheduling": false,
-        "requiresLongRunningAgent": false,
-        "preferredExecution": "hybrid",
-        "missingInfo": [],
-        "confidence": 0.9
-      },
-      "correctionText": "去官网查价格",
-      "agentId": "",
-      "agentName": "",
-      "accepted": true,
-      "createdAt": "2026-04-07T17:19",
-      "updatedAt": "2026-04-07T17:19"
-    },
-    {
-      "id": "sem-20260407171648277466",
-      "sourceText": "帮我看一下这个药现在多少钱",
-      "locale": "zh-CN",
-      "taskSpec": {
-        "taskType": "network_lookup",
-        "intent": "network-lookup",
-        "summary": "Query approved external sources and return a sourced summary.",
-        "requiresImage": false,
-        "requiresGeneration": false,
-        "requiresScheduling": false,
-        "requiresLongRunningAgent": false,
-        "preferredExecution": "hybrid",
-        "missingInfo": [],
-        "confidence": 0.95
-      },
-      "correctionText": "我是要你去官网查最新价格，不是做OCR",
-      "agentId": "planner-agent",
-      "agentName": "Planner Agent",
-      "accepted": true,
-      "createdAt": "2026-04-07T17:16",
-      "updatedAt": "2026-04-07T17:16"
-    }
-  ]
+  "items": []
 }

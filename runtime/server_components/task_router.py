@@ -20,7 +20,6 @@ ZH_NETWORK_TOKENS = [
     "\u5b98\u7f51",
     "\u6700\u65b0",
     "\u65b0\u95fb",
-    "\u5929\u6c14",
     "\u4ef7\u683c",
 ]
 ZH_AGENT_TOKENS = [
@@ -82,7 +81,7 @@ def infer_task_spec_with_openai(
             "taskType, intent, urgency, requiresImage, requiresGeneration, requiresScheduling, "
             "requiresLongRunningAgent, preferredExecution, missingInfo, summary, confidence. "
             "Valid taskType values: agent_creation, reminder, schedule, bill_intake, general_chat, "
-            "study_plan, ui_navigation, network_lookup, document_workflow. "
+            "study_plan, ui_navigation, network_lookup, document_workflow, weather, time_query. "
             "Valid urgency values: low, normal, high. "
             "Valid preferredExecution values: local, cloud, hybrid. "
             "Set confidence between 0 and 1."
@@ -97,8 +96,22 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
     lowered = str(user_text or "").lower()
     raw = str(user_text or "")
 
-    if any(token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "weather", "price"]) or any(
+    if any(token in lowered for token in ["weather", "forecast", "temperature", "rain"]) or any(
+        token in raw for token in ["\u5929\u6c14", "\u6c14\u6e29", "\u964d\u96e8", "\u9884\u62a5", "\u5929\u6c17"]
+    ):
+        spec.update(
+            {
+                "taskType": "weather",
+                "intent": "weather-query",
+                "summary": "Get the latest local weather from the current device location or saved location.",
+                "preferredExecution": "local",
+            }
+        )
+
+    if spec["taskType"] != "weather" and (
+        any(token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "price"]) or any(
         token in raw for token in ZH_NETWORK_TOKENS
+        )
     ):
         spec.update(
             {
@@ -231,6 +244,10 @@ def build_task_spec(
         )
         return spec
 
+    direct_spec = apply_rule_based_task_hints(dict(spec), user_text)
+    if direct_spec.get("taskType") in {"weather", "time_query", "reminder", "schedule"}:
+        return direct_spec
+
     memory_spec = infer_from_semantic_memory(user_text, locale)
     if memory_spec:
         spec["taskType"] = str(memory_spec.get("taskType", spec["taskType"])).strip() or spec["taskType"]
@@ -255,7 +272,7 @@ def build_task_spec(
             confidence = float(ai_spec.get("confidence", 0.0) or 0.0)
         except (TypeError, ValueError):
             confidence = 0.0
-        if task_type in {"agent_creation", "reminder", "schedule", "bill_intake", "general_chat", "study_plan", "ui_navigation", "network_lookup", "document_workflow"} and confidence >= 0.55:
+        if task_type in {"agent_creation", "reminder", "schedule", "bill_intake", "general_chat", "study_plan", "ui_navigation", "network_lookup", "document_workflow", "weather", "time_query"} and confidence >= 0.55:
             spec["taskType"] = task_type
             spec["intent"] = str(ai_spec.get("intent", spec["intent"])).strip() or spec["intent"]
             spec["summary"] = str(ai_spec.get("summary", spec["summary"])).strip() or spec["summary"]

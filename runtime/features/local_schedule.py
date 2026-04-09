@@ -101,6 +101,30 @@ class Feature(HomeHubFeature):
                 return True
         return False
 
+    def is_explicit_schedule_request(self, message: str) -> bool:
+        text = str(message or "")
+        lowered = text.lower()
+        explicit_tokens = [
+            "日程",
+            "提醒",
+            "闹钟",
+            "行程",
+            "会议",
+            "安排",
+            "待办",
+            "提醒我",
+            "加入日程",
+            "加入提醒",
+            "show my schedule",
+            "schedule",
+            "calendar",
+            "remind me",
+            "reminder",
+            "alarm",
+            "meeting",
+        ]
+        return any(token in text or token in lowered for token in explicit_tokens)
+
     def normalize_datetime(self, dt: datetime) -> datetime:
         if dt.tzinfo is None:
             return dt.replace(second=0, microsecond=0)
@@ -810,6 +834,8 @@ class Feature(HomeHubFeature):
         return {"action": "none"}
 
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.has_active_agent_builder_session(runtime) and not self.is_explicit_schedule_request(message):
+            return None
         action = self.detect_local_assistant_action(message, locale, runtime)
         action_name = action.get("action", "none")
         if action_name == "none":
@@ -826,6 +852,8 @@ class Feature(HomeHubFeature):
         }
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.has_active_agent_builder_session(runtime) and not self.is_explicit_schedule_request(message):
+            return None
         action = self.detect_local_assistant_action(message, locale, runtime)
         action_name = action.get("action", "none")
         if action_name == "show_schedule":
@@ -1079,6 +1107,8 @@ class Feature(HomeHubFeature):
         }
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.has_active_agent_builder_session(runtime) and not self.is_explicit_schedule_request(message):
+            return None
         action = self.detect_local_assistant_action(message, locale, runtime)
         action_name = action.get("action", "none")
         if action_name == "show_schedule":

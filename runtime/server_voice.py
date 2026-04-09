@@ -4,6 +4,13 @@ from datetime import datetime
 from typing import Any
 
 
+def normalize_resolution_reply(reply_value: Any, fallback: str) -> str:
+    text = str(reply_value if reply_value is not None else "").strip()
+    if not text or text.lower() in {"none", "null", "undefined"}:
+        return str(fallback or "").strip()
+    return text
+
+
 def maybe_resolve_autonomous_agent_request(user_text, locale, runtime, route, context: dict[str, Any]) -> dict[str, Any] | None:
     feature = context["feature_manager"].get_feature("custom-agents", runtime)
     if feature is None or not hasattr(feature, "maybe_autonomous_agent_response"):
@@ -28,10 +35,14 @@ def maybe_resolve_autonomous_agent_request(user_text, locale, runtime, route, co
 
 def should_attempt_default_network_research(route) -> bool:
     task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
+    cortex = route.get("cortex", {}) if isinstance(route.get("cortex", {}), dict) else {}
+    cortex_should_network = bool(cortex.get("shouldNetwork")) or bool(((cortex.get("decisionHints") or {}).get("requireSearch")))
     task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
     kind = str(route.get("kind", "")).strip()
     if task_type in {"weather", "clock", "time_query", "ui_navigation", "reminder", "schedule"}:
         return False
+    if cortex_should_network:
+        return True
     return kind in {"general", "agent_factory"} or task_type in {
         "general_chat",
         "agent_creation",
@@ -105,7 +116,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             "toolPlan": context["build_tool_plan"](task_spec, {"selected": {"featureId": "homehub-core"}}),
             "modelRoute": context["select_model_route"](task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])}),
         }
-        lookup_result = context["perform_network_lookup"](original_text, locale, "official-only")
+        lookup_result = context["perform_autonomous_network_lookup"](original_text, locale, "official-only")
         if not lookup_result.get("ok"):
             fallback_reply = context["build_general_voice_reply"](original_text, locale, route.get("modelRoute"))
             return {
@@ -116,7 +127,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
                 "lookupResult": lookup_result,
             }
         return {
-            "reply": context["build_network_lookup_reply"](lookup_result, locale),
+            "reply": context["build_grounded_network_reply"](original_text, lookup_result, locale),
             "route": context["serialize_voice_route"](route),
             "pendingClarification": None,
             "uiAction": None,
@@ -149,49 +160,57 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         }
 
     if clarification_context:
-        context["learn_from_clarification"](clarification_context, route, combined_text, locale)
+        context["learn_from_clarification"](clarification_context, route, combined_text, locale, user_text)
+
+    fallback_reply = context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
 
     if route.get("kind") == "feature":
         result = context["feature_manager"].dispatch_voice_intent(route, combined_text, locale, runtime) or {}
-        reply = result.get("reply") or context["build_general_voice_reply"](original_text, locale, route.get("modelRoute"))
+        reply = normalize_resolution_reply(result.get("reply"), fallback_reply)
         ui_action = result.get("uiAction")
         artifacts = result.get("artifacts", [])
+    elif (route.get("taskSpec") or {}).get("taskType") == "weather":
+        reply = normalize_resolution_reply(context["build_weather_reply"](combined_text if clarification_context else original_text, locale), fallback_reply)
+        artifacts = []
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
-        lookup_result = context["perform_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
+        lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
         if not lookup_result.get("ok"):
-            reply = context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+            reply = fallback_reply
         else:
-            reply = context["build_network_lookup_reply"](lookup_result, locale)
+            reply = normalize_resolution_reply(context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale), fallback_reply)
         artifacts = []
     elif route.get("kind") == "agent_factory":
         autonomous = maybe_resolve_autonomous_agent_request(combined_text if clarification_context else original_text, locale, runtime, route, context)
         if autonomous:
-            reply = autonomous.get("reply") or context["build_agent_factory_reply"](locale)
+            reply = normalize_resolution_reply(autonomous.get("reply"), context["build_agent_factory_reply"](locale))
             ui_action = autonomous.get("uiAction")
             artifacts = autonomous.get("artifacts", [])
         else:
-            lookup_result = context["perform_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
-            reply = context["build_network_lookup_reply"](lookup_result, locale) if lookup_result.get("ok") else context["build_agent_factory_reply"](locale)
+            lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
+            reply = normalize_resolution_reply(
+                context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale) if lookup_result.get("ok") else "",
+                context["build_agent_factory_reply"](locale),
+            )
             artifacts = []
     else:
         autonomous = maybe_resolve_autonomous_agent_request(combined_text if clarification_context else original_text, locale, runtime, route, context)
         if autonomous:
-            reply = autonomous.get("reply") or context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+            reply = normalize_resolution_reply(autonomous.get("reply"), fallback_reply)
             ui_action = autonomous.get("uiAction")
             artifacts = autonomous.get("artifacts", [])
         else:
             if should_attempt_default_network_research(route):
-                lookup_result = context["perform_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
-            reply = (
-                context["build_network_lookup_reply"](lookup_result, locale)
+                lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
+            reply = normalize_resolution_reply((
+                context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale)
                 if lookup_result and lookup_result.get("ok")
-                else context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
-            )
+                else fallback_reply
+            ), fallback_reply)
             artifacts = []
 
     context["clear_pending_voice_clarification"]()
     return {
-        "reply": reply,
+        "reply": normalize_resolution_reply(reply, fallback_reply),
         "route": context["serialize_voice_route"](route),
         "pendingClarification": None,
         "uiAction": ui_action,

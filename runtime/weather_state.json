@@ -1,0 +1,14 @@
+{
+  "location": "",
+  "condition": "",
+  "temperatureC": null,
+  "highC": null,
+  "lowC": null,
+  "latitude": null,
+  "longitude": null,
+  "source": "pending-gps",
+  "updatedAt": "",
+  "locationLabel": "",
+  "gpsEnabled": false,
+  "gpsPermission": "prompt"
+}

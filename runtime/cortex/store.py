@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 
@@ -20,7 +21,7 @@ class CortexStore:
             return {"meta": self.default_meta(), "items": {}}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return {"meta": self.default_meta(), "items": {}}
         if not isinstance(data, dict):
             return {"meta": self.default_meta(), "items": {}}
@@ -36,7 +37,12 @@ class CortexStore:
             "meta": payload.get("meta", self.default_meta()) if isinstance(payload, dict) else self.default_meta(),
             "items": payload.get("items", {}) if isinstance(payload, dict) else {},
         }
-        self.storage_path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+        target = self.storage_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=target.parent, prefix=f"{target.stem}-", suffix=".tmp", delete=False) as handle:
+            handle.write(json.dumps(body, ensure_ascii=False, indent=2))
+            temp_path = Path(handle.name)
+        temp_path.replace(target)
 
     def default_meta(self) -> dict:
         return {

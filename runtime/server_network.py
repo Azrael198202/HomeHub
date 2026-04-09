@@ -4,6 +4,11 @@ import json
 import re
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
+try:
+    import trafilatura
+except ModuleNotFoundError:
+    trafilatura = None
+
 
 def normalize_domain(value):
     host = str(value or "").strip().lower()
@@ -30,9 +35,123 @@ def strip_html_excerpt(html_text, limit=420):
     text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
     title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", text)
     title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", title_match.group(1))).strip() if title_match else ""
+    meta_match = re.search(r'(?is)<meta[^>]+(?:name|property)=["\'](?:description|og:description|twitter:description)["\'][^>]+content=["\'](.*?)["\']', text)
+    meta_description = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", meta_match.group(1))).strip() if meta_match else ""
+    article_match = re.search(r"(?is)<article[^>]*>(.*?)</article>", text)
+    article_plain = ""
+    if article_match:
+        article_plain = re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", article_match.group(1))).strip()
     plain = re.sub(r"(?s)<[^>]+>", " ", text)
     plain = re.sub(r"\s+", " ", plain).strip()
-    return {"title": title, "excerpt": plain[:limit]}
+    excerpt = article_plain or meta_description or plain
+    return {"title": title, "excerpt": excerpt[:limit]}
+
+
+def extract_best_excerpt(content, limit=420):
+    if isinstance(content, dict):
+        return json.dumps(content, ensure_ascii=False)[:limit]
+    raw = str(content or "")
+    if trafilatura is not None:
+        try:
+            extracted = trafilatura.extract(
+                raw,
+                include_comments=False,
+                include_tables=False,
+                favor_precision=True,
+            )
+            cleaned = re.sub(r"\s+", " ", str(extracted or "")).strip()
+            if cleaned:
+                return cleaned[:limit]
+        except Exception:
+            pass
+    return strip_html_excerpt(raw, limit=limit).get("excerpt", "")
+
+
+def clean_network_excerpt(text, limit=220):
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"https?://\S+", " ", value)
+    value = re.sub(r"\b(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\S*", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value).strip(" -:|;,\n\t")
+    boilerplate_tokens = [
+        "cookie",
+        "privacy",
+        "terms",
+        "advertisement",
+        "sign in",
+        "log in",
+        "javascript",
+        "enable javascript",
+        "版权所有",
+        "隐私",
+        "条款",
+        "登录",
+        "注册",
+    ]
+    pieces = re.split(r"(?<=[。！？.!?])\s+|[\n\r]+", value)
+    filtered = []
+    for piece in pieces:
+        candidate = str(piece or "").strip(" -:|;,")
+        lowered = candidate.lower()
+        if len(candidate) < 8:
+            continue
+        if any(token in lowered for token in boilerplate_tokens):
+            continue
+        filtered.append(candidate)
+    joined = " ".join(filtered) if filtered else value
+    return joined[:limit].rstrip(" ,;:") + ("..." if len(joined) > limit else "")
+
+
+def build_source_labels(sources):
+    labels = []
+    for item in sources[:3]:
+        title = str(item.get("title", "")).strip()
+        url = str(item.get("url", "")).strip()
+        domain = normalize_domain(url)
+        if title and domain:
+            labels.append(f"{title} ({domain})")
+        elif title:
+            labels.append(title)
+        elif domain:
+            labels.append(domain)
+        elif url:
+            labels.append(url)
+    return labels
+
+
+def synthesize_network_answer(result, locale):
+    sources = result.get("sources", [])
+    cleaned_excerpts = []
+    for item in sources[:3]:
+        cleaned = clean_network_excerpt(item.get("excerpt", ""))
+        if cleaned:
+            cleaned_excerpts.append(cleaned)
+
+    primary = cleaned_excerpts[0] if cleaned_excerpts else clean_network_excerpt(result.get("answer", ""))
+    secondary = ""
+    for item in cleaned_excerpts[1:]:
+        if item and item != primary:
+            secondary = item
+            break
+
+    if locale == "zh-CN":
+        if primary and secondary:
+            return f"我整理了一下联网结果：{primary} 另外，其他来源也提到：{secondary}"
+        if primary:
+            return f"我整理了一下联网结果：{primary}"
+        return "我已经完成联网查询，但当前来源里没有提取到足够清晰的正文内容。"
+    if locale == "ja-JP":
+        if primary and secondary:
+            return f"ネット検索結果を整理すると、{primary} 別の情報源では、{secondary}"
+        if primary:
+            return f"ネット検索結果を整理すると、{primary}"
+        return "ネット検索は完了しましたが、情報源から十分に明確な本文を抽出できませんでした。"
+    if primary and secondary:
+        return f"Here is the cleaned-up result: {primary} Another source also notes: {secondary}"
+    if primary:
+        return f"Here is the cleaned-up result: {primary}"
+    return "I completed the network lookup, but the fetched sources did not contain enough clean text to summarize clearly."
 
 
 def fetch_allowed_url(url, allowed_domains, json_get):
@@ -44,9 +163,10 @@ def fetch_allowed_url(url, allowed_domains, json_get):
     except Exception as exc:
         return {"ok": False, "error": f"fetch_failed:{exc}"}
     if isinstance(content, dict):
-        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": json.dumps(content, ensure_ascii=False)[:420]}
+        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": extract_best_excerpt(content)}
     parsed = strip_html_excerpt(str(content))
-    return {"ok": True, "url": url, "title": parsed.get("title", ""), "excerpt": parsed.get("excerpt", "")}
+    excerpt = extract_best_excerpt(content)
+    return {"ok": True, "url": url, "title": parsed.get("title", ""), "excerpt": excerpt or parsed.get("excerpt", "")}
 
 
 def wikipedia_lookup(query, locale, json_get):
@@ -82,14 +202,15 @@ def build_network_lookup_reply(result, locale):
         if locale == "ja-JP":
             return f"制御付きネット検索は結果を返せませんでした: {result.get('error', 'unknown error')}."
         return f"The controlled network lookup did not return a usable result: {result.get('error', 'unknown error')}."
-    answer = str(result.get("answer", "")).strip()
+    answer = synthesize_network_answer(result, locale)
     sources = result.get("sources", [])
+    source_labels = build_source_labels(sources)
     if locale == "zh-CN":
-        if sources:
-            return f"{answer}\n来源：{'；'.join(str(item.get('url', '')) for item in sources[:3])}"
+        if source_labels:
+            return f"{answer}\n来源：{'；'.join(source_labels)}"
         return answer
-    if sources:
-        return f"{answer}\nSources: {'; '.join(str(item.get('url', '')) for item in sources[:3])}"
+    if source_labels:
+        return f"{answer}\nSources: {'; '.join(source_labels)}"
     return answer
 
 
@@ -170,9 +291,10 @@ def fetch_discovered_url(url, json_get):
     except Exception as exc:
         return {"ok": False, "error": f"fetch_failed:{exc}"}
     if isinstance(content, dict):
-        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": json.dumps(content, ensure_ascii=False)[:420]}
+        return {"ok": True, "url": url, "title": str(content.get("title", "")).strip(), "excerpt": extract_best_excerpt(content)}
     parsed_content = strip_html_excerpt(str(content))
-    return {"ok": True, "url": url, "title": parsed_content.get("title", ""), "excerpt": parsed_content.get("excerpt", "")}
+    excerpt = extract_best_excerpt(content)
+    return {"ok": True, "url": url, "title": parsed_content.get("title", ""), "excerpt": excerpt or parsed_content.get("excerpt", "")}
 
 
 def discover_search_result_urls(query, json_get, max_results=5):

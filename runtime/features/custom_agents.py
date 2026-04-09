@@ -129,7 +129,11 @@ class Feature(HomeHubFeature):
 
     def default_store(self) -> dict:
         now = datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
-        return {"items": [], "recentActions": [{"id": "custom-agents-ready", "summary": "Custom agent studio is ready.", "createdAt": now}]}
+        return {
+            "settings": {"testingMode": True},
+            "items": [],
+            "recentActions": [{"id": "custom-agents-ready", "summary": "Custom agent studio is ready for test drafts.", "createdAt": now}],
+        }
 
     def load_store(self, runtime: RuntimeBridge) -> dict:
         path = self.storage_path(runtime)
@@ -145,13 +149,94 @@ class Feature(HomeHubFeature):
             return store
         if not isinstance(data, dict):
             return self.default_store()
-        return {"items": data.get("items", []) if isinstance(data.get("items", []), list) else [], "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions", []), list) else []}
+        settings = data.get("settings", {})
+        if not isinstance(settings, dict):
+            settings = {"testingMode": True}
+        settings.setdefault("testingMode", True)
+        return {
+            "settings": settings,
+            "items": data.get("items", []) if isinstance(data.get("items", []), list) else [],
+            "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions", []), list) else [],
+        }
 
     def save_store(self, store: dict, runtime: RuntimeBridge) -> None:
         self.storage_path(runtime).write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def is_noise_agent(self, agent: dict) -> bool:
+        if not isinstance(agent, dict):
+            return True
+        profile = agent.get("profile", {}) if isinstance(agent.get("profile", {}), dict) else {}
+        haystacks = [
+            str(agent.get("name", "")).strip(),
+            str(profile.get("name", "")).strip(),
+            str(profile.get("goal", "")).strip(),
+            str(profile.get("primaryUser", "")).strip(),
+            str(profile.get("output", "")).strip(),
+            str(profile.get("preferredSources", "")).strip(),
+        ]
+        joined = "\n".join(item for item in haystacks if item).lower()
+        suspicious_tokens = [
+            "line公式アカウント運用事務局",
+            "lineキャンパス",
+            "lycorp.co.jp",
+            "manager.line.biz",
+            "unsubscribepage",
+            "noreply@linecorp.com",
+            "効果を出すための基本的な考え方をお伝えします",
+        ]
+        if any(token in joined for token in suspicious_tokens):
+            return True
+        url_count = joined.count("http://") + joined.count("https://")
+        if url_count >= 3:
+            return True
+        return False
+
+    def testing_mode_enabled(self, runtime: RuntimeBridge) -> bool:
+        store = self.get_store(runtime)
+        settings = store.get("settings", {})
+        if not isinstance(settings, dict):
+            return True
+        return bool(settings.get("testingMode", True))
+
+    def cleanup_transient_agents(self, runtime: RuntimeBridge, keep_recent_complete: int = 1) -> bool:
+        if not self.testing_mode_enabled(runtime):
+            return False
+        store = self.get_store(runtime)
+        items = store.get("items", [])
+        if not isinstance(items, list) or not items:
+            return False
+        kept_complete = 0
+        kept_items: list[dict] = []
+        removed = 0
+        for agent in self.sorted_agents(runtime):
+            if self.is_noise_agent(agent):
+                removed += 1
+                continue
+            status = str(agent.get("status", "")).strip()
+            if status in {"collecting", "review"}:
+                kept_items.append(agent)
+                continue
+            if status == "complete":
+                if kept_complete < keep_recent_complete:
+                    kept_items.append(agent)
+                    kept_complete += 1
+                else:
+                    removed += 1
+                continue
+            if status in {"cancelled", "archived"}:
+                removed += 1
+                continue
+            kept_items.append(agent)
+        if removed <= 0:
+            return False
+        store["items"] = kept_items
+        self.append_action(runtime, f"Cleaned up {removed} transient custom agent record(s) in testing mode.")
+        self.save_store(store, runtime)
+        return True
+
     def on_refresh(self, runtime: RuntimeBridge) -> None:
         runtime.state[self.feature_id] = self.load_store(runtime)
+        self.cleanup_transient_agents(runtime)
         cortex = self.cortex(runtime)
         for agent in self.sorted_agents(runtime):
             cortex.sync_agent(agent, stage=str(agent.get("status", "")).strip() or "loaded")
@@ -170,6 +255,29 @@ class Feature(HomeHubFeature):
 
     def sorted_agents(self, runtime: RuntimeBridge) -> list[dict]:
         return sorted(self.get_store(runtime).get("items", []), key=lambda item: item.get("updatedAt", ""), reverse=True)
+
+    def can_auto_route_operational_agent(self, message: str, runtime: RuntimeBridge) -> bool:
+        if not self.testing_mode_enabled(runtime):
+            return True
+        text = str(message or "").strip()
+        lowered = text.lower()
+        if not text:
+            return False
+        if self.find_agent_by_hint(text, runtime):
+            return True
+        explicit_tokens = [
+            "继续用",
+            "继续让",
+            "让这个智能体",
+            "交给这个智能体",
+            "使用这个智能体",
+            "用刚才的智能体",
+            "continue with",
+            "use this agent",
+            "use that agent",
+            "let the agent",
+        ]
+        return any(token in text or token in lowered for token in explicit_tokens)
 
     def enrich_agent_runtime_stats(self, agent: dict, runtime: RuntimeBridge) -> dict:
         enriched = deepcopy(agent)
@@ -872,10 +980,12 @@ class Feature(HomeHubFeature):
             agent["profile"]["name"] = generated
             agent["name"] = generated
         agent["status"] = "complete"
+        agent["testingMode"] = self.testing_mode_enabled(runtime)
         agent["updatedAt"] = self.now_iso()
         agent["artifact"] = self.build_artifact(agent, locale)
         self.append_action(runtime, f"Completed custom agent '{agent['name']}'.")
         self.save_store(self.get_store(runtime), runtime)
+        self.cleanup_transient_agents(runtime)
         self.cortex(runtime).record_event(agent, "confirmed", {"message": agent.get("artifact", "")})
 
     def is_edit_request(self, message: str) -> bool:
@@ -1779,9 +1889,9 @@ def load_feature() -> HomeHubFeature:
                 return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.93}
             return {"intent": "custom-agent-builder", "action": "general_agent_help", "score": 0.9}
         if collecting and not self.is_general_time_or_weather_query(message):
-            return {"intent": "custom-agent-builder", "action": "continue_collecting", "score": 0.95}
+            return {"intent": "custom-agent-builder", "action": "continue_collecting", "score": 0.995}
         if review and not self.is_general_time_or_weather_query(message):
-            return {"intent": "custom-agent-builder", "action": "review_blueprint", "score": 0.96}
+            return {"intent": "custom-agent-builder", "action": "review_blueprint", "score": 0.995}
         if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
             return {"intent": "custom-agent-builder", "action": "operational_agent", "score": 0.91}
         if self.looks_like_agent_topic(message) and self.is_list_request(message):
@@ -1822,6 +1932,9 @@ def load_feature() -> HomeHubFeature:
                     return {"reply": self.similar_agents_message(draft_profile, similar, locale), "uiAction": self.studio_ui_action(similar[0])}
             agent = self.create_agent(runtime, message, locale)
             q = self.next_question(agent, locale)
+            if not q:
+                reply = self.move_to_review(agent, runtime, locale)
+                return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
             return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
         if classified_action == "create_agent" and classified_confidence >= 0.6:
             draft_profile = self.infer_initial_profile(message, locale, runtime)
@@ -1830,6 +1943,9 @@ def load_feature() -> HomeHubFeature:
                 return {"reply": self.similar_agents_message(draft_profile, similar, locale), "uiAction": self.studio_ui_action(similar[0])}
             agent = self.create_agent(runtime, message, locale)
             q = self.next_question(agent, locale)
+            if not q:
+                reply = self.move_to_review(agent, runtime, locale)
+                return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
             return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
         if collecting and not self.is_general_time_or_weather_query(message):
             reply = self.answer_collecting_agent(collecting, message, runtime, locale)
@@ -1852,6 +1968,8 @@ def load_feature() -> HomeHubFeature:
             if self.is_revision_message(message) or message.strip():
                 return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
         operational = classified_target or self.find_matching_operational_agent(message, runtime) or self.latest_operational_agent(runtime)
+        if operational and not classified_target and not self.can_auto_route_operational_agent(message, runtime):
+            operational = None
         if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
             artifact_result = self.handle_artifact_generation(operational, message, runtime, locale)
             if artifact_result:
@@ -1905,6 +2023,26 @@ def load_feature() -> HomeHubFeature:
             "customAgentCortex": self.cortex(runtime).summaries_for(agents),
         }
 
+    def delete_agent(self, agent_id: str, runtime: RuntimeBridge) -> dict | None:
+        store = self.get_store(runtime)
+        items = store.get("items", [])
+        if not isinstance(items, list):
+            return None
+        target = None
+        kept_items = []
+        for item in items:
+            if str(item.get("id", "")).strip() == agent_id:
+                target = item
+                continue
+            kept_items.append(item)
+        if not target:
+            return None
+        store["items"] = kept_items
+        self.append_action(runtime, f"Deleted custom agent draft '{target.get('name', 'Untitled')}'.")
+        self.save_store(store, runtime)
+        self.cortex(runtime).record_event(target, "deleted", {"message": f"Deleted from studio: {agent_id}"})
+        return target
+
     def handle_api(self, method: str, path: str, query: dict, body: dict | None, runtime: RuntimeBridge) -> dict | None:
         if method == "GET" and path == "/api/custom-agents":
             agents = [self.enrich_agent_runtime_stats(agent, runtime) for agent in self.sorted_agents(runtime)]
@@ -1916,6 +2054,24 @@ def load_feature() -> HomeHubFeature:
                     "cortex": self.cortex(runtime).summaries_for(agents),
                 },
             }
+        if method == "POST" and path == "/api/custom-agents/delete":
+            payload = body or {}
+            agent_id = str(payload.get("id", "")).strip()
+            if not agent_id:
+                return {"status": 400, "body": {"error": "id is required"}}
+            agent = None
+            for item in self.sorted_agents(runtime):
+                if str(item.get("id", "")).strip() == agent_id:
+                    agent = item
+                    break
+            if agent is None:
+                return {"status": 404, "body": {"error": "Agent not found"}}
+            if str(agent.get("status", "")).strip() == "complete":
+                return {"status": 400, "body": {"error": "Completed blueprints cannot be deleted from this action"}}
+            deleted = self.delete_agent(agent_id, runtime)
+            if deleted is None:
+                return {"status": 404, "body": {"error": "Agent not found"}}
+            return {"status": 200, "body": {"ok": True, "deletedId": agent_id}}
         if method == "POST" and path == "/api/custom-agents/generate-feature":
             payload = body or {}
             agent = None
@@ -1990,7 +2146,7 @@ def load_feature() -> HomeHubFeature:
                         break
             if agent is None and payload.get("name"):
                 agent = self.find_agent_by_hint(str(payload.get("name")), runtime)
-            if agent is None:
+            if agent is None and not self.testing_mode_enabled(runtime):
                 agent = self.latest_operational_agent(runtime) or self.latest_completed_agent(runtime)
             if agent is None:
                 return {"status": 404, "body": {"error": "No active custom agent found for intake."}}

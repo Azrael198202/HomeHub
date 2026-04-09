@@ -19,6 +19,16 @@ CONFIG_FILE = Path(__file__).resolve().parent.parent / "semantic_memory.local.js
 MAX_ITEMS = 500
 DEFAULT_THRESHOLD = 0.33
 DEFAULT_RECALL_THRESHOLD = 0.18
+NOISY_TEXT_MARKERS = [
+    "line公式アカウント",
+    "運用事務局",
+    "送信専用",
+    "配信停止",
+    "お問い合わせフォーム",
+    "starter kit",
+    "unsubscribe",
+    "the weather channel",
+]
 
 
 def now_iso() -> str:
@@ -86,6 +96,37 @@ def _item_search_text(item: dict) -> str:
         str(task_spec.get("taskType", "")).strip(),
     ]
     return " ".join(part for part in parts if part)
+
+
+def _looks_like_noisy_training_text(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    lowered = value.lower()
+    url_count = len(re.findall(r"https?://", value))
+    if value.startswith("Original request:"):
+        return True
+    if len(value) > 500:
+        return True
+    if url_count >= 3:
+        return True
+    return any(marker in lowered for marker in NOISY_TEXT_MARKERS)
+
+
+def _is_usable_memory_item(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if not bool(item.get("accepted", True)):
+        return False
+    source_text = str(item.get("sourceText", "")).strip()
+    correction_text = str(item.get("correctionText", "")).strip()
+    if not source_text:
+        return False
+    if _looks_like_noisy_training_text(source_text):
+        return False
+    if correction_text and _looks_like_noisy_training_text(correction_text):
+        return False
+    return True
 
 
 def _cosine(left: Counter, right: Counter) -> float:
@@ -263,9 +304,7 @@ def query_semantic_memory(text: str, locale: str, limit: int = 5, threshold: flo
         return []
     scored: list[dict] = []
     for item in load_memory().get("items", []):
-        if not isinstance(item, dict):
-            continue
-        if not bool(item.get("accepted", True)):
+        if not _is_usable_memory_item(item):
             continue
         item_locale = str(item.get("locale", "")).strip()
         if item_locale and locale and item_locale != locale:
@@ -312,6 +351,11 @@ def upsert_semantic_memory_item(
     normalized_text = str(source_text or "").strip()
     if not normalized_text or not isinstance(task_spec, dict):
         return None
+    normalized_correction = str(correction_text or "").strip()
+    if _looks_like_noisy_training_text(normalized_text):
+        return None
+    if normalized_correction and _looks_like_noisy_training_text(normalized_correction):
+        return None
     payload = load_memory()
     items = payload.get("items", [])
     if not isinstance(items, list):
@@ -332,7 +376,7 @@ def upsert_semantic_memory_item(
         "sourceText": normalized_text,
         "locale": normalized_locale,
         "taskSpec": dict(task_spec),
-        "correctionText": str(correction_text or "").strip(),
+        "correctionText": normalized_correction,
         "agentId": str(agent_id or "").strip(),
         "agentName": str(agent_name or "").strip(),
         "accepted": bool(accepted),
