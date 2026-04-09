@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -101,6 +102,10 @@ def _normalize_place_query(query_text: str):
         "天气情况",
         "天气",
         "气温",
+        "温度",
+        "多少度",
+        "几度",
+        "多少",
         "预报",
         "天気",
         "天気予報",
@@ -117,6 +122,8 @@ def _normalize_place_query(query_text: str):
         normalized = normalized.replace(token, " ")
     normalized = normalized.replace("？", " ").replace("?", " ").replace("，", " ").replace(",", " ")
     normalized = normalized.replace("的", " ").replace("の", " ")
+    normalized = re.sub(r"\b\d{1,2}\s*度\b", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
     normalized = " ".join(part for part in normalized.split() if part)
     return normalized.strip()
 

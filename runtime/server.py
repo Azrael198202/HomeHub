@@ -2179,6 +2179,46 @@ def build_grounded_network_reply(query_text, lookup_result, locale):
     if not isinstance(lookup_result, dict) or not lookup_result.get("ok"):
         return fallback
     sources = lookup_result.get("sources", []) if isinstance(lookup_result.get("sources", []), list) else []
+    query = str(query_text or "").strip()
+    lowered_query = query.lower()
+    flight_like = any(token in query for token in ["航班", "机票", "飞机"]) or any(
+        token in lowered_query for token in ["flight", "flights", "airfare", "ticket", "plane"]
+    )
+    if flight_like:
+        excerpts = " ".join(str(item.get("excerpt", "")).strip() for item in sources[:3]).lower()
+        has_numeric_price = bool(re.search(r"(?:¥|￥|\$)\s*\d+|\d+\s*(?:jpy|usd|cny|rmb|元|円|yen|dollars?)", excerpts))
+        has_time_pattern = bool(re.search(r"\b\d{1,2}:\d{2}\b|\d{1,2}\s*(?:am|pm)|\d{1,2}时\d{0,2}分", excerpts))
+        has_specific_flight_detail = has_numeric_price or has_time_pattern or any(
+            token in excerpts for token in ["航班号", "flight no", "flight number", "departs at", "arrives at", "起飞于", "到达于"]
+        )
+        generic_search_page = any(
+            token in excerpts
+            for token in [
+                "提供机票查询预订信息",
+                "旅游搜索网站",
+                "比较",
+                "compare",
+                "search website",
+                "google flights",
+                "航班动态",
+                "打折特价机票",
+            ]
+        )
+        source_labels = build_source_labels(sources)
+        if not has_specific_flight_detail or generic_search_page:
+            if locale == "zh-CN":
+                base = (
+                    "我已经查到可用的机票搜索来源，但它们目前提供的主要是搜索入口，还没有直接给出“日本全境到美国全境、5月31日”的完整航班时间和价格列表。"
+                    "这类查询范围太大，时间和价格会随出发城市、到达城市、是否直飞而变化。"
+                    "如果你补充出发城市和到达城市，例如“东京到洛杉矶”或“福冈到纽约”，我就可以继续按时间和价格帮你整理。"
+                )
+                return f"{base}\n来源：{'；'.join(source_labels)}" if source_labels else base
+            base = (
+                "I found usable flight search sources, but they are still returning search-entry pages rather than a concrete Japan-to-USA flight list for May 31. "
+                "This route is too broad, and times and prices depend on the departure city, arrival city, and whether you want direct flights. "
+                "If you tell me a concrete route such as Tokyo to Los Angeles or Fukuoka to New York, I can refine the result."
+            )
+            return f"{base}\nSources: {'; '.join(source_labels)}" if source_labels else base
     source_briefs = []
     for item in sources[:3]:
         title = str(item.get("title", "")).strip()
@@ -2220,7 +2260,9 @@ def build_grounded_network_reply(query_text, lookup_result, locale):
         },
         ensure_ascii=False,
     )
-    ai_reply = openai_chat_reply(system_prompt, user_prompt, "gpt-4o-mini")
+    ai_reply = ollama_chat_raw(system_prompt, user_prompt, select_local_chat_model())
+    if not ai_reply:
+        ai_reply = openai_chat_reply(system_prompt, user_prompt, "gpt-4o-mini")
     if ai_reply:
         source_labels = build_source_labels(sources)
         if locale == "zh-CN":

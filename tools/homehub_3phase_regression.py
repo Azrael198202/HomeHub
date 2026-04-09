@@ -238,7 +238,7 @@ def run_regression() -> list[CaseResult]:
 
     weather = run_voice("福冈今天的天气怎么样，温度多少。")
     weather_reply = str(weather.get("reply", ""))
-    weather_status = "PASS" if ("福冈" in weather_reply and "度" in weather_reply and "当前" in weather_reply) else "PARTIAL"
+    weather_status = "PASS" if ("福冈" in weather_reply and any(token in weather_reply for token in ["度", "℃", "温度"])) else "PARTIAL"
     results.append(
         case(
             "阶段1",

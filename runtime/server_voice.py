@@ -30,6 +30,54 @@ def is_simple_greeting(text: str) -> bool:
     }
 
 
+def is_information_request(text: str) -> bool:
+    value = str(text or "").strip()
+    lowered = value.lower()
+    if not value:
+        return False
+    if any(token in value for token in ["？", "?", "什么", "怎么", "如何", "多少", "几点", "哪里", "哪儿", "哪", "谁", "为何", "为什么", "多久"]):
+        return True
+    return any(
+        token in lowered
+        for token in ["what", "how", "why", "when", "where", "who", "which", "how much", "how many", "can you find", "look up"]
+    )
+
+
+def reply_looks_incomplete(reply_text: str) -> bool:
+    text = str(reply_text or "").strip()
+    lowered = text.lower()
+    if not text:
+        return True
+    weak_phrases = [
+        "你可以直接告诉我你想做什么",
+        "比如问问题、创建日程、添加提醒",
+        "可以直接告诉我你想做什么",
+        "i can help you create",
+        "just tell me what you need",
+        "how can i help",
+        "请稍后重试",
+        "没有返回可用结果",
+        "需要更具体",
+        "请补充",
+        "could not find",
+        "did not return usable results",
+        "try again",
+    ]
+    return any(token in text or token in lowered for token in weak_phrases)
+
+
+def should_promote_to_network(user_text: str, route: dict[str, Any], reply_text: str) -> bool:
+    task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
+    task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
+    if task_type in {"weather", "time_query", "clock", "reminder", "schedule", "ui_navigation", "agent_creation"}:
+        return False
+    if str(route.get("kind", "")).strip() == "feature":
+        return False
+    if not is_information_request(user_text):
+        return False
+    return reply_looks_incomplete(reply_text)
+
+
 def maybe_resolve_autonomous_agent_request(user_text, locale, runtime, route, context: dict[str, Any]) -> dict[str, Any] | None:
     feature = context["feature_manager"].get_feature("custom-agents", runtime)
     if feature is None or not hasattr(feature, "maybe_autonomous_agent_response"):
@@ -120,13 +168,6 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             "uiAction": None,
         }
     ui_action = context["detect_ui_action"](original_text, locale)
-    text_lower = str(original_text or "").lower()
-    local_file_hint = bool(context.get("looks_like_local_file_request") and context["looks_like_local_file_request"](original_text))
-    network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方网站", "官方消息", "最新消息", "最新新闻"]) or any(
-        token in text_lower for token in ["search", "lookup", "look up", "official website", "latest news", "breaking news", "web search", "online search"]
-    )
-    if local_file_hint:
-        network_hint = False
 
     if ui_action and not clarification_context:
         context["clear_pending_voice_clarification"]()
@@ -148,53 +189,6 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             },
             "pendingClarification": None,
             "uiAction": ui_action,
-        }
-
-    if network_hint and not clarification_context:
-        task_spec = {
-            "taskType": "network_lookup",
-            "intent": "network-lookup",
-            "summary": "Query approved external sources and return a sourced summary.",
-            "urgency": "normal",
-            "inputModes": ["text"],
-            "requiresImage": False,
-            "requiresGeneration": False,
-            "requiresScheduling": False,
-            "requiresLongRunningAgent": False,
-            "preferredExecution": "hybrid",
-            "missingInfo": [],
-        }
-        runtime_strategy = context["build_runtime_strategy"](context["load_ollama_inventory"]())
-        route = {
-            "kind": "general",
-            "selected": {
-                "intent": "network-lookup",
-                "featureId": "homehub-core",
-                "featureName": "HomeHub Core",
-                "action": "controlled_network_lookup",
-                "score": 0.91,
-            },
-            "candidates": [],
-            "reasoning": "Detected a controlled network lookup request from the message.",
-            "taskSpec": task_spec,
-            "toolPlan": context["build_tool_plan"](task_spec, {"selected": {"featureId": "homehub-core"}}),
-            "modelRoute": context["select_model_route"](task_spec, runtime_strategy, {"installed": runtime_strategy.get("localDetected", [])}),
-        }
-        lookup_result = context["perform_autonomous_network_lookup"](original_text, locale, "official-only")
-        if not lookup_result.get("ok"):
-            return {
-                "reply": context["build_network_unavailable_reply"](original_text, locale, "network_lookup"),
-                "route": context["serialize_voice_route"](route),
-                "pendingClarification": None,
-                "uiAction": None,
-                "lookupResult": lookup_result,
-            }
-        return {
-            "reply": context["build_grounded_network_reply"](original_text, lookup_result, locale),
-            "route": context["serialize_voice_route"](route),
-            "pendingClarification": None,
-            "uiAction": None,
-            "lookupResult": lookup_result,
         }
 
     if clarification_context:
@@ -270,6 +264,14 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
                 else fallback_reply
             ), fallback_reply)
             artifacts = []
+
+    effective_text = combined_text if clarification_context else original_text
+    if should_promote_to_network(effective_text, route, reply):
+        lookup_result = context["perform_autonomous_network_lookup"](effective_text, locale, "official-only")
+        if lookup_result.get("ok"):
+            reply = normalize_resolution_reply(context["build_grounded_network_reply"](effective_text, lookup_result, locale), reply)
+        elif should_attempt_default_network_research(route):
+            reply = normalize_resolution_reply(context["build_network_unavailable_reply"](effective_text, locale, "network_lookup"), reply)
 
     context["clear_pending_voice_clarification"]()
     recorder = context.get("record_route_semantic_example")
