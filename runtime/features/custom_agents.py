@@ -183,8 +183,12 @@ class Feature(HomeHubFeature):
             "unsubscribepage",
             "noreply@linecorp.com",
             "効果を出すための基本的な考え方をお伝えします",
+            "确认创建智能体",
+            "确认创建",
         ]
         if any(token in joined for token in suspicious_tokens):
+            return True
+        if joined in {"确认创建", "确认创建智能体", "confirm create", "confirm agent creation"}:
             return True
         url_count = joined.count("http://") + joined.count("https://")
         if url_count >= 3:
@@ -197,6 +201,25 @@ class Feature(HomeHubFeature):
         if not isinstance(settings, dict):
             return True
         return bool(settings.get("testingMode", True))
+
+    def sanitize_recent_actions(self, runtime: RuntimeBridge) -> bool:
+        store = self.get_store(runtime)
+        recent = store.get("recentActions", [])
+        if not isinstance(recent, list) or not recent:
+            return False
+        filtered = []
+        removed = 0
+        for item in recent:
+            summary = str((item or {}).get("summary", "")).strip().lower()
+            if "确认创建智能体" in summary or "created custom agent draft '确认创建智能体'" in summary:
+                removed += 1
+                continue
+            filtered.append(item)
+        if removed <= 0:
+            return False
+        store["recentActions"] = filtered[:12]
+        self.save_store(store, runtime)
+        return True
 
     def cleanup_transient_agents(self, runtime: RuntimeBridge, keep_recent_complete: int = 1) -> bool:
         if not self.testing_mode_enabled(runtime):
@@ -237,6 +260,7 @@ class Feature(HomeHubFeature):
     def on_refresh(self, runtime: RuntimeBridge) -> None:
         runtime.state[self.feature_id] = self.load_store(runtime)
         self.cleanup_transient_agents(runtime)
+        self.sanitize_recent_actions(runtime)
         cortex = self.cortex(runtime)
         for agent in self.sorted_agents(runtime):
             cortex.sync_agent(agent, stage=str(agent.get("status", "")).strip() or "loaded")
@@ -399,7 +423,12 @@ class Feature(HomeHubFeature):
             for width in range(2, min(5, size + 1)):
                 for start in range(0, size - width + 1):
                     tokens.add(chunk[start:start + width])
-        return tokens
+        ignored = {
+            "智能体", "助手", "流程", "家庭", "成员", "信息", "服务", "功能", "记录",
+            "创建", "新建", "确认", "处理", "管理", "homehub", "agent", "assistant",
+            "workflow", "create", "build", "make", "generate", "record", "manage",
+        }
+        return {token for token in tokens if token not in ignored}
 
     def agent_business_keywords(self, agent: dict) -> set[str]:
         profile = agent.get("profile", {})
@@ -457,10 +486,13 @@ class Feature(HomeHubFeature):
 
     def find_matching_operational_agent(self, message: str, runtime: RuntimeBridge) -> dict | None:
         candidates: list[tuple[float, dict]] = []
+        request_is_bill_like = self.is_expense_or_bill_agent({}, message)
         for agent in self.sorted_agents(runtime):
             if agent.get("status") != "complete":
                 continue
             if not any(str(agent.get("profile", {}).get(key, "")).strip() for key in ["checkPrompt", "noInputAction", "hasInputAction"]):
+                continue
+            if self.is_expense_or_bill_agent(agent, message) and not request_is_bill_like:
                 continue
             score = self.business_match_score(agent, message)
             if score > 0:
@@ -485,9 +517,18 @@ class Feature(HomeHubFeature):
     def find_similar_agents(self, draft_profile: dict, runtime: RuntimeBridge, limit: int = 3) -> list[dict]:
         draft = {"name": draft_profile.get("name", ""), "profile": draft_profile}
         ranked: list[tuple[float, dict]] = []
+        draft_haystack = " ".join(
+            str(draft_profile.get(key, "")).strip()
+            for key in ["name", "goal", "primaryUser", "trigger", "inputs", "output", "constraints"]
+        )
+        draft_is_bill_like = self.is_expense_or_bill_agent({"name": draft_profile.get("name", ""), "profile": draft_profile}, draft_haystack)
         for agent in self.sorted_agents(runtime):
+            if agent.get("status") not in {"complete", "review"}:
+                continue
+            if self.is_expense_or_bill_agent(agent, draft_haystack) and not draft_is_bill_like:
+                continue
             score = self.similarity_score(draft, agent)
-            if score >= 0.18:
+            if score >= 0.26:
                 ranked.append((score, agent))
         ranked.sort(key=lambda item: (item[0], item[1].get("updatedAt", "")), reverse=True)
         return [item[1] for item in ranked[:limit]]
@@ -756,8 +797,11 @@ class Feature(HomeHubFeature):
     def best_existing_agent_for_request(self, request: dict, runtime: RuntimeBridge) -> dict | None:
         scored: list[tuple[float, dict, dict]] = []
         message = str(request.get("command", "")).strip()
+        request_is_bill_like = self.is_expense_or_bill_agent({}, message)
         for agent in self.sorted_agents(runtime):
             if agent.get("status") != "complete":
+                continue
+            if self.is_expense_or_bill_agent(agent, message) and not request_is_bill_like:
                 continue
             agent_id = str(agent.get("id", "")).strip()
             if not agent_id:
@@ -1544,7 +1588,6 @@ class Feature(HomeHubFeature):
             ensure_ascii=True,
             indent=4,
         )
-        zh_reply = json.dumps("\u5df2\u7ecf\u6709 feature \u6a21\u677f\u4e86\uff0c\u4f46\u5177\u4f53\u6267\u884c\u903b\u8f91\u8fd8\u9700\u8981\u8865\u5b8c\u3002\u5f53\u524d\u76ee\u6807\u662f\uff1a{goal}\u3002", ensure_ascii=True)
         placeholder_item = json.dumps(
             {
                 "id": "replace-me",
@@ -1555,9 +1598,12 @@ class Feature(HomeHubFeature):
             ensure_ascii=True,
             indent=4,
         )
+        export_slug = self.english_slug(feature_name, "records")
         return f'''from __future__ import annotations
 
+import ast
 import json
+import re
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -1570,12 +1616,13 @@ API_ROOT = {json.dumps(api_path, ensure_ascii=True)}
 API_ITEMS = {json.dumps(api_items_path, ensure_ascii=True)}
 API_RUN = {json.dumps(api_run_path, ensure_ascii=True)}
 STORAGE_TEMPLATE = {placeholder_item}
+EXPORT_SLUG = {json.dumps(export_slug, ensure_ascii=True)}
 
 
 class Feature(HomeHubFeature):
     feature_id = {json.dumps(feature_id, ensure_ascii=True)}
     feature_name = {json.dumps(feature_name, ensure_ascii=True)}
-    version = "1.0.0"
+    version = "1.1.0"
 
     def descriptor(self) -> dict:
         data = super().descriptor()
@@ -1593,6 +1640,14 @@ class Feature(HomeHubFeature):
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir / f"{{self.feature_id}}.json"
 
+    def generated_root(self, runtime: RuntimeBridge) -> Path:
+        path = runtime.root / "generated" / self.feature_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def now_iso(self) -> str:
+        return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
+
     def default_store(self) -> dict:
         now = self.now_iso()
         return {{
@@ -1601,11 +1656,12 @@ class Feature(HomeHubFeature):
             "recentActions": [
                 {{
                     "id": f"{{self.feature_id}}-ready",
-                    "summary": f"{{self.feature_name}} scaffold is ready for implementation.",
+                    "summary": f"{{self.feature_name}} is ready.",
                     "createdAt": now,
                 }}
             ],
             "lastRun": "",
+            "lastSummary": {{}},
         }}
 
     def load_store(self, runtime: RuntimeBridge) -> dict:
@@ -1627,6 +1683,7 @@ class Feature(HomeHubFeature):
             "items": data.get("items", []) if isinstance(data.get("items"), list) else [],
             "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions"), list) else [],
             "lastRun": str(data.get("lastRun", "")),
+            "lastSummary": data.get("lastSummary", {{}}) if isinstance(data.get("lastSummary"), dict) else {{}},
         }}
 
     def save_store(self, store: dict, runtime: RuntimeBridge) -> None:
@@ -1647,9 +1704,6 @@ class Feature(HomeHubFeature):
             runtime.state[self.feature_id] = store
         return store
 
-    def now_iso(self) -> str:
-        return datetime.now().replace(second=0, microsecond=0).isoformat(timespec="minutes")
-
     def append_action(self, runtime: RuntimeBridge, summary: str) -> None:
         store = self.get_store(runtime)
         stamp = self.now_iso()
@@ -1661,27 +1715,288 @@ class Feature(HomeHubFeature):
         del store["recentActions"][12:]
         self.save_store(store, runtime)
 
-    def run_feature(self, runtime: RuntimeBridge, source: str, payload: dict | None = None) -> dict:
-        store = self.get_store(runtime)
+    def blueprint_fields(self) -> list[str]:
+        keys: list[str] = []
+        for slot in ["inputs", "output", "constraints"]:
+            raw = BLUEPRINT.get(slot, "")
+            if isinstance(raw, dict):
+                keys.extend(str(key).strip() for key in raw.keys() if str(key).strip())
+                continue
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            parsed = None
+            if text.startswith("{{") or text.startswith("["):
+                try:
+                    parsed = ast.literal_eval(text)
+                except (ValueError, SyntaxError):
+                    parsed = None
+            if isinstance(parsed, dict):
+                keys.extend(str(key).strip() for key in parsed.keys() if str(key).strip())
+                continue
+            if isinstance(parsed, list):
+                keys.extend(str(item).strip() for item in parsed if str(item).strip())
+                continue
+            keys.extend(match.strip() for match in re.findall(r"[A-Za-z_][A-Za-z0-9_]*|[\\u4e00-\\u9fffA-Za-z0-9_]+", text) if match.strip())
+        deduped: list[str] = []
+        ignored = {{"true", "false", "yes", "no", "none", "input", "output", "json", "default"}}
+        for key in keys:
+            normalized = key.strip()
+            if not normalized or normalized.lower() in ignored:
+                continue
+            if normalized not in deduped:
+                deduped.append(normalized)
+        return deduped[:20] or ["title", "content", "note"]
+
+    def default_primary_field(self) -> str:
+        for field in self.blueprint_fields():
+            lowered = field.lower()
+            if field in {{"姓名", "名称", "名字", "name", "title"}} or lowered in {{"name", "title"}}:
+                return field
+        return self.blueprint_fields()[0]
+
+    def parse_fields_from_text(self, text: str) -> dict:
+        source = str(text or "").strip()
+        if not source:
+            return {{}}
+        fields: dict[str, str] = {{}}
+        for field in self.blueprint_fields():
+            pattern = re.compile(re.escape(field) + r"\\s*[：:]\\s*([^，,；;\\n]+)")
+            match = pattern.search(source)
+            if match:
+                value = match.group(1).strip()
+                if value:
+                    fields[field] = value
+        if fields:
+            return fields
+        chunks = re.split(r"[，,；;\\n]+", source)
+        for chunk in chunks:
+            if "：" not in chunk and ":" not in chunk:
+                continue
+            key, value = re.split(r"[：:]", chunk, maxsplit=1)
+            key = key.strip()
+            value = value.strip()
+            if key and value:
+                fields[key] = value
+        return fields
+
+    def summarize_fields(self, fields: dict) -> str:
+        if not isinstance(fields, dict) or not fields:
+            return STORAGE_TEMPLATE["summary"]
+        parts = [f"{{key}}: {{value}}" for key, value in list(fields.items())[:4] if str(value).strip()]
+        return " / ".join(parts) if parts else STORAGE_TEMPLATE["summary"]
+
+    def make_item(self, source_text: str, fields: dict | None = None, title: str = "", summary: str = "") -> dict:
+        normalized_fields = {{str(key).strip(): str(value).strip() for key, value in (fields or {{}}).items() if str(key).strip() and str(value).strip()}}
+        primary_field = self.default_primary_field()
+        primary_value = normalized_fields.get(primary_field, "")
+        item_title = title.strip() or primary_value or STORAGE_TEMPLATE["title"]
+        item_summary = summary.strip() or self.summarize_fields(normalized_fields)
         stamp = self.now_iso()
-        store["lastRun"] = stamp
-        summary = f"{{self.feature_name}} was triggered from {{source}}."
-        if payload:
-            summary += f" Payload keys: {{', '.join(sorted(payload.keys()))}}."
-        self.append_action(runtime, summary)
+        return {{
+            "id": f"{{self.feature_id}}-item-{{stamp.replace(':', '').replace('-', '')}}",
+            "title": item_title,
+            "summary": item_summary,
+            "fields": normalized_fields,
+            "sourceText": str(source_text or "").strip(),
+            "createdAt": stamp,
+            "updatedAt": stamp,
+        }}
+
+    def create_record(self, runtime: RuntimeBridge, payload: dict | None = None) -> dict:
+        request = dict(payload or {{}})
+        message = str(request.get("message", "")).strip()
+        supplied_fields = request.get("fields", {{}})
+        fields = supplied_fields if isinstance(supplied_fields, dict) else {{}}
+        fields = {{str(key).strip(): str(value).strip() for key, value in fields.items() if str(key).strip() and str(value).strip()}}
+        if not fields:
+            fields = self.parse_fields_from_text(message)
+        if not fields and message:
+            fields = {{self.default_primary_field(): message}}
+        item = self.make_item(message, fields, str(request.get("title", "")).strip(), str(request.get("summary", "")).strip())
+        store = self.get_store(runtime)
+        store.setdefault("items", []).insert(0, item)
+        store["lastRun"] = self.now_iso()
+        store["lastSummary"] = {{"action": "create_record", "count": len(store.get("items", [])), "generatedAt": store["lastRun"]}}
+        self.append_action(runtime, f"Recorded an item for {{self.feature_name}}: {{item['title']}}.")
+        self.save_store(store, runtime)
+        return item
+
+    def list_records(self, runtime: RuntimeBridge, keyword: str = "", limit: int = 5) -> list[dict]:
+        store = self.get_store(runtime)
+        items = list(store.get("items", []))
+        if keyword:
+            lowered = keyword.lower()
+            items = [
+                item for item in items
+                if lowered in str(item.get("title", "")).lower()
+                or lowered in str(item.get("summary", "")).lower()
+                or lowered in json.dumps(item.get("fields", {{}}), ensure_ascii=False).lower()
+            ]
+        return items[:max(1, limit)]
+
+    def delete_record(self, runtime: RuntimeBridge, record_id: str = "", keyword: str = "") -> dict | None:
+        store = self.get_store(runtime)
+        items = store.get("items", [])
+        if not isinstance(items, list):
+            return None
+        target = None
+        kept = []
+        lowered = keyword.lower().strip()
+        for item in items:
+            matches_id = record_id and str(item.get("id", "")).strip() == record_id.strip()
+            matches_keyword = lowered and (
+                lowered in str(item.get("title", "")).lower()
+                or lowered in str(item.get("summary", "")).lower()
+                or lowered in json.dumps(item.get("fields", {{}}), ensure_ascii=False).lower()
+            )
+            if target is None and (matches_id or matches_keyword):
+                target = item
+                continue
+            kept.append(item)
+        if not target:
+            return None
+        store["items"] = kept
+        store["lastRun"] = self.now_iso()
+        store["lastSummary"] = {{"action": "delete_record", "count": len(kept), "generatedAt": store["lastRun"]}}
+        self.append_action(runtime, f"Deleted an item from {{self.feature_name}}: {{target.get('title', 'Untitled')}}.")
+        self.save_store(store, runtime)
+        return target
+
+    def export_records(self, runtime: RuntimeBridge) -> dict:
+        store = self.get_store(runtime)
+        items = list(store.get("items", []))
+        fields = self.blueprint_fields()
+        path = self.generated_root(runtime) / f"{{datetime.now().strftime('%Y%m%d-%H%M%S')}}-{{EXPORT_SLUG}}.csv"
+        header = ["id", "title", "summary", "createdAt", "updatedAt"] + fields
+        lines = [",".join(header)]
+        for item in items:
+            row = [
+                str(item.get("id", "")),
+                str(item.get("title", "")),
+                str(item.get("summary", "")),
+                str(item.get("createdAt", "")),
+                str(item.get("updatedAt", "")),
+            ]
+            record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
+            row.extend(str(record_fields.get(field, "")) for field in fields)
+            escaped = ['"' + value.replace('"', '""') + '"' for value in row]
+            lines.append(",".join(escaped))
+        path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+        self.append_action(runtime, f"Exported {{len(items)}} records from {{self.feature_name}}.")
+        return {{
+            "kind": "document",
+            "label": f"{{self.feature_name}} records",
+            "fileName": path.name,
+            "path": str(path.relative_to(runtime.root)),
+            "url": f"/generated/{{self.feature_id}}/{{path.name}}",
+            "count": len(items),
+        }}
+
+    def allows_network_lookup(self) -> bool:
+        value = str(BLUEPRINT.get("allowNetworkLookup", "")).strip().lower()
+        return not value or value in {{"yes", "true", "allowed", "allow", "on", "1"}}
+
+    def detect_action(self, message: str) -> str:
+        lowered = str(message or "").lower()
+        if any(token in message for token in ["删除", "移除"]) or any(token in lowered for token in ["delete", "remove"]):
+            return "delete_record"
+        if any(token in message for token in ["导出", "下载", "表格", "文件"]) or any(token in lowered for token in ["export", "download", "csv", "file"]):
+            return "export_records"
+        if any(token in message for token in ["查看", "列出", "显示", "有哪些", "多少"]) or any(token in lowered for token in ["list", "show", "what do we have", "how many"]):
+            return "list_records"
+        if any(token in message for token in ["查询", "联网", "官网", "最新"]) or any(token in lowered for token in ["search", "lookup", "latest", "official"]):
+            return "network_lookup"
+        return "create_record"
+
+    def build_list_reply(self, items: list[dict], locale: str) -> str:
+        if not items:
+            return "还没有记录。" if locale == "zh-CN" else ("まだ記録はありません。" if locale == "ja-JP" else "There are no records yet.")
+        lines = []
+        for item in items[:5]:
+            lines.append(f"{{item.get('title', 'Untitled')}}：{{item.get('summary', '') or '-'}}")
+        if locale == "zh-CN":
+            return f"{{self.feature_name}} 当前有 {{len(items)}} 条记录。最近几条是：" + "；".join(lines)
+        if locale == "ja-JP":
+            return f"{{self.feature_name}} には {{len(items)}} 件の記録があります。最近の内容: " + "；".join(lines)
+        return f"{{self.feature_name}} currently has {{len(items)}} records. Recent items: " + "; ".join(lines)
+
+    def run_feature(self, runtime: RuntimeBridge, source: str, payload: dict | None = None) -> dict:
+        request = dict(payload or {{}})
+        message = str(request.get("message", "")).strip()
+        action = str(request.get("action", "")).strip() or self.detect_action(message)
+        locale = str(request.get("locale", "zh-CN")).strip() or "zh-CN"
+        store = self.get_store(runtime)
+        store["lastRun"] = self.now_iso()
+        if action == "create_record":
+            item = self.create_record(runtime, request)
+            return {{
+                "ok": True,
+                "action": action,
+                "item": item,
+                "reply": f"已记录到{{self.feature_name}}：{{item['title']}}。" if locale == "zh-CN" else f"Added to {{self.feature_name}}: {{item['title']}}.",
+                "lastRun": store.get("lastRun", ""),
+                "blueprint": BLUEPRINT,
+            }}
+        if action == "delete_record":
+            target = self.delete_record(runtime, str(request.get("id", "")), str(request.get("keyword", "")) or message)
+            if not target:
+                return {{"ok": False, "error": "record_not_found", "reply": "没有找到可删除的记录。" if locale == "zh-CN" else "No matching record was found."}}
+            return {{
+                "ok": True,
+                "action": action,
+                "item": target,
+                "reply": f"已删除记录：{{target.get('title', 'Untitled')}}。" if locale == "zh-CN" else f"Deleted record: {{target.get('title', 'Untitled')}}.",
+                "lastRun": store.get("lastRun", ""),
+                "blueprint": BLUEPRINT,
+            }}
+        if action == "export_records":
+            artifact = self.export_records(runtime)
+            return {{
+                "ok": True,
+                "action": action,
+                "artifacts": [artifact],
+                "reply": f"已导出 {{artifact['count']}} 条记录。" if locale == "zh-CN" else f"Exported {{artifact['count']}} records.",
+                "lastRun": store.get("lastRun", ""),
+                "blueprint": BLUEPRINT,
+            }}
+        if action == "network_lookup":
+            if not runtime.network_lookup or not self.allows_network_lookup():
+                return {{"ok": False, "error": "network_disabled", "reply": "当前蓝图没有开启联网查询。" if locale == "zh-CN" else "Network lookup is not enabled for this feature."}}
+            lookup = runtime.network_lookup(message, locale, str(BLUEPRINT.get("lookupPolicy", "official-only")).strip() or "official-only", None, None)
+            answer = str(lookup.get("answer", "")).strip() or ("没有拿到结果。" if locale == "zh-CN" else "No usable result.")
+            self.append_action(runtime, f"Ran network lookup for {{self.feature_name}}.")
+            return {{
+                "ok": bool(lookup.get("ok")),
+                "action": action,
+                "lookup": lookup,
+                "reply": answer,
+                "lastRun": store.get("lastRun", ""),
+                "blueprint": BLUEPRINT,
+            }}
+        keyword = str(request.get("keyword", "")).strip()
+        items = self.list_records(runtime, keyword, int(request.get("limit", 5) or 5))
+        summary = {{"action": "list_records", "count": len(items), "generatedAt": self.now_iso()}}
+        store["lastSummary"] = summary
         self.save_store(store, runtime)
         return {{
-            "status": "stub",
-            "message": "Replace run_feature() with the real workflow.",
-            "lastRun": stamp,
+            "ok": True,
+            "action": "list_records",
+            "items": items,
+            "summary": summary,
+            "reply": self.build_list_reply(items, locale),
+            "lastRun": store.get("lastRun", ""),
             "blueprint": BLUEPRINT,
         }}
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
-        goal = BLUEPRINT.get("goal", self.feature_name)
-        result = self.run_feature(runtime, "voice", {{"message": message}})
-        reply = {zh_reply}.format(goal=goal) if locale == "zh-CN" else f"{{self.feature_name}} already has a feature scaffold, but its execution logic still needs to be implemented. Current goal: {{goal}}."
-        return {{"reply": reply, "blueprint": BLUEPRINT, "result": result}}
+        result = self.run_feature(runtime, "voice", {{"message": message, "locale": locale}})
+        return {{
+            "reply": str(result.get("reply", "")).strip() or (BLUEPRINT.get("goal", self.feature_name)),
+            "blueprint": BLUEPRINT,
+            "result": result,
+            "artifacts": result.get("artifacts", []) if isinstance(result.get("artifacts"), list) else [],
+        }}
 
     def enhance_household_modules(self, modules: list[dict], locale: str, runtime: RuntimeBridge) -> list[dict]:
         current = deepcopy(modules)
@@ -1690,7 +2005,7 @@ class Feature(HomeHubFeature):
             "id": self.feature_id,
             "name": self.feature_name,
             "summary": BLUEPRINT.get("goal", ""),
-            "state": "active" if store.get("lastRun") else "ready",
+            "state": "active" if store.get("items") else "ready",
             "actionLabel": "Open",
         }})
         return current
@@ -1700,10 +2015,11 @@ class Feature(HomeHubFeature):
         return {{
             self.feature_id: {{
                 "blueprint": BLUEPRINT,
-                "status": "scaffold",
+                "status": "active",
                 "storagePath": str(self.storage_path(runtime)),
                 "itemCount": len(store.get("items", [])),
                 "lastRun": store.get("lastRun", ""),
+                "lastSummary": store.get("lastSummary", {{}}),
                 "recentActions": store.get("recentActions", [])[:4],
             }}
         }}
@@ -1717,35 +2033,31 @@ class Feature(HomeHubFeature):
                     "featureId": self.feature_id,
                     "featureName": self.feature_name,
                     "blueprint": BLUEPRINT,
-                    "status": "scaffold",
+                    "status": "active",
                     "storagePath": str(self.storage_path(runtime)),
-                    "suggestedRoutes": [API_ROOT, API_ITEMS, API_RUN],
+                    "generatedRoot": str(self.generated_root(runtime)),
                     "store": store,
-                    "implementationNotes": [
-                        "Use items[] for persisted domain records.",
-                        "Expand the settings map with runtime switches or owner preferences.",
-                        "Replace run_feature() with the real orchestration pipeline.",
-                    ],
+                    "fieldNames": self.blueprint_fields(),
                 }},
             }}
         if method == "GET" and path == API_ITEMS:
-            return {{"status": 200, "body": {{"items": store.get("items", []), "recentActions": store.get("recentActions", [])[:10]}}}}
+            return {{"status": 200, "body": {{"items": store.get("items", []), "recentActions": store.get("recentActions", [])[:10], "fieldNames": self.blueprint_fields()}}}}
         if method == "POST" and path == API_ITEMS:
             payload = body or {{}}
-            title = str(payload.get("title", "")).strip() or STORAGE_TEMPLATE["title"]
-            item = {{
-                "id": f"{{self.feature_id}}-item-{{self.now_iso().replace(':', '').replace('-', '')}}",
-                "title": title,
-                "summary": str(payload.get("summary", "")).strip() or STORAGE_TEMPLATE["summary"],
-                "createdAt": self.now_iso(),
-            }}
-            store.setdefault("items", []).insert(0, item)
-            self.append_action(runtime, f"Captured a scaffold item for {{self.feature_name}}.")
-            self.save_store(store, runtime)
+            item = self.create_record(runtime, payload)
             return {{"status": 201, "body": {{"ok": True, "item": item, "items": store.get("items", [])}}}}
         if method == "POST" and path == API_RUN:
             result = self.run_feature(runtime, "api", body or {{}})
-            return {{"status": 200, "body": result}}
+            return {{"status": 200 if result.get("ok", True) else 400, "body": result}}
+        if method == "POST" and path == f"{{API_ROOT}}/delete":
+            payload = body or {{}}
+            target = self.delete_record(runtime, str(payload.get("id", "")), str(payload.get("keyword", "")))
+            if not target:
+                return {{"status": 404, "body": {{"error": "record_not_found"}}}}
+            return {{"status": 200, "body": {{"ok": True, "item": target, "items": self.get_store(runtime).get("items", [])}}}}
+        if method == "POST" and path == f"{{API_ROOT}}/export":
+            artifact = self.export_records(runtime)
+            return {{"status": 200, "body": {{"ok": True, "artifact": artifact}}}}
         return None
 
 
@@ -1907,6 +2219,26 @@ def load_feature() -> HomeHubFeature:
         classified_action = str(classified.get("action", "")).strip()
         classified_confidence = float(classified.get("confidence", 0.0) or 0.0)
         classified_target = self.find_agent_by_hint(str(classified.get("targetAgentName", "")).strip(), runtime) if str(classified.get("targetAgentName", "")).strip() else None
+        if collecting and not self.is_general_time_or_weather_query(message):
+            reply = self.answer_collecting_agent(collecting, message, runtime, locale)
+            target_agent = self.get_collecting_agent(runtime) or self.find_agent_by_hint(collecting.get("name", ""), runtime) or collecting
+            return {"reply": reply, "uiAction": self.studio_ui_action(target_agent)}
+        if review and not self.is_general_time_or_weather_query(message):
+            if self.is_cancel_request(message):
+                review["status"] = "cancelled"
+                review["updatedAt"] = self.now_iso()
+                self.save_store(self.get_store(runtime), runtime)
+                return {"reply": zh(locale, ZH["cancel"].format(name=review["name"]), f"Okay, I stopped working on {review['name']}."), "uiAction": self.studio_ui_action(review)}
+            if self.is_confirmation_message(message):
+                self.complete_agent(review, runtime, locale)
+                confirmed = zh(
+                    locale,
+                    ZH["edit_confirmed"].format(name=review["name"]) if review.get("editMode") else ZH["confirmed"].format(name=review["name"]),
+                    f"{review['name']} has been created and confirmed.",
+                )
+                return {"reply": confirmed, "uiAction": self.studio_ui_action(review)}
+            if self.is_revision_message(message) or message.strip():
+                return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
         if self.should_generate_feature(message):
             agent = self.find_agent_by_hint(message, runtime) or self.latest_completed_agent(runtime)
             if not agent:
@@ -1947,26 +2279,6 @@ def load_feature() -> HomeHubFeature:
                 reply = self.move_to_review(agent, runtime, locale)
                 return {"reply": reply, "uiAction": self.studio_ui_action(agent)}
             return {"reply": zh(locale, ZH["draft_started"].format(name=agent["name"], question=q[1] if q else ""), f"{agent['name']} started. {q[1] if q else ''}"), "uiAction": self.studio_ui_action(agent)}
-        if collecting and not self.is_general_time_or_weather_query(message):
-            reply = self.answer_collecting_agent(collecting, message, runtime, locale)
-            target_agent = self.get_collecting_agent(runtime) or self.find_agent_by_hint(collecting.get("name", ""), runtime) or collecting
-            return {"reply": reply, "uiAction": self.studio_ui_action(target_agent)}
-        if review and not self.is_general_time_or_weather_query(message):
-            if self.is_cancel_request(message):
-                review["status"] = "cancelled"
-                review["updatedAt"] = self.now_iso()
-                self.save_store(self.get_store(runtime), runtime)
-                return {"reply": zh(locale, ZH["cancel"].format(name=review["name"]), f"Okay, I stopped working on {review['name']}."), "uiAction": self.studio_ui_action(review)}
-            if self.is_confirmation_message(message):
-                self.complete_agent(review, runtime, locale)
-                confirmed = zh(
-                    locale,
-                    ZH["edit_confirmed"].format(name=review["name"]) if review.get("editMode") else ZH["confirmed"].format(name=review["name"]),
-                    f"{review['name']} has been created and confirmed.",
-                )
-                return {"reply": confirmed, "uiAction": self.studio_ui_action(review)}
-            if self.is_revision_message(message) or message.strip():
-                return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
         operational = classified_target or self.find_matching_operational_agent(message, runtime) or self.latest_operational_agent(runtime)
         if operational and not classified_target and not self.can_auto_route_operational_agent(message, runtime):
             operational = None
@@ -2043,6 +2355,29 @@ def load_feature() -> HomeHubFeature:
         self.cortex(runtime).record_event(target, "deleted", {"message": f"Deleted from studio: {agent_id}"})
         return target
 
+    def delete_generated_feature(self, agent: dict, runtime: RuntimeBridge) -> dict:
+        feature_id = str(agent.get("generatedFeatureId", "")).strip()
+        feature_path = str(agent.get("generatedFeaturePath", "")).strip()
+        removed_files: list[str] = []
+        if feature_path:
+            path = Path(feature_path)
+            if path.exists():
+                path.unlink()
+                removed_files.append(str(path))
+        if feature_id:
+            data_path = runtime.root / "data" / f"{feature_id}.json"
+            if data_path.exists():
+                data_path.unlink()
+                removed_files.append(str(data_path))
+            runtime.state.pop(feature_id, None)
+        agent["generatedFeaturePath"] = ""
+        agent["generatedFeatureId"] = ""
+        agent["updatedAt"] = self.now_iso()
+        self.append_action(runtime, f"Deleted generated feature for '{agent.get('name', 'Untitled')}'.")
+        self.save_store(self.get_store(runtime), runtime)
+        self.cortex(runtime).record_event(agent, "feature_deleted", {"message": ", ".join(removed_files)})
+        return {"removedFiles": removed_files}
+
     def handle_api(self, method: str, path: str, query: dict, body: dict | None, runtime: RuntimeBridge) -> dict | None:
         if method == "GET" and path == "/api/custom-agents":
             agents = [self.enrich_agent_runtime_stats(agent, runtime) for agent in self.sorted_agents(runtime)]
@@ -2066,12 +2401,26 @@ def load_feature() -> HomeHubFeature:
                     break
             if agent is None:
                 return {"status": 404, "body": {"error": "Agent not found"}}
-            if str(agent.get("status", "")).strip() == "complete":
-                return {"status": 400, "body": {"error": "Completed blueprints cannot be deleted from this action"}}
             deleted = self.delete_agent(agent_id, runtime)
             if deleted is None:
                 return {"status": 404, "body": {"error": "Agent not found"}}
             return {"status": 200, "body": {"ok": True, "deletedId": agent_id}}
+        if method == "POST" and path == "/api/custom-agents/delete-feature":
+            payload = body or {}
+            agent_id = str(payload.get("id", "")).strip()
+            if not agent_id:
+                return {"status": 400, "body": {"error": "id is required"}}
+            agent = None
+            for item in self.sorted_agents(runtime):
+                if str(item.get("id", "")).strip() == agent_id:
+                    agent = item
+                    break
+            if agent is None:
+                return {"status": 404, "body": {"error": "Agent not found"}}
+            if not str(agent.get("generatedFeaturePath", "")).strip():
+                return {"status": 400, "body": {"error": "No generated feature to delete"}}
+            result = self.delete_generated_feature(agent, runtime)
+            return {"status": 200, "body": {"ok": True, "agentId": agent_id, "removedFiles": result["removedFiles"]}}
         if method == "POST" and path == "/api/custom-agents/generate-feature":
             payload = body or {}
             agent = None

@@ -1,49 +1,12 @@
 {
-  "events": [
-    {
-      "id": "evt-20260409113537-397",
-      "title": "添加家庭成员",
-      "startAt": "2026-04-09T11:35",
-      "endAt": "2026-04-09T12:35",
-      "participants": [],
-      "location": "None",
-      "source": "homehub-local",
-      "createdAt": "2026-04-09T11:35",
-      "notes": "Original request: 例如我说添加家庭成员，你就会给出要添加家庭成员的那些信息，例如，姓名，生日，家庭成员角色，电话，邮件，工作或者学校，紧急联系电话，line，wechat",
-      "linkedReminderIds": []
-    },
-    {
-      "id": "evt-20260409124550-483",
-      "title": "创建家庭成员记录智能体",
-      "startAt": "2026-04-09T12:45",
-      "endAt": "2026-04-09T13:45",
-      "participants": [],
-      "location": "None",
-      "source": "homehub-local",
-      "createdAt": "2026-04-09T12:45",
-      "notes": "Original request: 创建一个智能体，用来记录家庭成员和他们的详细信息",
-      "linkedReminderIds": []
-    }
-  ],
+  "events": [],
   "reminders": [],
   "recentActions": [
-    {
-      "id": "act-20260409124550-351",
-      "kind": "create-event",
-      "summary": "Created schedule '创建家庭成员记录智能体' for 2026-04-09T12:45.",
-      "createdAt": "2026-04-09T12:45"
-    },
-    {
-      "id": "act-20260409113537-877",
-      "kind": "create-event",
-      "summary": "Created schedule '添加家庭成员' for 2026-04-09T11:35.",
-      "createdAt": "2026-04-09T11:35"
-    },
     {
       "id": "act-local-memory-ready",
       "kind": "init",
       "summary": "HomeHub local memory is ready for schedule and reminder requests.",
-      "createdAt": "2026-04-09T10:07"
+      "createdAt": "2026-04-09T17:00"
     }
   ]
 }

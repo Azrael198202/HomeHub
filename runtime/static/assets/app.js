@@ -31,9 +31,12 @@ let deviceWeatherSyncState = { inFlight: false, attempted: false, lastSyncAt: 0 
 let activeReminderId = null;
 let announcedReminderId = null;
 let isCompletingReminder = false;
+const managedScrollContainers = new Map();
 let testConversation = [];
 let customAgentStudio = { items: [], recentActions: [], selectedAgentId: "", isLoading: false, isGenerating: false, isThinking: false };
+let studioFeatureRuntime = { featureId: "", items: [], fieldNames: [], detail: null, isLoading: false, isSaving: false, error: "", exportArtifact: null, draftText: "" };
 let activeBlueprintStudioTab = "creating";
+let activeRuntimeAgentId = "";
 let testUploadAttachment = null;
 let bootstrapPollTimer = null;
 let dashboardRefreshPromise = null;
@@ -224,7 +227,36 @@ const UI_TEXT = {
       deletingDraft: "Deleting...",
       deleteDraftDone: "HomeHub: Draft deleted.",
       deleteDraftFailed: "HomeHub: Failed to delete draft. {error}",
+      deleteBlueprint: "Delete Blueprint",
+      deleteBlueprintDone: "HomeHub: Blueprint deleted.",
+      deleteBlueprintFailed: "HomeHub: Failed to delete blueprint. {error}",
+      deleteFeature: "Delete Feature",
+      deleteFeatureDone: "HomeHub: Generated feature deleted.",
+      deleteFeatureFailed: "HomeHub: Failed to delete generated feature. {error}",
       featureAlreadyGenerated: "Feature already generated",
+      featurePanelTitle: "Feature Runtime",
+      featurePanelEmpty: "Generate the feature first, then manage records here.",
+      featurePanelLoading: "Loading feature records...",
+      featurePanelError: "Feature runtime failed to load. {error}",
+      featureFields: "Fields",
+      featureStoragePath: "Storage",
+      featureGeneratedRoot: "Export Folder",
+      featureDraftLabel: "Quick Add",
+      featureDraftPlaceholder: "Example: name: Alex, phone: 080-1234, school: Fukuoka High",
+      featureCreate: "Add Record",
+      featureRefreshing: "Refreshing...",
+      featureRefresh: "Refresh",
+      featureExport: "Export CSV",
+      featureRecords: "Records",
+      featureNoRecords: "No records yet.",
+      featureDeleteRecord: "Delete",
+      featureCreateDone: "HomeHub: Record saved.",
+      featureCreateFailed: "HomeHub: Failed to save record. {error}",
+      featureDeleteDone: "HomeHub: Record deleted.",
+      featureDeleteFailed: "HomeHub: Failed to delete record. {error}",
+      featureExportDone: "HomeHub: Records exported.",
+      featureExportFailed: "HomeHub: Failed to export records. {error}",
+      featureOpenExport: "Open Export",
       emptyConversation: "No text test conversation yet.",
       emptyBlueprints: "No custom blueprints yet.",
       emptyCreating: "No blueprints are currently being designed.",
@@ -423,7 +455,36 @@ const UI_TEXT = {
       deletingDraft: "正在删除...",
       deleteDraftDone: "HomeHub：草稿已删除。",
       deleteDraftFailed: "HomeHub：删除草稿失败。{error}",
+      deleteBlueprint: "删除蓝图",
+      deleteBlueprintDone: "HomeHub：蓝图已删除。",
+      deleteBlueprintFailed: "HomeHub：删除蓝图失败。{error}",
+      deleteFeature: "删除 feature",
+      deleteFeatureDone: "HomeHub：已生成的 feature 已删除。",
+      deleteFeatureFailed: "HomeHub：删除已生成 feature 失败。{error}",
       featureAlreadyGenerated: "已生成 feature",
+      featurePanelTitle: "Feature 运行面板",
+      featurePanelEmpty: "先生成 feature，之后就可以在这里直接管理记录。",
+      featurePanelLoading: "正在加载 feature 记录...",
+      featurePanelError: "加载 feature 运行数据失败。{error}",
+      featureFields: "字段",
+      featureStoragePath: "存储位置",
+      featureGeneratedRoot: "导出目录",
+      featureDraftLabel: "快速新增",
+      featureDraftPlaceholder: "例如：姓名: 张三，电话: 080-1234，学校: 福冈高中",
+      featureCreate: "新增记录",
+      featureRefreshing: "正在刷新...",
+      featureRefresh: "刷新",
+      featureExport: "导出 CSV",
+      featureRecords: "记录列表",
+      featureNoRecords: "还没有记录。",
+      featureDeleteRecord: "删除",
+      featureCreateDone: "HomeHub：记录已保存。",
+      featureCreateFailed: "HomeHub：保存记录失败。{error}",
+      featureDeleteDone: "HomeHub：记录已删除。",
+      featureDeleteFailed: "HomeHub：删除记录失败。{error}",
+      featureExportDone: "HomeHub：记录已导出。",
+      featureExportFailed: "HomeHub：导出记录失败。{error}",
+      featureOpenExport: "打开导出文件",
       emptyConversation: "还没有文字测试对话。",
       emptyBlueprints: "还没有通用智能体蓝图。",
       emptyCreating: "当前没有正在设计的蓝图。",
@@ -622,7 +683,36 @@ const UI_TEXT = {
       deletingDraft: "削除中...",
       deleteDraftDone: "HomeHub: 下書きを削除しました。",
       deleteDraftFailed: "HomeHub: 下書きの削除に失敗しました。{error}",
+      deleteBlueprint: "ブループリントを削除",
+      deleteBlueprintDone: "HomeHub: ブループリントを削除しました。",
+      deleteBlueprintFailed: "HomeHub: ブループリントの削除に失敗しました。{error}",
+      deleteFeature: "feature を削除",
+      deleteFeatureDone: "HomeHub: 生成済み feature を削除しました。",
+      deleteFeatureFailed: "HomeHub: 生成済み feature の削除に失敗しました。{error}",
       featureAlreadyGenerated: "feature 生成済み",
+      featurePanelTitle: "feature 実行パネル",
+      featurePanelEmpty: "先に feature を生成すると、ここで記録を直接管理できます。",
+      featurePanelLoading: "feature の記録を読み込んでいます...",
+      featurePanelError: "feature 実行データの読み込みに失敗しました。{error}",
+      featureFields: "フィールド",
+      featureStoragePath: "保存先",
+      featureGeneratedRoot: "出力フォルダー",
+      featureDraftLabel: "クイック追加",
+      featureDraftPlaceholder: "例: 名前: 山田太郎, 電話: 080-1234, 学校: 福岡高校",
+      featureCreate: "記録を追加",
+      featureRefreshing: "更新中...",
+      featureRefresh: "更新",
+      featureExport: "CSV を出力",
+      featureRecords: "記録一覧",
+      featureNoRecords: "まだ記録はありません。",
+      featureDeleteRecord: "削除",
+      featureCreateDone: "HomeHub: 記録を保存しました。",
+      featureCreateFailed: "HomeHub: 記録の保存に失敗しました。{error}",
+      featureDeleteDone: "HomeHub: 記録を削除しました。",
+      featureDeleteFailed: "HomeHub: 記録の削除に失敗しました。{error}",
+      featureExportDone: "HomeHub: 記録を出力しました。",
+      featureExportFailed: "HomeHub: 記録の出力に失敗しました。{error}",
+      featureOpenExport: "出力を開く",
       emptyConversation: "まだテキストテスト会話はありません。",
       emptyBlueprints: "まだカスタムブループリントはありません。",
       emptyCreating: "現在、設計中のブループリントはありません。",
@@ -674,6 +764,102 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function isNearScrollBottom(container, threshold = 28) {
+  if (!(container instanceof HTMLElement)) return true;
+  return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+}
+
+function getScrollOverflow(container) {
+  if (!(container instanceof HTMLElement)) return 0;
+  return Math.max(0, container.scrollHeight - container.clientHeight);
+}
+
+function updateScrollJumpButtonPosition(container, button) {
+  if (!(container instanceof HTMLElement) || !(button instanceof HTMLElement)) return;
+  const rect = container.getBoundingClientRect();
+  const top = Math.min(window.innerHeight - 56, Math.max(20, rect.bottom - 54));
+  const left = Math.min(window.innerWidth - 52, Math.max(12, rect.right - 42));
+  button.style.top = `${top}px`;
+  button.style.left = `${left}px`;
+}
+
+function syncManagedScrollContainer(container) {
+  if (!(container instanceof HTMLElement)) return;
+  const managed = managedScrollContainers.get(container.id);
+  if (!managed) return;
+  const hasOverflow = getScrollOverflow(container) > 24;
+  const atBottom = isNearScrollBottom(container);
+  managed.button.hidden = !(hasOverflow && !atBottom);
+  updateScrollJumpButtonPosition(container, managed.button);
+}
+
+function ensureManagedScrollContainer(containerId) {
+  const container = document.getElementById(containerId);
+  if (!(container instanceof HTMLElement)) return null;
+  if (managedScrollContainers.has(containerId)) {
+    const managed = managedScrollContainers.get(containerId);
+    if (managed?.button?.isConnected) {
+      syncManagedScrollContainer(container);
+      return managed;
+    }
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "scroll-jump-button remote-target";
+  button.hidden = true;
+  button.dataset.scrollJumpTarget = containerId;
+  button.dataset.title = currentLocale === "zh-CN" ? "回到底部" : currentLocale === "ja-JP" ? "一番下へ" : "Jump to bottom";
+  button.setAttribute("aria-label", button.dataset.title);
+  button.textContent = currentLocale === "zh-CN" ? "↓" : "↓";
+  document.body.appendChild(button);
+  const onScroll = () => syncManagedScrollContainer(container);
+  container.addEventListener("scroll", onScroll, { passive: true });
+  managedScrollContainers.set(containerId, { button, onScroll });
+  syncManagedScrollContainer(container);
+  return managedScrollContainers.get(containerId) || null;
+}
+
+function syncAllManagedScrollContainers() {
+  [
+    "conversation",
+    "test-conversation",
+    "timeline",
+    "modules",
+    "agents",
+    "relay",
+    "work-request-list",
+    "work-pipeline-scroll",
+    "studio-blueprints",
+    "settings-detail-scroll",
+    "settings-directory-list"
+  ].forEach((containerId) => ensureManagedScrollContainer(containerId));
+  managedScrollContainers.forEach((_managed, containerId) => {
+    const container = document.getElementById(containerId);
+    if (container) syncManagedScrollContainer(container);
+  });
+}
+
+function preserveManagedScroll(container, render) {
+  if (!(container instanceof HTMLElement)) {
+    render();
+    return;
+  }
+  ensureManagedScrollContainer(container.id);
+  const shouldStickToBottom = isNearScrollBottom(container);
+  const offsetFromBottom = Math.max(0, container.scrollHeight - container.clientHeight - container.scrollTop);
+  render();
+  requestAnimationFrame(() => {
+    if (!container.isConnected) return;
+    if (shouldStickToBottom) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      const nextTop = Math.max(0, container.scrollHeight - container.clientHeight - offsetFromBottom);
+      container.scrollTop = nextTop;
+    }
+    syncManagedScrollContainer(container);
+  });
 }
 
 function setTextIfPresent(id, value) {
@@ -1599,6 +1785,7 @@ function renderTimeline(events) {
       </div>
     </div>
   `).join("");
+  requestAnimationFrame(() => syncAllManagedScrollContainers());
 }
 
 function renderModules(modules) {
@@ -1633,6 +1820,7 @@ function renderModules(modules) {
       <button type="button">${module.actionLabel}</button>
     </div>
   `).join("");
+  requestAnimationFrame(() => syncAllManagedScrollContainers());
 }
 
 async function syncDeviceWeatherFromBrowser(force = false) {
@@ -1679,10 +1867,18 @@ function renderAgents(agents) {
   if (!container) return;
   if (!Array.isArray(agents) || !agents.length) {
     container.innerHTML = `<div class="settings-card"><p>${currentLocale === "zh-CN" ? "当前还没有可展示的业务智能体运行数据。" : currentLocale === "ja-JP" ? "現在表示できる業務エージェント実行データはありません。" : "No live business agent activity is available yet."}</p></div>`;
+    const detail = document.getElementById("agent-runtime-detail");
+    const timeline = document.getElementById("agent-runtime-timeline");
+    if (detail) detail.innerHTML = "";
+    if (timeline) timeline.innerHTML = "";
     return;
   }
-  container.innerHTML = agents.map((item) => translateItem(item, agentTranslations)).map((agent) => `
+  const localizedAgents = agents.map((item) => translateItem(item, agentTranslations));
+  const selectedAgent = localizedAgents.find((item) => item.id === activeRuntimeAgentId) || localizedAgents[0];
+  if (selectedAgent && activeRuntimeAgentId !== selectedAgent.id) activeRuntimeAgentId = selectedAgent.id;
+  container.innerHTML = localizedAgents.map((agent) => `
     <div class="agent-card remote-target focusable-card" tabindex="0" data-title="${escapeHtml(agent.name)}">
+      <button type="button" class="agent-card-hitbox remote-target" data-runtime-agent-id="${escapeHtml(agent.id)}" data-title="${escapeHtml(agent.name)}"></button>
       <div class="agent-row">
         <strong>${agent.name}</strong>
         <span class="pill ${stateColor[agent.status] || "is-muted"}">${localizeStatusWord(agent.status)}</span>
@@ -1692,6 +1888,45 @@ function renderAgents(agents) {
       <small>${agent.lastUpdate}</small>
     </div>
   `).join("");
+  const detail = document.getElementById("agent-runtime-detail");
+  if (detail && selectedAgent) {
+    const parallelMeaning = currentLocale === "zh-CN"
+      ? "并行工作的意思是：HomeHub 会同时维持多个运行单元，例如语音路由、本地日程、外部消息桥、蓝图工作室和功能运行时。它们不是都在执行同一件事，而是各自负责当前系统里的不同工作面。"
+      : currentLocale === "ja-JP"
+        ? "並列動作とは、HomeHub が音声ルーター、ローカル予定、外部チャネル、ブループリント作業、機能ランタイムなど複数の実行単位を同時に維持することです。同じ処理を重複して走らせるのではなく、別々の仕事面を並行して受け持っています。"
+        : "Parallel work means HomeHub keeps multiple runtime units alive at the same time, such as the voice router, local schedule, external channels, blueprint studio, and feature runtime. They do not all do the same job; each owns a different active surface of the system.";
+    detail.innerHTML = `
+      <div class="settings-card agent-runtime-card">
+        <p class="eyebrow">${escapeHtml(currentLocale === "zh-CN" ? "当前单元" : currentLocale === "ja-JP" ? "現在のユニット" : "Live Unit")}</p>
+        <div class="agent-row">
+          <strong>${escapeHtml(selectedAgent.name)}</strong>
+          <span class="pill ${stateColor[selectedAgent.status] || "is-muted"}">${escapeHtml(localizeStatusWord(selectedAgent.status))}</span>
+        </div>
+        <p>${escapeHtml(selectedAgent.role || "-")}</p>
+        <div class="progress"><div style="width:${selectedAgent.progress || 0}%"></div></div>
+        <small>${escapeHtml(selectedAgent.lastUpdate || "-")}</small>
+        <small>${escapeHtml(parallelMeaning)}</small>
+      </div>
+    `;
+  }
+  const timeline = document.getElementById("agent-runtime-timeline");
+  if (timeline) {
+    const events = Array.isArray(latestDashboard?.timelineEvents) ? latestDashboard.timelineEvents.slice(-5).reverse() : [];
+    timeline.innerHTML = `
+      <div class="settings-card agent-runtime-card">
+        <p class="eyebrow">${escapeHtml(currentLocale === "zh-CN" ? "最近并行活动" : currentLocale === "ja-JP" ? "最近の並列アクティビティ" : "Recent Parallel Activity")}</p>
+        <div class="agent-runtime-events">
+          ${events.length ? events.map((item) => `
+            <div class="relay-item">
+              <strong>${escapeHtml(item.time || "")} · ${escapeHtml(item.title || "")}</strong>
+              <p>${escapeHtml(item.detail || "")}</p>
+            </div>
+          `).join("") : `<p>${escapeHtml(currentLocale === "zh-CN" ? "当前没有最近活动。" : currentLocale === "ja-JP" ? "最近のアクティビティはありません。" : "No recent activity yet.")}</p>`}
+        </div>
+      </div>
+    `;
+  }
+  requestAnimationFrame(() => syncAllManagedScrollContainers());
 }
 
 function renderModels(models) {
@@ -1730,6 +1965,7 @@ function renderPairing(pairing, relayMessages) {
       <span>${message.preview}</span>
     </div>
   `).join("");
+  requestAnimationFrame(() => syncAllManagedScrollContainers());
 }
 
 function renderConversationItems(containerId, items, emptyText = t("voice.noConversation")) {
@@ -1746,34 +1982,35 @@ function renderConversationItems(containerId, items, emptyText = t("voice.noConv
     });
   }
   if (!list.length) {
-    container.innerHTML = `<div class="settings-card"><p>${emptyText}</p></div>`;
+    preserveManagedScroll(container, () => {
+      container.innerHTML = `<div class="settings-card"><p>${emptyText}</p></div>`;
+    });
     return;
   }
-  container.innerHTML = list.map((item, index, renderedItems) => `
-    <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === renderedItems.length - 1 ? "is-latest" : ""} ${item.isThinking ? "is-thinking" : ""}">
-      <div class="conversation-avatar">${item.speaker === "You" ? "你" : "HH"}</div>
-      <div class="conversation-bubble">
-        <div class="conversation-head">
-          <strong>${localizeSpeaker(item.speaker)}</strong>
-          <span>${item.time || ""}</span>
-        </div>
-        <p>${escapeHtml(item.text || "")}</p>
-        ${Array.isArray(item.artifacts) && item.artifacts.length ? `
-          <div class="conversation-artifacts">
-            ${item.artifacts.map((artifact) => `
-              <a class="artifact-chip" href="${escapeHtml(artifact.url || "#")}" target="_blank" rel="noreferrer">
-                <strong>${escapeHtml(artifact.label || artifact.fileName || "Artifact")}</strong>
-                <span>${escapeHtml(artifact.fileName || "")}</span>
-                <em>${t("test.openArtifact")}</em>
-              </a>
-            `).join("")}
+  preserveManagedScroll(container, () => {
+    container.innerHTML = list.map((item, index, renderedItems) => `
+      <div class="conversation-item ${item.speaker === "You" ? "is-user" : "is-bot"} ${index === renderedItems.length - 1 ? "is-latest" : ""} ${item.isThinking ? "is-thinking" : ""}">
+        <div class="conversation-avatar">${item.speaker === "You" ? "你" : "HH"}</div>
+        <div class="conversation-bubble">
+          <div class="conversation-head">
+            <strong>${localizeSpeaker(item.speaker)}</strong>
+            <span>${item.time || ""}</span>
           </div>
-        ` : ""}
+          <p>${escapeHtml(item.text || "")}</p>
+          ${Array.isArray(item.artifacts) && item.artifacts.length ? `
+            <div class="conversation-artifacts">
+              ${item.artifacts.map((artifact) => `
+                <a class="artifact-chip" href="${escapeHtml(artifact.url || "#")}" target="_blank" rel="noreferrer">
+                  <strong>${escapeHtml(artifact.label || artifact.fileName || "Artifact")}</strong>
+                  <span>${escapeHtml(artifact.fileName || "")}</span>
+                  <em>${t("test.openArtifact")}</em>
+                </a>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
       </div>
-    </div>
-  `).join("");
-  requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
+    `).join("");
   });
 }
 
@@ -1856,6 +2093,191 @@ function getSelectedStudioAgentForTab(tabName) {
   return items.find((item) => item.id === customAgentStudio.selectedAgentId) || items[0] || null;
 }
 
+function resetStudioFeatureRuntime(featureId = "") {
+  studioFeatureRuntime = {
+    featureId,
+    items: [],
+    fieldNames: [],
+    detail: null,
+    isLoading: false,
+    isSaving: false,
+    error: "",
+    exportArtifact: null,
+    draftText: ""
+  };
+}
+
+function getStudioFeatureApiRoot(agent) {
+  const featureId = String(agent?.generatedFeatureId || "").trim();
+  return featureId ? `/api/${featureId}` : "";
+}
+
+async function loadStudioFeatureRuntime(agent, force = false) {
+  const apiRoot = getStudioFeatureApiRoot(agent);
+  if (!apiRoot) {
+    resetStudioFeatureRuntime("");
+    renderTestLab();
+    return;
+  }
+  const featureId = String(agent.generatedFeatureId || "").trim();
+  const previousExportArtifact = studioFeatureRuntime.featureId === featureId ? studioFeatureRuntime.exportArtifact : null;
+  const previousDraftText = studioFeatureRuntime.featureId === featureId ? studioFeatureRuntime.draftText : "";
+  if (!force && studioFeatureRuntime.featureId === featureId && (studioFeatureRuntime.isLoading || studioFeatureRuntime.detail)) {
+    return;
+  }
+  resetStudioFeatureRuntime(featureId);
+  studioFeatureRuntime.isLoading = true;
+  studioFeatureRuntime.exportArtifact = previousExportArtifact;
+  studioFeatureRuntime.draftText = previousDraftText;
+  renderTestLab();
+  try {
+    const [detailResponse, itemsResponse] = await Promise.all([
+      fetch(apiRoot),
+      fetch(`${apiRoot}/items`)
+    ]);
+    const detailPayload = await detailResponse.json();
+    const itemsPayload = await itemsResponse.json();
+    if (!detailResponse.ok) {
+      throw new Error(detailPayload.error || "Feature detail request failed.");
+    }
+    if (!itemsResponse.ok) {
+      throw new Error(itemsPayload.error || "Feature items request failed.");
+    }
+    studioFeatureRuntime.featureId = featureId;
+    studioFeatureRuntime.detail = detailPayload;
+    studioFeatureRuntime.items = Array.isArray(itemsPayload.items) ? itemsPayload.items : [];
+    studioFeatureRuntime.fieldNames = Array.isArray(detailPayload.fieldNames)
+      ? detailPayload.fieldNames
+      : (Array.isArray(itemsPayload.fieldNames) ? itemsPayload.fieldNames : []);
+    studioFeatureRuntime.error = "";
+  } catch (error) {
+    studioFeatureRuntime.error = String(error.message || error);
+  } finally {
+    studioFeatureRuntime.isLoading = false;
+    renderTestLab();
+  }
+}
+
+function ensureStudioFeatureRuntime(agent) {
+  const featureId = String(agent?.generatedFeatureId || "").trim();
+  if (!featureId) {
+    if (studioFeatureRuntime.featureId) resetStudioFeatureRuntime("");
+    return;
+  }
+  if (studioFeatureRuntime.featureId !== featureId || (!studioFeatureRuntime.detail && !studioFeatureRuntime.isLoading)) {
+    loadStudioFeatureRuntime(agent).catch((error) => {
+      studioFeatureRuntime.error = String(error.message || error);
+      studioFeatureRuntime.isLoading = false;
+      renderTestLab();
+    });
+  }
+}
+
+function renderStudioFeatureRuntime(agent) {
+  if (!agent?.generatedFeatureId) {
+    return `
+      <div class="studio-feature-panel is-empty">
+        <strong>${escapeHtml(t("test.featurePanelTitle"))}</strong>
+        <p>${escapeHtml(t("test.featurePanelEmpty"))}</p>
+      </div>
+    `;
+  }
+  const runtimeMatches = studioFeatureRuntime.featureId === String(agent.generatedFeatureId || "").trim();
+  const loading = runtimeMatches && studioFeatureRuntime.isLoading;
+  const errorText = runtimeMatches ? studioFeatureRuntime.error : "";
+  const items = runtimeMatches && Array.isArray(studioFeatureRuntime.items)
+    ? studioFeatureRuntime.items.map((item) => ({ ...item, ...summarizeLegacyFeatureItem(item) }))
+    : [];
+  const detail = runtimeMatches ? studioFeatureRuntime.detail : null;
+  const fieldNames = runtimeMatches && Array.isArray(studioFeatureRuntime.fieldNames) ? studioFeatureRuntime.fieldNames : [];
+  const draftText = runtimeMatches ? studioFeatureRuntime.draftText : "";
+  const exportArtifact = runtimeMatches ? studioFeatureRuntime.exportArtifact : null;
+  const body = loading
+    ? `<p>${escapeHtml(t("test.featurePanelLoading"))}</p>`
+    : errorText
+      ? `<p>${escapeHtml(t("test.featurePanelError", { error: errorText }))}</p>`
+      : `
+        <div class="studio-feature-meta">
+          <div class="studio-detail-section">
+            <strong>${escapeHtml(t("test.featureFields"))}</strong>
+            <p>${fieldNames.length ? escapeHtml(fieldNames.join(" / ")) : "-"}</p>
+          </div>
+          <div class="studio-detail-section">
+            <strong>${escapeHtml(t("test.featureStoragePath"))}</strong>
+            <p>${escapeHtml(detail?.storagePath || "-")}</p>
+          </div>
+          <div class="studio-detail-section">
+            <strong>${escapeHtml(t("test.featureGeneratedRoot"))}</strong>
+            <p>${escapeHtml(detail?.generatedRoot || "-")}</p>
+          </div>
+        </div>
+        <div class="studio-feature-compose">
+          <label for="studio-feature-draft">${escapeHtml(t("test.featureDraftLabel"))}</label>
+          <textarea id="studio-feature-draft" class="settings-input studio-feature-textarea" rows="4" placeholder="${escapeHtml(t("test.featureDraftPlaceholder"))}">${escapeHtml(draftText)}</textarea>
+          <div class="studio-feature-actions">
+            <button id="studio-feature-create" class="test-action remote-target" type="button">${escapeHtml(t("test.featureCreate"))}</button>
+            <button id="studio-feature-refresh" class="test-action remote-target is-secondary" type="button">${escapeHtml(loading ? t("test.featureRefreshing") : t("test.featureRefresh"))}</button>
+            <button id="studio-feature-export" class="test-action remote-target is-secondary" type="button">${escapeHtml(t("test.featureExport"))}</button>
+            ${exportArtifact?.url ? `<a class="test-action is-secondary studio-export-link" href="${escapeHtml(exportArtifact.url)}" target="_blank" rel="noreferrer">${escapeHtml(t("test.featureOpenExport"))}</a>` : ""}
+          </div>
+        </div>
+        <div class="studio-feature-records">
+          <div class="studio-feature-records-head">
+            <strong>${escapeHtml(t("test.featureRecords"))}</strong>
+            <span class="mini-pill">${items.length}</span>
+          </div>
+          ${items.length ? items.map((item) => `
+            <article class="studio-feature-record">
+              <div class="studio-feature-record-head">
+                <strong>${escapeHtml(item.title || "Untitled")}</strong>
+                <button class="test-action remote-target is-secondary studio-feature-delete" type="button" data-feature-record-id="${escapeHtml(item.id || "")}">${escapeHtml(t("test.featureDeleteRecord"))}</button>
+              </div>
+              <p>${escapeHtml(item.summary || "-")}</p>
+              <small>${escapeHtml(item.createdAt || "")}</small>
+            </article>
+          `).join("") : `<p>${escapeHtml(t("test.featureNoRecords"))}</p>`}
+        </div>
+      `;
+  return `
+    <div class="studio-feature-panel">
+      <div class="studio-detail-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(t("test.featurePanelTitle"))}</p>
+          <h3>${escapeHtml(agent.name || "Feature")}</h3>
+        </div>
+        <span class="pill is-ready">${escapeHtml(agent.generatedFeatureId || "")}</span>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+function summarizeLegacyFeatureItem(item) {
+  if (!item || typeof item !== "object") {
+    return { title: "Untitled", summary: "-" };
+  }
+  const fields = item.fields && typeof item.fields === "object" ? item.fields : {};
+  const titleCandidates = [
+    item.title,
+    fields["姓名"],
+    fields.name,
+    item.merchant,
+    item.category,
+    item.sourceText
+  ];
+  const summaryCandidates = [];
+  if (item.summary) summaryCandidates.push(item.summary);
+  if (Number.isFinite(Number(item.amount))) {
+    const amountLabel = String(item.category || "").trim() || (currentLocale === "zh-CN" ? "消费" : currentLocale === "ja-JP" ? "支出" : "Amount");
+    summaryCandidates.push(`${amountLabel} ${item.amount} ${item.currency || "JPY"}`);
+  }
+  if (item.sourceText) summaryCandidates.push(item.sourceText);
+  if (item.createdAt) summaryCandidates.push(item.createdAt);
+  const title = titleCandidates.find((value) => String(value || "").trim()) || "Untitled";
+  const summary = summaryCandidates.find((value) => String(value || "").trim()) || "-";
+  return { title: String(title).trim(), summary: String(summary).trim() };
+}
+
 function renderStudioDetail(agent, mode) {
   if (!agent) {
     return `<div class="settings-card"><p>${escapeHtml(t("test.detailEmpty"))}</p></div>`;
@@ -1902,8 +2324,11 @@ function renderStudioDetail(agent, mode) {
       </div>
       <div class="studio-detail-actions">
         ${mode === "creating" ? `<button id="test-delete-draft" class="test-action remote-target is-secondary" type="button">${escapeHtml(t("test.deleteDraft"))}</button>` : ""}
-        ${mode === "created" ? `<button id="test-generate-feature" class="test-action remote-target" type="button" ${generateDisabled ? "disabled" : ""}>${escapeHtml(generateLabel)}</button>` : ""}
+        ${mode === "created" && !agent.generatedFeaturePath ? `<button id="test-generate-feature" class="test-action remote-target" type="button" ${generateDisabled ? "disabled" : ""}>${escapeHtml(generateLabel)}</button>` : ""}
+        ${mode === "created" && agent.generatedFeaturePath ? `<button id="test-delete-feature" class="test-action remote-target is-secondary" type="button">${escapeHtml(t("test.deleteFeature"))}</button>` : ""}
+        ${mode === "created" ? `<button id="test-delete-blueprint" class="test-action remote-target is-secondary" type="button">${escapeHtml(t("test.deleteBlueprint"))}</button>` : ""}
       </div>
+      ${mode === "created" ? renderStudioFeatureRuntime(agent) : ""}
     </div>
   `;
 }
@@ -1949,6 +2374,10 @@ function renderStudioAgentCards(items) {
 }
 
 function renderTestLab() {
+  const studioContainer = document.getElementById("studio-blueprints");
+  const previousListScrollTop = studioContainer?.querySelector(".studio-master-list")?.scrollTop ?? 0;
+  const previousDetailScrollTop = studioContainer?.querySelector(".studio-detail-pane")?.scrollTop ?? 0;
+  const previousContainerScrollTop = studioContainer?.scrollTop ?? 0;
   const studioGroups = getBlueprintStudioGroups();
   if (activeBlueprintStudioTab === "created" && !studioGroups.created.length) {
     activeBlueprintStudioTab = studioGroups.creating.length ? "creating" : "actions";
@@ -1960,10 +2389,14 @@ function renderTestLab() {
   if (selected && customAgentStudio.selectedAgentId !== selected.id) {
     customAgentStudio.selectedAgentId = selected.id;
   }
+  if (activeBlueprintStudioTab === "created" && selected?.generatedFeatureId) {
+    ensureStudioFeatureRuntime(selected);
+  } else if (studioFeatureRuntime.featureId) {
+    resetStudioFeatureRuntime("");
+  }
 
   renderConversationItems("test-conversation", testConversation, t("test.emptyConversation"));
 
-  const studioContainer = document.getElementById("studio-blueprints");
   if (studioContainer) {
     if (!customAgentStudio.items.length) {
       studioContainer.innerHTML = `<div class="settings-card"><p>${t("test.emptyBlueprints")}</p></div>`;
@@ -2006,6 +2439,16 @@ function renderTestLab() {
       ? `${testUploadAttachment.kind === "file" ? "Attached file" : "Attached image"}: ${testUploadAttachment.name} (${Math.round((testUploadAttachment.sizeBytes || 0) / 1024)} KB)`
       : "";
   }
+  requestAnimationFrame(() => {
+    if (studioContainer?.isConnected) {
+      const nextList = studioContainer.querySelector(".studio-master-list");
+      const nextDetail = studioContainer.querySelector(".studio-detail-pane");
+      if (nextList instanceof HTMLElement) nextList.scrollTop = previousListScrollTop;
+      if (nextDetail instanceof HTMLElement) nextDetail.scrollTop = previousDetailScrollTop;
+      studioContainer.scrollTop = previousContainerScrollTop;
+    }
+    syncAllManagedScrollContainers();
+  });
 }
 
 function workCopy(key) {
@@ -3232,6 +3675,7 @@ function renderSettings(data) {
   initializeMailboxSettingsState(data);
   renderSettingsDirectory(data);
   renderSettingsDetail(data);
+  requestAnimationFrame(() => syncAllManagedScrollContainers());
 }
 
 function readMailTesterForm() {
@@ -3582,6 +4026,7 @@ async function deleteSelectedDraft() {
       throw new Error(payload.error || "Unknown error");
     }
     customAgentStudio.selectedAgentId = "";
+    resetStudioFeatureRuntime("");
     await refreshCustomAgentStudio();
     renderTestLab();
     updateSpokenLine(t("test.deleteDraftDone"));
@@ -3591,6 +4036,180 @@ async function deleteSelectedDraft() {
     customAgentStudio.isGenerating = false;
     renderTestLab();
     renderWorkTab();
+  }
+}
+
+async function deleteSelectedBlueprint() {
+  const selected = getSelectedStudioAgentForTab("created");
+  if (!selected) {
+    updateSpokenLine(t("test.detailEmpty"));
+    return;
+  }
+  customAgentStudio.isGenerating = true;
+  renderTestLab();
+  try {
+    const response = await fetch("/api/custom-agents/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selected.id })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unknown error");
+    }
+    customAgentStudio.selectedAgentId = "";
+    resetStudioFeatureRuntime("");
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.deleteBlueprintDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.deleteBlueprintFailed", { error: String(error.message || error) }));
+  } finally {
+    customAgentStudio.isGenerating = false;
+    renderTestLab();
+    renderWorkTab();
+  }
+}
+
+async function deleteSelectedFeature() {
+  const selected = getSelectedStudioAgentForTab("created");
+  if (!selected) {
+    updateSpokenLine(t("test.detailEmpty"));
+    return;
+  }
+  customAgentStudio.isGenerating = true;
+  renderTestLab();
+  try {
+    const response = await fetch("/api/custom-agents/delete-feature", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: selected.id })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unknown error");
+    }
+    resetStudioFeatureRuntime("");
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.deleteFeatureDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.deleteFeatureFailed", { error: String(error.message || error) }));
+  } finally {
+    customAgentStudio.isGenerating = false;
+    renderTestLab();
+    renderWorkTab();
+  }
+}
+
+async function createStudioFeatureRecord() {
+  const selected = getSelectedStudioAgentForTab("created");
+  const apiRoot = getStudioFeatureApiRoot(selected);
+  if (!selected || !apiRoot) {
+    updateSpokenLine(t("test.featurePanelEmpty"));
+    return;
+  }
+  const draftNode = document.getElementById("studio-feature-draft");
+  const message = draftNode?.value?.trim() || studioFeatureRuntime.draftText.trim();
+  if (!message) {
+    updateSpokenLine(t("test.featureDraftPlaceholder"));
+    return;
+  }
+  studioFeatureRuntime.isSaving = true;
+  studioFeatureRuntime.draftText = message;
+  renderTestLab();
+  try {
+    const response = await fetch(`${apiRoot}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Create record failed.");
+    }
+    studioFeatureRuntime.draftText = "";
+    await loadStudioFeatureRuntime(selected, true);
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.featureCreateDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.featureCreateFailed", { error: String(error.message || error) }));
+  } finally {
+    studioFeatureRuntime.isSaving = false;
+    renderTestLab();
+  }
+}
+
+async function refreshStudioFeatureRuntime() {
+  const selected = getSelectedStudioAgentForTab("created");
+  const apiRoot = getStudioFeatureApiRoot(selected);
+  if (!selected || !apiRoot) {
+    updateSpokenLine(t("test.featurePanelEmpty"));
+    return;
+  }
+  await loadStudioFeatureRuntime(selected, true);
+  await refreshCustomAgentStudio();
+  renderTestLab();
+}
+
+async function deleteStudioFeatureRecord(recordId) {
+  const selected = getSelectedStudioAgentForTab("created");
+  const apiRoot = getStudioFeatureApiRoot(selected);
+  if (!selected || !apiRoot || !recordId) return;
+  studioFeatureRuntime.isSaving = true;
+  renderTestLab();
+  try {
+    const response = await fetch(`${apiRoot}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: recordId })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Delete record failed.");
+    }
+    await loadStudioFeatureRuntime(selected, true);
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.featureDeleteDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.featureDeleteFailed", { error: String(error.message || error) }));
+  } finally {
+    studioFeatureRuntime.isSaving = false;
+    renderTestLab();
+  }
+}
+
+async function exportStudioFeatureRecords() {
+  const selected = getSelectedStudioAgentForTab("created");
+  const apiRoot = getStudioFeatureApiRoot(selected);
+  if (!selected || !apiRoot) {
+    updateSpokenLine(t("test.featurePanelEmpty"));
+    return;
+  }
+  studioFeatureRuntime.isSaving = true;
+  renderTestLab();
+  try {
+    const response = await fetch(`${apiRoot}/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Export failed.");
+    }
+    studioFeatureRuntime.exportArtifact = payload.artifact || null;
+    await loadStudioFeatureRuntime(selected, true);
+    await refreshCustomAgentStudio();
+    renderTestLab();
+    updateSpokenLine(t("test.featureExportDone"));
+  } catch (error) {
+    updateSpokenLine(t("test.featureExportFailed", { error: String(error.message || error) }));
+  } finally {
+    studioFeatureRuntime.isSaving = false;
+    renderTestLab();
   }
 }
 
@@ -3684,6 +4303,43 @@ async function triggerRemoteAction(target) {
     await deleteSelectedDraft();
     return;
   }
+  if (target.id === "test-delete-blueprint") {
+    await deleteSelectedBlueprint();
+    return;
+  }
+  if (target.id === "test-delete-feature") {
+    await deleteSelectedFeature();
+    return;
+  }
+  if (target.dataset.scrollJumpTarget) {
+    const scrollTarget = document.getElementById(target.dataset.scrollJumpTarget);
+    if (scrollTarget instanceof HTMLElement) {
+      scrollTarget.scrollTo({ top: scrollTarget.scrollHeight, behavior: "smooth" });
+      requestAnimationFrame(() => syncManagedScrollContainer(scrollTarget));
+    }
+    return;
+  }
+  if (target.id === "studio-feature-create") {
+    await createStudioFeatureRecord();
+    return;
+  }
+  if (target.id === "studio-feature-refresh") {
+    await refreshStudioFeatureRuntime();
+    return;
+  }
+  if (target.id === "studio-feature-export") {
+    await exportStudioFeatureRecords();
+    return;
+  }
+  if (target.dataset.featureRecordId) {
+    await deleteStudioFeatureRecord(target.dataset.featureRecordId);
+    return;
+  }
+  if (target.dataset.runtimeAgentId) {
+    activeRuntimeAgentId = target.dataset.runtimeAgentId;
+    renderAgents(latestDashboard?.activeAgents || []);
+    return;
+  }
   if (target.dataset.studioTab) {
     activeBlueprintStudioTab = target.dataset.studioTab;
     renderTestLab();
@@ -3760,6 +4416,9 @@ function setupTabs() {
 }
 
 function setupRemoteNavigation() {
+  syncAllManagedScrollContainers();
+  window.addEventListener("resize", () => syncAllManagedScrollContainers());
+  window.addEventListener("scroll", () => syncAllManagedScrollContainers(), { passive: true });
   document.addEventListener("focusin", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
@@ -3770,6 +4429,13 @@ function setupRemoteNavigation() {
     const target = event.target.closest(".remote-target");
     if (!target) return;
     await triggerRemoteAction(target);
+  });
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    if (target.id === "studio-feature-draft") {
+      studioFeatureRuntime.draftText = target.value || "";
+    }
   });
 
   document.addEventListener("keydown", async (event) => {

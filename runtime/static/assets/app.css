@@ -1877,6 +1877,19 @@ h3 {
   align-items: center;
 }
 
+.agent-card {
+  position: relative;
+}
+
+.agent-card-hitbox {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: transparent;
+  color: transparent;
+  padding: 0;
+}
+
 button {
   border: 0;
   border-radius: 999px;
@@ -1931,6 +1944,20 @@ button {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   min-height: 0;
+}
+
+.agent-runtime-detail,
+.agent-runtime-timeline {
+  margin-bottom: 12px;
+}
+
+.agent-runtime-card {
+  gap: 10px;
+}
+
+.agent-runtime-events {
+  display: grid;
+  gap: 10px;
 }
 
 .agents-studio-card {
@@ -2534,6 +2561,106 @@ button {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.studio-feature-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(101, 182, 255, 0.18);
+  background: linear-gradient(180deg, rgba(12, 24, 38, 0.96), rgba(10, 20, 31, 0.94));
+}
+
+.studio-feature-panel.is-empty p,
+.studio-feature-panel p,
+.studio-feature-panel small {
+  margin: 0;
+  color: var(--muted);
+}
+
+.studio-feature-meta {
+  display: grid;
+  gap: 10px;
+}
+
+.studio-feature-compose {
+  display: grid;
+  gap: 10px;
+}
+
+.studio-feature-compose label,
+.studio-feature-records-head strong {
+  color: var(--text);
+}
+
+.studio-feature-textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.studio-feature-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.studio-export-link {
+  text-decoration: none;
+}
+
+.studio-feature-records {
+  display: grid;
+  gap: 10px;
+}
+
+.studio-feature-records-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.studio-feature-record {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.studio-feature-record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.studio-feature-delete {
+  min-width: 88px;
+  min-height: 38px;
+  padding: 8px 12px;
+}
+
+.scroll-jump-button {
+  position: fixed;
+  z-index: 50;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(101, 182, 255, 0.34);
+  background: linear-gradient(180deg, rgba(31, 71, 108, 0.96), rgba(19, 43, 66, 0.96));
+  color: #dff3ff;
+  box-shadow: 0 10px 24px rgba(4, 10, 18, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.scroll-jump-button[hidden] {
+  display: none;
 }
 
 .test-action.is-secondary {
