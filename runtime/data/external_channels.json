@@ -1,38 +1,12 @@
 {
-  "apps": {
-    "wechatOfficial": {
-      "enabled": true,
-      "status": "ready-for-webhook",
-      "summary": "Supports WeChat Official Account developer mode with signature verification and passive XML replies.",
-      "users": [],
-      "inbox": [],
-      "outbox": [],
-      "pending": []
-    },
-    "line": {
-      "enabled": false,
-      "status": "ready-for-webhook",
-      "summary": "Supports LINE Messaging API webhook, bridge handoff, and outbound push replies.",
-      "users": [],
-      "inbox": [],
-      "outbox": [],
-      "pending": []
-    }
-  },
-  "mail": {
-    "enabled": true,
-    "status": "ready-for-smtp-imap",
-    "summary": "Send mail through SMTP, pull inbound mail through IMAP, and route both directions through HomeHub.",
-    "inbox": [],
-    "outbox": [],
-    "lastSyncAt": ""
-  },
+  "apps": {},
+  "mail": {},
+  "lastRun": "",
   "recentActions": [
     {
-      "id": "external-channels-ready",
-      "summary": "External channels hub is ready.",
-      "createdAt": "2026-04-09T17:00"
+      "id": "external-ready",
+      "summary": "External channels are ready.",
+      "createdAt": "2026-04-09T18:25"
     }
-  ],
-  "lastRun": ""
+  ]
 }

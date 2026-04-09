@@ -113,21 +113,6 @@ def _build_live_agents(context: dict, feature_payload: dict, features: list[dict
             }
         )
 
-    if study_agents or study_recent:
-        collecting = [item for item in study_agents if item.get("status") in {"collecting", "review"}]
-        completed = [item for item in study_agents if item.get("status") == "complete"]
-        agents.append(
-            {
-                "id": "study-plan-live",
-                "name": "Study Plan Agents",
-                "role": f"{len(study_agents)} study units / {len(completed)} complete",
-                "status": "planning" if collecting else ("running" if study_agents else "ready"),
-                "model": "planner",
-                "progress": min(100, 18 + len(study_agents) * 14),
-                "lastUpdate": _safe_summary(study_recent[0]) if study_recent else "Study-plan agents are ready.",
-            }
-        )
-
     if features:
         feature_names = [str(item.get("name", "")).strip() for item in features[:3] if str(item.get("name", "")).strip()]
         agents.append(

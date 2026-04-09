@@ -11,9 +11,41 @@ def normalize_resolution_reply(reply_value: Any, fallback: str) -> str:
     return text
 
 
+def is_simple_greeting(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    return normalized in {
+        "你好",
+        "您好",
+        "嗨",
+        "hi",
+        "hello",
+        "hey",
+        "早上好",
+        "下午好",
+        "晚上好",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+
+
 def maybe_resolve_autonomous_agent_request(user_text, locale, runtime, route, context: dict[str, Any]) -> dict[str, Any] | None:
     feature = context["feature_manager"].get_feature("custom-agents", runtime)
     if feature is None or not hasattr(feature, "maybe_autonomous_agent_response"):
+        return None
+    normalized = str(user_text or "").strip().lower()
+    if normalized in {
+        "你好",
+        "您好",
+        "嗨",
+        "hi",
+        "hello",
+        "hey",
+        "good morning",
+        "good afternoon",
+        "こんばんは",
+        "おはよう",
+    }:
         return None
     task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
     task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
@@ -58,6 +90,33 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
     original_text = user_text
     combined_text = user_text
     clarification_context = context["get_pending_voice_clarification"]()
+    if is_simple_greeting(original_text) and not clarification_context:
+        reply = (
+            "你好，有什么可以帮忙的？"
+            if locale == "zh-CN"
+            else ("こんにちは。何をお手伝いしましょうか？" if locale == "ja-JP" else "Hello, how can I help?")
+        )
+        return {
+            "reply": normalize_resolution_reply(reply, "你好，有什么可以帮忙的？" if locale == "zh-CN" else "Hello, how can I help?"),
+            "route": {
+                "kind": "general",
+                "selected": {
+                    "intent": "general-chat",
+                    "featureId": "homehub-core",
+                    "featureName": "HomeHub Core",
+                    "action": "general_reply",
+                    "score": 0.99,
+                },
+                "candidates": [],
+                "reasoning": "Detected a simple greeting and kept the response local.",
+                "taskSpec": {
+                    "taskType": "general_chat",
+                    "summary": "Simple greeting exchange.",
+                },
+            },
+            "pendingClarification": None,
+            "uiAction": None,
+        }
     ui_action = context["detect_ui_action"](original_text, locale)
     text_lower = str(original_text or "").lower()
     network_hint = any(token in original_text for token in ["查询", "搜索", "查一下", "上网查", "联网查", "官网", "官方网站", "官方消息", "最新消息", "最新新闻"]) or any(

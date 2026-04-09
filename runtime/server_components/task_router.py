@@ -186,19 +186,6 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
             }
         )
 
-    if spec["taskType"] != "agent_creation" and (
-        any(token in lowered for token in ["study plan", "homework", "revision plan", "study"]) or any(token in raw for token in ZH_STUDY_TOKENS)
-    ):
-        spec.update(
-            {
-                "taskType": "study_plan",
-                "intent": "study-plan-agent",
-                "summary": "Create or continue a study plan agent workflow.",
-                "requiresLongRunningAgent": True,
-                "preferredExecution": "hybrid",
-            }
-        )
-
     if spec["taskType"] == "agent_creation":
         missing = []
         if not any(token in lowered for token in ["daily", "weekly", "monthly", "when", "trigger", "schedule"]) and not any(

@@ -221,7 +221,7 @@ class Feature(HomeHubFeature):
         self.save_store(store, runtime)
         return True
 
-    def cleanup_transient_agents(self, runtime: RuntimeBridge, keep_recent_complete: int = 1) -> bool:
+    def cleanup_transient_agents(self, runtime: RuntimeBridge, keep_recent_complete: int = 8) -> bool:
         if not self.testing_mode_enabled(runtime):
             return False
         store = self.get_store(runtime)
@@ -385,6 +385,24 @@ class Feature(HomeHubFeature):
                 return agent
         return None
 
+    def find_reminder_agent(self, runtime: RuntimeBridge, exclude_id: str = "") -> dict | None:
+        for agent in self.sorted_agents(runtime):
+            if agent.get("status") != "complete":
+                continue
+            if exclude_id and str(agent.get("id", "")).strip() == exclude_id:
+                continue
+            haystack = " ".join(
+                [
+                    str(agent.get("name", "")),
+                    str(agent.get("profile", {}).get("goal", "")),
+                    str(agent.get("profile", {}).get("output", "")),
+                    str(agent.get("profile", {}).get("trigger", "")),
+                ]
+            ).lower()
+            if any(token in haystack for token in ["提醒", "remind", "邮件", "email", "短信", "sms"]):
+                return agent
+        return None
+
     def find_agent_by_hint(self, message: str, runtime: RuntimeBridge) -> dict | None:
         lowered = message.lower()
         for agent in self.sorted_agents(runtime):
@@ -544,13 +562,27 @@ class Feature(HomeHubFeature):
 
     def next_question(self, agent: dict, locale: str) -> tuple[str, str] | None:
         profile = agent.get("profile", {})
+        required_keys = {"name", "goal"}
         for key, prompt in ZH["qs"]:
+            if key not in required_keys:
+                continue
             value = str(profile.get(key, "")).strip()
-            if key == "trigger" and value in {ZH["scheduled_trigger"], ZH["event_trigger"], "scheduled trigger", "event-driven trigger"}:
-                return key, zh(locale, prompt, f"Please provide {key}.")
             if not value:
                 return key, zh(locale, prompt, f"Please provide {key}.")
         return None
+
+    def follow_up_after_minimum_blueprint(self, agent: dict, locale: str) -> str:
+        if locale == "zh-CN":
+            return (
+                f"{agent['name']} 的核心功能我已经记下来了。"
+                "如果你还有其他要求，可以继续补充触发方式、提醒方式、输出结果或限制条件。"
+                "如果没有了，直接回复“确认创建”。"
+            )
+        return (
+            f"I captured the core setup for {agent['name']}. "
+            "You can still add trigger rules, delivery methods, outputs, or constraints. "
+            "If there is nothing else, reply with 'confirm'."
+        )
 
     def is_confirmation_message(self, message: str) -> bool:
         lowered = message.lower().strip()
@@ -634,6 +666,13 @@ class Feature(HomeHubFeature):
         profile = {key: str(ai.get(key, "")).strip() for key in keys}
         if not profile["goal"]:
             profile["goal"] = message.strip() or zh(locale, ZH["default_goal"], "Help with an ongoing household task")
+        elif self.is_create_request(message):
+            lowered_goal = profile["goal"].lower()
+            has_goal_signal = any(token in message for token in ["用于", "用来", "负责", "主要", "功能", "可以", "支持", "处理", "记录", "查询", "整理", "汇总"]) or any(
+                token in lowered_goal for token in ["used to", "for ", "responsible", "function", "record", "manage", "search", "organize", "support", "handle", "summary"]
+            )
+            if not has_goal_signal:
+                profile["goal"] = ""
         if not profile["trigger"]:
             if any(token in message for token in ["\u6bcf\u5929", "\u6bcf\u5468", "\u6bcf\u6708"]):
                 profile["trigger"] = zh(locale, ZH["scheduled_trigger"], "scheduled trigger")
@@ -641,10 +680,27 @@ class Feature(HomeHubFeature):
                 profile["trigger"] = "scheduled trigger"
             elif any(token in message for token in ["\u6536\u5230", "\u4e0a\u4f20", "\u65b0\u6d88\u606f"]):
                 profile["trigger"] = zh(locale, ZH["event_trigger"], "event-driven trigger")
+        explicit_name_detected = False
+        if not profile["name"]:
+            explicit_patterns = [
+                r"(?:名称|名字|名为|名字为)\s*[：:=]?\s*([A-Za-z0-9_\-\u4e00-\u9fff]{2,24})",
+                r"(?:叫做|叫作|叫)\s*([A-Za-z0-9_\-\u4e00-\u9fff]{2,24})",
+                r"name\s*(?:is|=|:)?\s*([A-Za-z0-9_\-]{2,24})",
+            ]
+            for pattern in explicit_patterns:
+                match = re.search(pattern, message, flags=re.IGNORECASE)
+                if match:
+                    profile["name"] = match.group(1).strip(" 。,.，；;：:").lstrip("为")
+                    explicit_name_detected = True
+                    break
         if not profile["name"]:
             match = re.search(r"\u53eb(?:\u505a)?(.{2,20}?)(?:\u7684)?(?:\u667a\u80fd\u4f53|\u52a9\u624b|\u4ee3\u7406|\u673a\u5668\u4eba)", message)
             if match:
                 profile["name"] = match.group(1).strip()
+        if explicit_name_detected and self.is_create_request(message):
+            purpose_markers = ["用于", "用来", "负责", "主要", "功能", "可以", "支持", "处理", "记录", "查询", "整理", "汇总"]
+            if not any(token in message for token in purpose_markers):
+                profile["goal"] = ""
         if any(token in message for token in ["\u8d26\u5355", "\u6263\u8d39", "\u53d1\u7968", "\u6536\u636e", "\u622a\u56fe"]) or any(token in lowered for token in ["bill", "invoice", "expense", "charge", "receipt", "screenshot"]):
             profile["inputs"] = profile["inputs"] or zh(locale, "\u8d26\u5355\u622a\u56fe\u3001\u8d26\u5355\u6587\u5b57\u3001\u6263\u8d39\u6d88\u606f", "Bill screenshots, bill text, and charge notifications")
             profile["output"] = profile["output"] or zh(locale, "\u8d26\u5355\u6c47\u603b\u3001\u5f02\u5e38\u63d0\u9192\u3001\u8bb0\u5f55\u5f52\u6863", "Bill summaries, anomaly alerts, and archived records")
@@ -673,8 +729,12 @@ class Feature(HomeHubFeature):
             patch["trigger"] = message.strip()
         if not patch.get("constraints") and any(token in message for token in ["\u4e0d\u8981", "\u5fc5\u987b", "\u7981\u6b62", "\u9650\u5236", "\u539f\u5219"]):
             patch["constraints"] = message.strip()
-        if not patch.get("output") and any(token in message for token in ["\u8f93\u51fa", "\u7ed3\u679c", "\u603b\u7ed3", "\u63d0\u9192"]):
+        if not patch.get("output") and any(token in message for token in ["\u8f93\u51fa", "\u7ed3\u679c", "\u603b\u7ed3", "\u63d0\u9192", "\u6c47\u603b", "\u5f52\u7c7b", "\u5206\u7c7b", "\u901a\u77e5"]):
             patch["output"] = message.strip()
+        if not patch.get("inputs") and any(token in message for token in ["\u8bed\u97f3", "\u6587\u5b57", "\u56fe\u7247", "\u622a\u56fe", "OCR", "ocr", "\u90ae\u4ef6", "\u77ed\u4fe1"]):
+            patch["inputs"] = message.strip()
+        if not patch.get("hasInputAction") and any(token in message for token in ["\u8bb0\u5f55", "\u5f52\u6863", "\u63d0\u9192", "\u53d1\u51fa\u63d0\u9192", "\u53d1\u9001", "OCR", "ocr"]):
+            patch["hasInputAction"] = message.strip()
         if any(token in message for token in ["\u67e5\u4e00\u4e0b", "\u67e5\u8be2", "\u641c\u7d22", "\u8054\u7f51", "\u5b98\u65b9", "\u6700\u65b0"]) or any(token in lowered for token in ["search", "lookup", "web", "online", "official"]):
             patch["allowNetworkLookup"] = "yes"
             patch.setdefault("preferredSources", "official websites, docs, github.com, huggingface.co")
@@ -759,7 +819,7 @@ class Feature(HomeHubFeature):
     def create_agent(self, runtime: RuntimeBridge, message: str, locale: str) -> dict:
         profile = self.infer_initial_profile(message, locale, runtime)
         name = profile.get("name") or self.default_name(profile.get("goal", ""), locale)
-        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
         agent = {"id": f"custom-agent-{stamp}", "type": "custom-agent", "name": name, "status": "collecting", "createdAt": self.now_iso(), "updatedAt": self.now_iso(), "profile": profile, "qaHistory": [], "artifact": "", "generatedFeaturePath": "", "generatedFeatureId": "", "records": []}
         store = self.get_store(runtime)
         store.setdefault("items", []).insert(0, agent)
@@ -888,7 +948,7 @@ class Feature(HomeHubFeature):
         if auto_constraints:
             merged = " | ".join(auto_constraints)
             profile["constraints"] = f"{profile.get('constraints', '').strip()} | {merged}".strip(" |")
-        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
         agent = {
             "id": f"custom-agent-{stamp}",
             "type": str(proposed.get("agentType", "custom-agent")).strip() or "custom-agent",
@@ -1030,6 +1090,8 @@ class Feature(HomeHubFeature):
         self.append_action(runtime, f"Completed custom agent '{agent['name']}'.")
         self.save_store(self.get_store(runtime), runtime)
         self.cleanup_transient_agents(runtime)
+        if not str(agent.get("generatedFeaturePath", "")).strip():
+            self.generate_feature_template(agent, runtime, overwrite=True)
         self.cortex(runtime).record_event(agent, "confirmed", {"message": agent.get("artifact", "")})
 
     def is_edit_request(self, message: str) -> bool:
@@ -1041,7 +1103,7 @@ class Feature(HomeHubFeature):
 
     def start_editing_agent(self, base_agent: dict, message: str, runtime: RuntimeBridge, locale: str) -> dict:
         profile = deepcopy(base_agent.get("profile", {}))
-        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
         agent = {
             "id": f"custom-agent-{stamp}",
             "type": "custom-agent",
@@ -1107,22 +1169,23 @@ class Feature(HomeHubFeature):
         agent["artifact"] = self.build_artifact(agent, locale)
         self.append_action(runtime, f"Prepared review summary for '{agent['name']}'.")
         self.save_store(self.get_store(runtime), runtime)
-        return self.build_review_summary(agent, locale)
+        if locale == "zh-CN":
+            return "还有其他要求吗？如果没有，回答“确认创建”。"
+        return "Any other requirements? If not, reply with 'confirm'."
 
     def update_review_agent(self, agent: dict, message: str, runtime: RuntimeBridge, locale: str) -> str:
         patch = self.extract_update_patch(message, locale, runtime)
-        changed = False
         for key, value in patch.items():
             if value:
                 agent.setdefault("profile", {})[key] = value
                 if key == "name":
                     agent["name"] = value
-                changed = True
         agent["updatedAt"] = self.now_iso()
         self.save_store(self.get_store(runtime), runtime)
         self.cortex(runtime).record_event(agent, "review_updated", {"message": message.strip()})
-        prefix = zh(locale, ZH["updated_review"], "I updated the draft. Please review it again:")
-        return prefix + "\n\n" + self.build_review_summary(agent, locale)
+        if locale == "zh-CN":
+            return "已经记录，还有其他要求吗？如果没有，回答“确认创建”。"
+        return "Noted. Any other requirements? If not, reply with 'confirm'."
 
     def should_route_intake_to_builder(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
         classified = self.classify_agent_message(message, locale, runtime)
@@ -1431,6 +1494,21 @@ class Feature(HomeHubFeature):
                 forwarded_reply = str(forwarded.get("reply") or forwarded.get("message") or "").strip()
                 artifacts = forwarded.get("artifacts", []) if isinstance(forwarded.get("artifacts"), list) else []
                 if forwarded_reply or artifacts:
+                    forwarded_result = forwarded.get("result", {}) if isinstance(forwarded.get("result", {}), dict) else {}
+                    threshold_triggered = bool(forwarded.get("thresholdTriggered")) or bool(forwarded_result.get("thresholdTriggered"))
+                    if threshold_triggered:
+                        reminder_agent = self.find_reminder_agent(runtime, exclude_id=str(agent.get("id", "")))
+                        if reminder_agent:
+                            if locale == "zh-CN":
+                                forwarded_reply = (
+                                    (forwarded_reply or f"{agent['name']} 已经处理好了这次请求。")
+                                    + f" 我也已经联动提醒智能体“{reminder_agent.get('name', '')}”发出超额提醒。"
+                                ).strip()
+                            else:
+                                forwarded_reply = (
+                                    (forwarded_reply or f"{agent['name']} handled that request.")
+                                    + f" I also coordinated the reminder agent '{reminder_agent.get('name', '')}' for the threshold alert."
+                                ).strip()
                     return {
                         "reply": forwarded_reply or zh(locale, f"{agent['name']} 已经处理好了这次请求。", f"{agent['name']} handled that request."),
                         "uiAction": self.studio_ui_action(agent),
@@ -1863,26 +1941,98 @@ class Feature(HomeHubFeature):
         self.save_store(store, runtime)
         return target
 
-    def export_records(self, runtime: RuntimeBridge) -> dict:
+    def amount_field_candidates(self) -> list[str]:
+        preferred = []
+        for field in self.blueprint_fields():
+            lowered = field.lower()
+            if any(token in field for token in ["金额", "总额", "费用", "价格", "消费"]) or any(token in lowered for token in ["amount", "total", "price", "cost", "expense"]):
+                preferred.append(field)
+        return preferred or self.blueprint_fields()
+
+    def parse_amount(self, value) -> float:
+        text = str(value or "").strip().replace(",", "")
+        if not text:
+            return 0.0
+        match = re.search(r"(-?\d+(?:\.\d+)?)", text)
+        if not match:
+            return 0.0
+        try:
+            return float(match.group(1))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def item_amount(self, item: dict) -> float:
+        record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
+        for field in self.amount_field_candidates():
+            amount = self.parse_amount(record_fields.get(field, ""))
+            if amount > 0:
+                return amount
+        for value in record_fields.values():
+            amount = self.parse_amount(value)
+            if amount > 0:
+                return amount
+        return 0.0
+
+    def extract_threshold(self, text: str) -> float:
+        source = str(text or "")
+        for pattern in [
+            r"(?:超出|超过|高于|大于)\\s*(\\d+(?:\\.\\d+)?)",
+            r"(?:over|above|greater than)\\s*(\\d+(?:\\.\\d+)?)",
+        ]:
+            match = re.search(pattern, source, flags=re.IGNORECASE)
+            if match:
+                return self.parse_amount(match.group(1))
+        return 0.0
+
+    def should_export_excel(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        return any(token in text for token in ["excel", "表格", "导出", "文件", "下载"]) or any(token in lowered for token in ["excel", "xlsx", "export", "download", "sheet"])
+
+    def export_records(self, runtime: RuntimeBridge, prefer_excel: bool = True) -> dict:
         store = self.get_store(runtime)
         items = list(store.get("items", []))
         fields = self.blueprint_fields()
-        path = self.generated_root(runtime) / f"{{datetime.now().strftime('%Y%m%d-%H%M%S')}}-{{EXPORT_SLUG}}.csv"
+        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         header = ["id", "title", "summary", "createdAt", "updatedAt"] + fields
-        lines = [",".join(header)]
-        for item in items:
-            row = [
-                str(item.get("id", "")),
-                str(item.get("title", "")),
-                str(item.get("summary", "")),
-                str(item.get("createdAt", "")),
-                str(item.get("updatedAt", "")),
-            ]
-            record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
-            row.extend(str(record_fields.get(field, "")) for field in fields)
-            escaped = ['"' + value.replace('"', '""') + '"' for value in row]
-            lines.append(",".join(escaped))
-        path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+        if prefer_excel:
+            path = self.generated_root(runtime) / f"{{stamp}}-{{EXPORT_SLUG}}.xlsx"
+            try:
+                from openpyxl import Workbook
+
+                workbook = Workbook()
+                sheet = workbook.active
+                sheet.title = "Records"
+                sheet.append(header)
+                for item in items:
+                    record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
+                    row = [
+                        str(item.get("id", "")),
+                        str(item.get("title", "")),
+                        str(item.get("summary", "")),
+                        str(item.get("createdAt", "")),
+                        str(item.get("updatedAt", "")),
+                    ]
+                    row.extend(str(record_fields.get(field, "")) for field in fields)
+                    sheet.append(row)
+                workbook.save(path)
+            except Exception:
+                prefer_excel = False
+        if not prefer_excel:
+            path = self.generated_root(runtime) / f"{{stamp}}-{{EXPORT_SLUG}}.csv"
+            lines = [",".join(header)]
+            for item in items:
+                row = [
+                    str(item.get("id", "")),
+                    str(item.get("title", "")),
+                    str(item.get("summary", "")),
+                    str(item.get("createdAt", "")),
+                    str(item.get("updatedAt", "")),
+                ]
+                record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
+                row.extend(str(record_fields.get(field, "")) for field in fields)
+                escaped = ['"' + value.replace('"', '""') + '"' for value in row]
+                lines.append(",".join(escaped))
+            path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
         self.append_action(runtime, f"Exported {{len(items)}} records from {{self.feature_name}}.")
         return {{
             "kind": "document",
@@ -1893,12 +2043,82 @@ class Feature(HomeHubFeature):
             "count": len(items),
         }}
 
+    def import_expenses(self, runtime: RuntimeBridge, payload: dict | None = None) -> dict:
+        request = dict(payload or {{}})
+        expenses = request.get("expenses", [])
+        if not isinstance(expenses, list) or not expenses:
+            return {{"ok": False, "error": "no_expenses", "reply": "没有可导入的账单项目。"}}
+        created = []
+        amount_field = self.amount_field_candidates()[0] if self.amount_field_candidates() else self.default_primary_field()
+        for expense in expenses:
+            if not isinstance(expense, dict):
+                continue
+            fields = {{}}
+            for key, value in expense.items():
+                value_text = str(value).strip()
+                if not value_text:
+                    continue
+                if key == "amount":
+                    fields[amount_field] = value_text
+                else:
+                    fields[key] = value_text
+            title = str(expense.get("content") or expense.get("merchant") or f"Record {{len(created) + 1}}").strip()
+            summary = self.summarize_fields(fields)
+            created.append(self.create_record(runtime, {{"message": str(request.get("message", "")).strip(), "fields": fields, "title": title, "summary": summary}}))
+        return {{
+            "ok": True,
+            "action": "import_expenses",
+            "count": len(created),
+            "items": created,
+            "reply": f"已记录 {{len(created)}} 条账单。" if created else "没有成功记录新的账单。",
+        }}
+
+    def summarize_spending(self, runtime: RuntimeBridge, payload: dict | None = None) -> dict:
+        request = dict(payload or {{}})
+        locale = str(request.get("locale", "zh-CN")).strip() or "zh-CN"
+        message = str(request.get("message", "")).strip()
+        items = list(self.get_store(runtime).get("items", []))
+        total_amount = round(sum(self.item_amount(item) for item in items), 2)
+        threshold = self.extract_threshold(message)
+        threshold_triggered = bool(threshold > 0 and total_amount > threshold)
+        artifacts = []
+        if self.should_export_excel(message):
+            artifacts.append(self.export_records(runtime, prefer_excel=True))
+        if locale == "zh-CN":
+            reply = f"到今天为止，{{self.feature_name}} 累计记录 {{len(items)}} 条，消费总额约为 {{int(total_amount) if total_amount.is_integer() else total_amount}}。"
+            if threshold > 0:
+                if threshold_triggered:
+                    reply += f" 已经超过你设定的 {{int(threshold) if float(threshold).is_integer() else threshold}} 阈值，我会触发提醒。"
+                else:
+                    reply += f" 目前还没有超过你设定的 {{int(threshold) if float(threshold).is_integer() else threshold}} 阈值。"
+            if artifacts:
+                reply += f" 我也已经导出了消费明细文件：{{artifacts[0]['fileName']}}。"
+        else:
+            reply = f"So far, {{self.feature_name}} has {{len(items)}} records and the total is {{total_amount}}."
+            if threshold > 0:
+                reply += " The threshold has been exceeded." if threshold_triggered else " The threshold has not been exceeded yet."
+            if artifacts:
+                reply += f" I also exported the records to {{artifacts[0]['fileName']}}."
+        return {{
+            "ok": True,
+            "action": "summarize_spending",
+            "count": len(items),
+            "totalAmount": total_amount,
+            "threshold": threshold,
+            "thresholdTriggered": threshold_triggered,
+            "collaborationHint": "trigger_reminder" if threshold_triggered else "",
+            "artifacts": artifacts,
+            "reply": reply,
+        }}
+
     def allows_network_lookup(self) -> bool:
         value = str(BLUEPRINT.get("allowNetworkLookup", "")).strip().lower()
         return not value or value in {{"yes", "true", "allowed", "allow", "on", "1"}}
 
     def detect_action(self, message: str) -> str:
         lowered = str(message or "").lower()
+        if any(token in message for token in ["总额", "总共", "累计", "汇总", "统计", "超出", "超过"]) or any(token in lowered for token in ["total", "sum", "summary", "threshold", "over", "above"]):
+            return "summarize_spending"
         if any(token in message for token in ["删除", "移除"]) or any(token in lowered for token in ["delete", "remove"]):
             return "delete_record"
         if any(token in message for token in ["导出", "下载", "表格", "文件"]) or any(token in lowered for token in ["export", "download", "csv", "file"]):
@@ -1951,7 +2171,7 @@ class Feature(HomeHubFeature):
                 "blueprint": BLUEPRINT,
             }}
         if action == "export_records":
-            artifact = self.export_records(runtime)
+            artifact = self.export_records(runtime, prefer_excel=True)
             return {{
                 "ok": True,
                 "action": action,
@@ -1960,6 +2180,16 @@ class Feature(HomeHubFeature):
                 "lastRun": store.get("lastRun", ""),
                 "blueprint": BLUEPRINT,
             }}
+        if action == "import_expenses":
+            result = self.import_expenses(runtime, request)
+            result.setdefault("lastRun", store.get("lastRun", ""))
+            result.setdefault("blueprint", BLUEPRINT)
+            return result
+        if action == "summarize_spending":
+            result = self.summarize_spending(runtime, request)
+            result.setdefault("lastRun", store.get("lastRun", ""))
+            result.setdefault("blueprint", BLUEPRINT)
+            return result
         if action == "network_lookup":
             if not runtime.network_lookup or not self.allows_network_lookup():
                 return {{"ok": False, "error": "network_disabled", "reply": "当前蓝图没有开启联网查询。" if locale == "zh-CN" else "Network lookup is not enabled for this feature."}}
@@ -2165,7 +2395,26 @@ def load_feature() -> HomeHubFeature:
         clock_tokens = ["几点", "现在几点", "当前时间", "what time", "current time"]
         return any(token in message or token in lowered for token in weather_tokens + clock_tokens)
 
+    def looks_like_small_talk(self, message: str) -> bool:
+        normalized = str(message or "").strip().lower()
+        return normalized in {
+            "你好",
+            "您好",
+            "嗨",
+            "hi",
+            "hello",
+            "hey",
+            "早上好",
+            "下午好",
+            "晚上好",
+            "good morning",
+            "good afternoon",
+            "good evening",
+        }
+
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.looks_like_small_talk(message):
+            return None
         lowered = message.lower()
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
@@ -2213,6 +2462,8 @@ def load_feature() -> HomeHubFeature:
         return None
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
+        if self.looks_like_small_talk(message):
+            return None
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
         classified = self.classify_agent_message(message, locale, runtime)
@@ -2231,11 +2482,14 @@ def load_feature() -> HomeHubFeature:
                 return {"reply": zh(locale, ZH["cancel"].format(name=review["name"]), f"Okay, I stopped working on {review['name']}."), "uiAction": self.studio_ui_action(review)}
             if self.is_confirmation_message(message):
                 self.complete_agent(review, runtime, locale)
+                generated_path = str(review.get("generatedFeaturePath", "")).strip()
                 confirmed = zh(
                     locale,
                     ZH["edit_confirmed"].format(name=review["name"]) if review.get("editMode") else ZH["confirmed"].format(name=review["name"]),
                     f"{review['name']} has been created and confirmed.",
                 )
+                if generated_path:
+                    confirmed += zh(locale, f" 已同时生成 feature 文件：{generated_path}。", f" The feature file was also generated at {generated_path}.")
                 return {"reply": confirmed, "uiAction": self.studio_ui_action(review)}
             if self.is_revision_message(message) or message.strip():
                 return {"reply": self.update_review_agent(review, message, runtime, locale), "uiAction": self.studio_ui_action(review)}
@@ -2495,6 +2749,8 @@ def load_feature() -> HomeHubFeature:
                         break
             if agent is None and payload.get("name"):
                 agent = self.find_agent_by_hint(str(payload.get("name")), runtime)
+            if agent is None and message:
+                agent = self.find_agent_by_hint(message, runtime) or self.find_matching_operational_agent(message, runtime)
             if agent is None and not self.testing_mode_enabled(runtime):
                 agent = self.latest_operational_agent(runtime) or self.latest_completed_agent(runtime)
             if agent is None:

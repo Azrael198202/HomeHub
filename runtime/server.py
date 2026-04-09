@@ -1486,15 +1486,6 @@ TOOL_REGISTRY = [
         "execution": "local",
     },
     {
-        "id": "study-plan-agents",
-        "label": "Study Plan Agents",
-        "kind": "feature",
-        "featureId": "study-plan-agents",
-        "handles": ["study_plan", "learning_agent"],
-        "inputModes": ["text", "voice"],
-        "execution": "hybrid",
-    },
-    {
         "id": "general-chat",
         "label": "General Chat",
         "kind": "core",
