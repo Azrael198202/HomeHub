@@ -54,8 +54,8 @@ let cortexTesterState = {
   locale: "zh-CN",
   inputModes: "text",
   requiresNetwork: true,
-  requireArtifacts: false,
-  speakReply: false,
+  requireArtifacts: true,
+  speakReply: true,
   status: "",
   isLoading: false
 };
