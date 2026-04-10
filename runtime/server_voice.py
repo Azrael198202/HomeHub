@@ -100,6 +100,11 @@ def maybe_resolve_autonomous_agent_request(user_text, locale, runtime, route, co
     task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
     if task_type in {"weather", "clock", "time_query"}:
         return None
+    if context["looks_like_local_file_request"](user_text):
+        return None
+    selected = route.get("selected", {}) if isinstance(route.get("selected", {}), dict) else {}
+    if str(selected.get("featureId", "")).strip() in {"local-files", "custom-agents"}:
+        return None
     handler = getattr(feature, "maybe_autonomous_agent_response", None)
     if not callable(handler):
         return None

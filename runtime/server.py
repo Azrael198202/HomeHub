@@ -2633,23 +2633,48 @@ def route_voice_request(user_text, locale):
         ]
         if item
     )
-    if task_spec["taskType"] == "agent_creation" and routed.get("kind") == "general":
+    if task_spec["taskType"] == "agent_creation" or looks_like_explicit_custom_agent_request(user_text):
         custom_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "custom-agents"), None)
+        if not custom_candidate and FEATURE_MANAGER.get_feature("custom-agents", runtime):
+            custom_candidate = {
+                "intent": "custom-agent-builder",
+                "featureId": "custom-agents",
+                "featureName": "Custom Agents Studio",
+                "action": "create_agent",
+                "score": 0.96,
+            }
         if custom_candidate:
             routed["kind"] = "feature"
             routed["selected"] = custom_candidate
+            routed["clarificationQuestion"] = ""
             routed["reasoning"] = "Task spec identified agent creation, so HomeHub pinned the request to the custom agent builder."
         else:
             routed["kind"] = "agent_factory"
             routed["reasoning"] = "Task spec identified agent creation, so HomeHub kept the request in agent factory mode."
-    if task_spec["taskType"] in {"reminder", "schedule"} and routed.get("kind") == "general":
+    explicit_custom_agent_request = looks_like_explicit_custom_agent_request(user_text)
+    if explicit_custom_agent_request and isinstance(routed.get("selected"), dict) and str(routed["selected"].get("featureId", "")).strip() == "custom-agents":
+        routed["kind"] = "feature"
+        routed["clarificationQuestion"] = ""
+        routed["reasoning"] = "HomeHub detected an explicit custom-agent creation request and pinned it to the custom agent builder."
+    if task_spec["taskType"] in {"reminder", "schedule"} and routed.get("kind") == "general" and not explicit_custom_agent_request:
         schedule_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "local-schedule"), None)
         if schedule_candidate:
             routed["kind"] = "feature"
             routed["selected"] = schedule_candidate
             routed["reasoning"] = "Task spec identified schedule work, so HomeHub pinned the request to the local schedule feature."
+    if isinstance(routed.get("selected"), dict) and str(routed["selected"].get("featureId", "")).strip() == "custom-agents":
+        routed["kind"] = "feature"
+        routed["clarificationQuestion"] = ""
     if looks_like_local_file_request(user_text):
         local_files_candidate = next((item for item in route.get("candidates", []) if item.get("featureId") == "local-files"), None)
+        if not local_files_candidate and FEATURE_MANAGER.get_feature("local-files", runtime):
+            local_files_candidate = {
+                "intent": "local-files",
+                "featureId": "local-files",
+                "featureName": "Local Files",
+                "action": "handle_file_request",
+                "score": 0.97,
+            }
         if local_files_candidate:
             routed["kind"] = "feature"
             routed["selected"] = local_files_candidate
@@ -2982,15 +3007,28 @@ def should_cortex_require_network(user_text, task_spec):
     )
 
 
+def looks_like_explicit_custom_agent_request(user_text):
+    text = str(user_text or "").strip()
+    lowered = text.lower()
+    cn = any(token in text for token in ["??", "??", "??", "???", "??"]) and any(token in text for token in ["???", "??", "??", "agent"])
+    en = any(token in lowered for token in ["create", "build", "make", "generate"]) and any(token in lowered for token in ["agent", "assistant", "bot", "workflow"])
+    return cn or en
+
+
 def looks_like_local_file_request(user_text):
     text = str(user_text or "")
     lowered = text.lower()
-    tokens = [
-        "文件", "文件夹", "目录", "文档", "文稿", "桌面", "下载", "路径", "读取", "打开文件", "发给我", "发送文件", "附件",
-        "documents", "downloads", "desktop", "directory", "folder", "file", "path", "read file", "open file", "send me", "attachment",
-        "~/", "/users/", "/volumes/", ".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv",
+    explicit_path = any(token in text or token in lowered for token in ["~/", "/users/", "/volumes/", ":\\"])
+    explicit_file = any(token in lowered for token in [".pptx", ".ppt", ".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv", ".md", ".zip", ".mp4"])
+    action_tokens = [
+        "文件", "文件夹", "目录", "路径", "读取", "打开文件", "发给我", "发送文件", "附件", "搜索文件", "查找文件", "分类", "整理文件",
+        "documents", "downloads", "desktop", "directory", "folder", "file", "path", "read file", "open file", "send me", "attachment", "search file", "classify files",
     ]
-    return any(token in text or token in lowered for token in tokens)
+    has_file_action = any(token in text or token in lowered for token in action_tokens)
+    finance_tokens = ["消费", "账单", "支出", "总额", "excel文档", "生成excel", "导出账单", "提醒"]
+    if not explicit_path and not explicit_file and any(token in text for token in finance_tokens):
+        return False
+    return explicit_path or explicit_file or has_file_action
 
 
 def build_cortex_route_plan(user_text, locale, task_spec, route=None):

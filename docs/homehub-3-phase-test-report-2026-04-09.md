@@ -23,7 +23,7 @@
 
 ## 2. 测试环境说明
 
-- 项目路径：`/Users/home/workspace/HomeHub`
+- Project path: Windows `E:\pw\HomeHub`; mac `/Users/home/workspace/HomeHub`
 - 当前系统状态：已清回接近首开状态
 - 已清理内容：
   - 测试蓝图

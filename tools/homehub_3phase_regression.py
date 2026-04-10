@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import shutil
 import sys
 from copy import deepcopy
@@ -22,6 +23,32 @@ import runtime.server as server
 
 DOCS_DIR = ROOT / "docs"
 REPORT_PATH = DOCS_DIR / "homehub-3-phase-regression-report-2026-04-09.md"
+TEST_FILENAME = "AI_Agent_Build2026 en.pptx"
+WINDOWS_DOCUMENTS_DIR = Path("C:/Users/hy/OneDrive/" + "\u30c9\u30ad\u30e5\u30e1\u30f3\u30c8")
+MAC_DOCUMENTS_DIR = Path("/Users/home/Documents")
+
+
+def resolve_test_documents_dir() -> Path:
+    override = os.environ.get("HOMEHUB_TEST_DOCUMENTS_DIR", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return WINDOWS_DOCUMENTS_DIR if os.name == "nt" else MAC_DOCUMENTS_DIR
+
+
+def display_documents_path(path: Path) -> str:
+    return "~/Documents" if path == MAC_DOCUMENTS_DIR else str(path)
+
+
+def display_test_file(path: Path) -> str:
+    if path == MAC_DOCUMENTS_DIR:
+        return f"~/Documents/{TEST_FILENAME}"
+    return str(path / TEST_FILENAME)
+
+
+TEST_DOCUMENTS_DIR = resolve_test_documents_dir()
+TEST_DOCUMENTS_PATH_TEXT = display_documents_path(TEST_DOCUMENTS_DIR)
+TEST_FILE_PATH_TEXT = display_test_file(TEST_DOCUMENTS_DIR)
+TEST_FILE = TEST_DOCUMENTS_DIR / TEST_FILENAME
 
 
 @dataclass
@@ -53,8 +80,19 @@ def remove_path(path: Path) -> None:
         path.unlink()
 
 
+def ensure_documents_fixture() -> None:
+    TEST_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    if TEST_FILE.exists():
+        return
+    TEST_FILE.write_bytes(
+        b"HomeHub regression fixture for local file search and share.\n"
+        b"This placeholder uses the expected .pptx filename for deterministic tests.\n"
+    )
+
+
 def reset_runtime_state() -> None:
     stamp = now_iso()
+    ensure_documents_fixture()
 
     generated_dirs = [
         ROOT / "runtime" / "generated" / "local-files",
@@ -266,10 +304,10 @@ def run_regression() -> list[CaseResult]:
         )
     )
 
-    file_query = "查看 ~/Documents 下面有什么文件，AI_Agent_Build2026 en.pptx文件发给我。"
+    file_query = f"\u67e5\u770b {TEST_DOCUMENTS_PATH_TEXT} \u4e0b\u9762\u6709\u4ec0\u4e48\u6587\u4ef6\uff0c{TEST_FILENAME}\u6587\u4ef6\u53d1\u7ed9\u6211\u3002"
     file_result = run_voice(file_query)
     file_artifacts = file_result.get("artifacts", []) if isinstance(file_result.get("artifacts"), list) else []
-    file_ok = bool(file_artifacts) and any(str(item.get("fileName", "")).strip() == "AI_Agent_Build2026 en.pptx" for item in file_artifacts)
+    file_ok = bool(file_artifacts) and any(str(item.get("fileName", "")).strip() == TEST_FILENAME for item in file_artifacts)
     results.append(
         case(
             "阶段1",
@@ -421,12 +459,12 @@ def run_regression() -> list[CaseResult]:
 
     similar_cases = [
         ("扩展1", "下午好。", "本地问候仍保持正常"),
-        ("扩展2", "查看 ~/Documents 下面有什么文件。", "返回目录内容"),
-        ("扩展3", "在 ~/Documents 搜索 AI_Agent_Build2026 en.pptx", "返回文件搜索结果"),
-        ("扩展4", "查看 ~/Documents 下面有什么文件，AI_Agent_Build2026 en.pptx文件发给我。", "返回下载附件"),
+        ("\u6269\u5c552", f"\u67e5\u770b {TEST_DOCUMENTS_PATH_TEXT} \u4e0b\u9762\u6709\u4ec0\u4e48\u6587\u4ef6\u3002", "\u8fd4\u56de\u76ee\u5f55\u5185\u5bb9"),
+        ("\u6269\u5c553", f"\u5728 {TEST_DOCUMENTS_PATH_TEXT} \u641c\u7d22 {TEST_FILENAME}", "\u8fd4\u56de\u6587\u4ef6\u641c\u7d22\u7ed3\u679c"),
+        ("\u6269\u5c554", f"\u67e5\u770b {TEST_DOCUMENTS_PATH_TEXT} \u4e0b\u9762\u6709\u4ec0\u4e48\u6587\u4ef6\uff0c{TEST_FILENAME}\u6587\u4ef6\u53d1\u7ed9\u6211\u3002", "\u8fd4\u56de\u4e0b\u8f7d\u9644\u4ef6"),
         ("扩展5", "家庭账单现在有多少条记录", "返回账单记录数量"),
         ("扩展6", "导出家庭账单的记录文件", "返回账单导出文件"),
-        ("扩展7", "把 ~/Documents/AI_Agent_Build2026 en.pptx 发给我", "直接返回附件"),
+        ("\u6269\u5c557", f"\u628a {TEST_FILE_PATH_TEXT} \u53d1\u7ed9\u6211", "\u76f4\u63a5\u8fd4\u56de\u9644\u4ef6"),
         ("扩展8", "到目前为止消费总额多少", "返回累计消费"),
         ("扩展9", "如果超过3000就提醒我，并导出账单表格", "不超阈值时也应导出表格"),
         ("扩展10", "删除家庭账单里名为 FAMILY MART 的记录", "删除指定记录"),

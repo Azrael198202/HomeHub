@@ -1,20 +1,21 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
-from html import escape
 from copy import deepcopy
 from datetime import datetime
+from html import escape
 from pathlib import Path
 
 from .base import HomeHubFeature, RuntimeBridge
 
 try:
-    from cortex.core import AgentCortex
-    from cortex.models import default_agent_cortex
-except ModuleNotFoundError:
     from runtime.cortex.core import AgentCortex
     from runtime.cortex.models import default_agent_cortex
+except ModuleNotFoundError:
+    from ..cortex.core import AgentCortex
+    from ..cortex.models import default_agent_cortex
 
 
 ZH = {
@@ -89,6 +90,32 @@ AGENT_ACTIVATION_PHRASES = {
     ],
 }
 
+
+
+# Noise markers are used only to discard obviously polluted agent drafts/actions.
+# These phrases came from accidental ingestion of external newsletter / platform text
+# and should not participate in normal HomeHub business logic.
+NOISE_AGENT_TEXT_MARKERS = {
+    "\u004c\u0049\u004e\u0045\u516c\u5f0f\u30a2\u30ab\u30a6\u30f3\u30c8\u904b\u7528\u4e8b\u52d9\u5c40",
+    "\u004c\u0049\u004e\u0045\u30ad\u30e3\u30f3\u30d1\u30b9",
+    "lycorp.co.jp",
+    "manager.line.biz",
+    "unsubscribepage",
+    "noreply@linecorp.com",
+    "\u52b9\u679c\u3092\u51fa\u3059\u305f\u3081\u306e\u57fa\u672c\u7684\u306a\u8003\u3048\u65b9\u3092\u304a\u4f1d\u3048\u3057\u307e\u3059",
+}
+
+CONFIRMATION_ONLY_AGENT_NAMES = {
+    "\u786e\u8ba4\u521b\u5efa",
+    "\u786e\u8ba4\u521b\u5efa\u667a\u80fd\u4f53",
+    "confirm create",
+    "confirm agent creation",
+}
+
+RECENT_ACTION_NOISE_MARKERS = {
+    "\u786e\u8ba4\u521b\u5efa\u667a\u80fd\u4f53",
+    "created custom agent draft '\u786e\u8ba4\u521b\u5efa\u667a\u80fd\u4f53'",
+}
 
 def zh(locale: str, text: str, fallback: str) -> str:
     return text if locale == "zh-CN" else fallback
@@ -175,25 +202,12 @@ class Feature(HomeHubFeature):
             str(profile.get("preferredSources", "")).strip(),
         ]
         joined = "\n".join(item for item in haystacks if item).lower()
-        suspicious_tokens = [
-            "line公式アカウント運用事務局",
-            "lineキャンパス",
-            "lycorp.co.jp",
-            "manager.line.biz",
-            "unsubscribepage",
-            "noreply@linecorp.com",
-            "効果を出すための基本的な考え方をお伝えします",
-            "确认创建智能体",
-            "确认创建",
-        ]
-        if any(token in joined for token in suspicious_tokens):
+        if any(token.lower() in joined for token in NOISE_AGENT_TEXT_MARKERS):
             return True
-        if joined in {"确认创建", "确认创建智能体", "confirm create", "confirm agent creation"}:
+        if joined in {token.lower() for token in CONFIRMATION_ONLY_AGENT_NAMES}:
             return True
         url_count = joined.count("http://") + joined.count("https://")
-        if url_count >= 3:
-            return True
-        return False
+        return url_count >= 3
 
     def testing_mode_enabled(self, runtime: RuntimeBridge) -> bool:
         store = self.get_store(runtime)
@@ -211,7 +225,7 @@ class Feature(HomeHubFeature):
         removed = 0
         for item in recent:
             summary = str((item or {}).get("summary", "")).strip().lower()
-            if "确认创建智能体" in summary or "created custom agent draft '确认创建智能体'" in summary:
+            if any(marker.lower() in summary for marker in RECENT_ACTION_NOISE_MARKERS):
                 removed += 1
                 continue
             filtered.append(item)
@@ -418,22 +432,6 @@ class Feature(HomeHubFeature):
             if goal and goal[:24] in lowered:
                 return agent
         return None
-
-    def split_keywords(self, text: str) -> set[str]:
-        raw = str(text or "").lower()
-        return {
-            token.strip()
-            for token in re.split(r"[\s,，。；;、:/|()\[\]{}<>\"'\n\r\t\-]+", raw)
-            if len(token.strip()) >= 2
-        }
-
-    def keyword_set(self, text: str) -> set[str]:
-        raw = str(text or "").lower()
-        return {
-            token.strip()
-            for token in re.split(r"[\s,，。；;、:/|()\[\]{}<>\"'\n\r\t]+", raw)
-            if len(token.strip()) >= 2
-        }
 
     def split_keywords(self, text: str) -> set[str]:
         raw = str(text or "").lower()
@@ -1371,10 +1369,9 @@ class Feature(HomeHubFeature):
         artifact_name = f"{stamp}-{self.safe_artifact_slug(label)}.xlsx"
         path = self.artifacts_root(runtime) / artifact_name
         try:
-            from openpyxl import Workbook
-
-            workbook = Workbook()
-            sheet = workbook.active
+            workbook_module = importlib.import_module("openpyxl")
+            workbook = workbook_module.Workbook()
+            sheet = workbook.active if getattr(workbook, "active", None) is not None else workbook.create_sheet("Summary")
             sheet.title = "Summary"
             sheet.append(["Agent", "Generated At", "Request", "Goal"])
             sheet.append([
@@ -1416,9 +1413,8 @@ class Feature(HomeHubFeature):
         artifact_name = f"{stamp}-{self.safe_artifact_slug(label)}.docx"
         path = self.artifacts_root(runtime) / artifact_name
         try:
-            from docx import Document
-
-            document = Document()
+            docx_module = importlib.import_module("docx")
+            document = docx_module.Document()
             document.add_heading(label, 0)
             document.add_paragraph(f"Agent: {agent.get('name') or 'Custom Agent'}")
             document.add_paragraph(f"Generated at: {self.now_iso()}")
@@ -1430,7 +1426,7 @@ class Feature(HomeHubFeature):
             document.add_paragraph("Context and purpose", style="List Bullet")
             document.add_paragraph("Main points to cover", style="List Bullet")
             document.add_paragraph("Next actions", style="List Bullet")
-            document.save(path)
+            document.save(str(path))
         except Exception:
             fallback = path.with_suffix(".txt")
             fallback.write_text(
@@ -2270,6 +2266,18 @@ class Feature(HomeHubFeature):
             "blueprint": BLUEPRINT,
         }}
 
+    def should_continue_agent_draft(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
+        if not str(message or '').strip():
+            return False
+        if self.is_confirmation_message(message) or self.is_cancel_request(message) or self.is_revision_message(message):
+            return True
+        if self.is_create_request(message) or self.matches_activation_phrase(message, locale) or self.looks_like_agent_topic(message):
+            return True
+        classified = self.classify_agent_message(message, locale, runtime)
+        action = str(classified.get('action', '')).strip()
+        confidence = float(classified.get('confidence', 0.0) or 0.0)
+        return action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6
+
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         result = self.run_feature(runtime, "voice", {{"message": message, "locale": locale}})
         return {{
@@ -2512,9 +2520,9 @@ def load_feature() -> HomeHubFeature:
             if self.is_list_request(message):
                 return {"intent": "custom-agent-builder", "action": "show_agent", "score": 0.93}
             return {"intent": "custom-agent-builder", "action": "general_agent_help", "score": 0.9}
-        if collecting and not self.is_general_time_or_weather_query(message):
+        if collecting and not self.is_general_time_or_weather_query(message) and self.should_continue_agent_draft(message, locale, runtime):
             return {"intent": "custom-agent-builder", "action": "continue_collecting", "score": 0.995}
-        if review and not self.is_general_time_or_weather_query(message):
+        if review and not self.is_general_time_or_weather_query(message) and self.should_continue_agent_draft(message, locale, runtime):
             return {"intent": "custom-agent-builder", "action": "review_blueprint", "score": 0.995}
         if operational and not self.looks_like_agent_topic(message) and not self.is_general_time_or_weather_query(message):
             return {"intent": "custom-agent-builder", "action": "operational_agent", "score": 0.91}
@@ -2523,6 +2531,18 @@ def load_feature() -> HomeHubFeature:
         if self.looks_like_agent_topic(message):
             return {"intent": "custom-agent-builder", "action": "general_agent_help", "score": 0.78}
         return None
+
+    def should_continue_agent_draft(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
+        if not str(message or '').strip():
+            return False
+        if self.is_confirmation_message(message) or self.is_cancel_request(message) or self.is_revision_message(message):
+            return True
+        if self.is_create_request(message) or self.matches_activation_phrase(message, locale) or self.looks_like_agent_topic(message):
+            return True
+        classified = self.classify_agent_message(message, locale, runtime)
+        action = str(classified.get('action', '')).strip()
+        confidence = float(classified.get('confidence', 0.0) or 0.0)
+        return action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if self.looks_like_small_talk(message):
@@ -2535,11 +2555,11 @@ def load_feature() -> HomeHubFeature:
         classified_action = str(classified.get("action", "")).strip()
         classified_confidence = float(classified.get("confidence", 0.0) or 0.0)
         classified_target = self.find_agent_by_hint(str(classified.get("targetAgentName", "")).strip(), runtime) if str(classified.get("targetAgentName", "")).strip() else None
-        if collecting and not self.is_general_time_or_weather_query(message):
+        if collecting and not self.is_general_time_or_weather_query(message) and self.should_continue_agent_draft(message, locale, runtime):
             reply = self.answer_collecting_agent(collecting, message, runtime, locale)
             target_agent = self.get_collecting_agent(runtime) or self.find_agent_by_hint(collecting.get("name", ""), runtime) or collecting
             return {"reply": reply, "uiAction": self.studio_ui_action(target_agent)}
-        if review and not self.is_general_time_or_weather_query(message):
+        if review and not self.is_general_time_or_weather_query(message) and self.should_continue_agent_draft(message, locale, runtime):
             if self.is_cancel_request(message):
                 review["status"] = "cancelled"
                 review["updatedAt"] = self.now_iso()

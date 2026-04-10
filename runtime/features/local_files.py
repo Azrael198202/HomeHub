@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -18,24 +18,34 @@ API_WRITE = "/api/local-files/write"
 API_MOVE = "/api/local-files/move"
 API_DELETE = "/api/local-files/delete"
 API_CONFIRM = "/api/local-files/confirm-delete"
+API_CLASSIFY = "/api/local-files/classify"
 
 
 class Feature(HomeHubFeature):
     feature_id = "local-files"
     feature_name = "Local Files"
-    version = "1.0.0"
+    version = "1.1.0"
+
+    SEND_TOKENS = ("发给我", "发送", "附件", "下载", "share", "send me", "attachment", "download")
+    LIST_TOKENS = ("查看", "列出", "显示", "看看", "下面有什么", "有哪些", "list", "show", "what files", "what is under")
+    SEARCH_TOKENS = ("搜索", "查找", "寻找", "find", "search", "lookup")
+    READ_TOKENS = ("读取", "打开", "阅读", "read", "open")
+    CLASSIFY_TOKENS = ("分类", "整理", "归类", "按类型", "创建新的文件夹", "sort", "organize", "classify")
+    FILE_HINT_TOKENS = ("文件", "文件夹", "目录", "路径", "附件", "file", "folder", "directory", "path", "attachment")
+    TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log", ".ini"}
+    CATEGORY_MAP = {
+        "Documents": {".pdf", ".doc", ".docx", ".ppt", ".pptx"},
+        "Finance": {".xls", ".xlsx", ".csv"},
+        "Text": {".txt", ".md", ".json", ".ini", ".log"},
+        "Media": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".mp4", ".mov", ".mp3", ".wav"},
+        "Archives": {".zip", ".rar", ".7z", ".tar", ".gz"},
+    }
 
     def descriptor(self) -> dict:
         data = super().descriptor()
-        data["summary"] = "Browse, search, read, write, move, share, and delete local machine files with confirmation for destructive actions."
-        data["api"] = [API_ROOT, API_LIST, API_SEARCH, API_READ, API_WRITE, API_MOVE, API_DELETE, API_CONFIRM]
-        data["voiceIntents"] = [
-            {
-                "id": "local-files",
-                "name": "Local Files",
-                "summary": "Handle local machine file system tasks such as browse, search, read, write, move, and delete.",
-            }
-        ]
+        data["summary"] = "Browse, search, read, write, move, classify, share, and delete local files with guarded actions."
+        data["api"] = [API_ROOT, API_LIST, API_SEARCH, API_READ, API_WRITE, API_MOVE, API_DELETE, API_CONFIRM, API_CLASSIFY]
+        data["voiceIntents"] = [{"id": "local-files", "name": "Local Files", "summary": "Handle local file-system tasks."}]
         return data
 
     def storage_path(self, runtime: RuntimeBridge) -> Path:
@@ -67,7 +77,7 @@ class Feature(HomeHubFeature):
             return self.default_store()
         return {
             "pendingDelete": data.get("pendingDelete") if isinstance(data.get("pendingDelete"), dict) else None,
-            "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions", []), list) else [],
+            "recentActions": data.get("recentActions", []) if isinstance(data.get("recentActions"), list) else [],
             "lastRun": str(data.get("lastRun", "")).strip(),
         }
 
@@ -78,9 +88,8 @@ class Feature(HomeHubFeature):
         runtime.state[self.feature_id] = self.load_store(runtime)
 
     def reset(self, runtime: RuntimeBridge) -> None:
-        store = self.default_store()
-        runtime.state[self.feature_id] = store
-        self.save_store(store, runtime)
+        runtime.state[self.feature_id] = self.default_store()
+        self.save_store(runtime.state[self.feature_id], runtime)
 
     def get_store(self, runtime: RuntimeBridge) -> dict:
         store = runtime.state.get(self.feature_id)
@@ -94,30 +103,18 @@ class Feature(HomeHubFeature):
 
     def remember_action(self, runtime: RuntimeBridge, summary: str) -> None:
         store = self.get_store(runtime)
-        store.setdefault("recentActions", []).insert(0, {"id": f"local-files-{self.now_iso()}", "summary": summary, "createdAt": self.now_iso()})
-        del store["recentActions"][12:]
-        store["lastRun"] = self.now_iso()
+        stamp = self.now_iso()
+        store["recentActions"] = [{"id": f"local-files-{stamp}", "summary": summary, "createdAt": stamp}] + list(store.get("recentActions", []))[:11]
+        store["lastRun"] = stamp
         self.save_store(store, runtime)
 
     def protected_prefixes(self) -> list[Path]:
         home = Path.home()
-        return [
-            Path("/System"),
-            Path("/Library/Keychains"),
-            Path("/private/etc"),
-            Path("/private/var/db"),
-            home / ".ssh",
-            home / ".gnupg",
-            home / ".aws",
-            home / ".config" / "gcloud",
-            home / "Library" / "Keychains",
-        ]
+        return [Path("/System"), Path("/Library/Keychains"), Path("/private/etc"), Path("/private/var/db"), home / ".ssh", home / ".gnupg", home / ".aws"]
 
     def resolve_path(self, raw_path: str) -> Path:
         text = str(raw_path or "").strip()
-        if not text:
-            return Path.home()
-        return Path(text).expanduser().resolve()
+        return Path.home() if not text else Path(text).expanduser().resolve()
 
     def is_protected(self, path: Path) -> bool:
         resolved = path.resolve()
@@ -140,19 +137,39 @@ class Feature(HomeHubFeature):
             return False, "path_not_found"
         return True, ""
 
+    def zh(self, locale: str, zh_text: str, en_text: str) -> str:
+        return zh_text if locale == "zh-CN" else en_text
+
+    def extract_path_hint(self, message: str) -> str:
+        text = str(message or "").strip()
+        for pattern in [r"([A-Za-z]:\\[^\n，。,]+)", r"(~\/[^\n，。,]+)", r"(\/Users\/[^\n，。,]+)", r"(\/Volumes\/[^\n，。,]+)", r"(\/tmp\/[^\n，。,]+)"]:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return self.normalize_extracted_path(match.group(1))
+        return ""
+
+    def normalize_extracted_path(self, raw_path: str) -> str:
+        text = str(raw_path or "").strip().strip("，。,")
+        for marker in [" 下", " 下面", " 里面", " 里", " 之下", " 分类", " 整理", " 发给我", " 发送", " 搜索", " 查找", " download ", " send me ", " search "]:
+            if marker in text:
+                text = text.split(marker, 1)[0].strip()
+        return text.rstrip("\\/")
+
+    def extract_filename_hint(self, message: str) -> str:
+        explicit = re.findall(r"([A-Za-z0-9_\- .]+\.(?:pptx|ppt|xlsx|xls|docx|doc|pdf|txt|csv|md|jpg|jpeg|png|zip|mp4|mov|mp3|wav|json|ini|log))", str(message or ""), flags=re.IGNORECASE)
+        return explicit[0].strip() if explicit else ""
+
+    def looks_like_file_request(self, message: str) -> bool:
+        text = str(message or "")
+        lowered = text.lower()
+        has_action = any(token in text for token in self.SEND_TOKENS + self.LIST_TOKENS + self.SEARCH_TOKENS + self.READ_TOKENS + self.CLASSIFY_TOKENS)
+        has_action = has_action or any(token in lowered for token in self.SEND_TOKENS + self.LIST_TOKENS + self.SEARCH_TOKENS + self.READ_TOKENS + self.CLASSIFY_TOKENS)
+        has_target = any(token in text for token in self.FILE_HINT_TOKENS) or any(token in lowered for token in self.FILE_HINT_TOKENS)
+        return bool(self.extract_path_hint(text) or self.extract_filename_hint(text) or (has_action and has_target))
+
     def classify_file_request(self, message: str, locale: str, runtime: RuntimeBridge) -> dict:
         payload = runtime.openai_json(
-            (
-                "You extract local file system commands for HomeHub. "
-                "Return JSON only with keys: action, path, destinationPath, query, content, fileName, lineLimit, confidence. "
-                "action must be one of: none, list, search, read, write, move, delete, send, confirm_delete, cancel_delete. "
-                "Infer the action semantically from the request. "
-                "Use absolute paths when explicitly present; preserve user paths like ~/Desktop/file.txt when mentioned. "
-                "For write, extract the intended text into content. "
-                "For search, extract the filename or keyword into query. "
-                "For send, extract the target file name into fileName and the search directory into path when mentioned. "
-                "For read, lineLimit can be a small integer when the user asked for a subset."
-            ),
+            "Return JSON only with keys action,path,destinationPath,query,content,fileName,lineLimit,confidence for a local file command. action must be one of none,list,search,read,write,move,delete,send,classify,confirm_delete,cancel_delete.",
             f"locale: {locale}\nrequest:\n{message}",
             "gpt-4o-mini",
         ) or {}
@@ -168,92 +185,40 @@ class Feature(HomeHubFeature):
         }
         return self.apply_rule_fallbacks(message, result)
 
-    def extract_path_hint(self, message: str) -> str:
-        text = str(message or "").strip()
-        candidates = re.findall(
-            r"(~\/[^\n，。；;]+?\.(?:pptx|ppt|xlsx|xls|docx|doc|pdf|txt|csv|md|jpg|jpeg|png|zip)|"
-            r"\/Users\/[^\n，。；;]+?\.(?:pptx|ppt|xlsx|xls|docx|doc|pdf|txt|csv|md|jpg|jpeg|png|zip)|"
-            r"~\/[^\s，。；;]+|\/Users\/[^\s，。；;]+|\/Volumes\/[^\s，。；;]+|\/tmp\/[^\s，。；;]+)",
-            text,
-            flags=re.IGNORECASE,
-        )
-        return self.normalize_extracted_path(candidates[0].strip()) if candidates else ""
-
-    def normalize_extracted_path(self, raw_path: str) -> str:
-        text = str(raw_path or "").strip()
-        if not text:
-            return ""
-        for marker in [" 搜索 ", " 查找 ", " 发给我", " 发送给我", " download ", " send me ", " search "]:
-            if marker in text:
-                text = text.split(marker, 1)[0].strip()
-        return text
-
-    def looks_like_file_request(self, message: str) -> bool:
-        text = str(message or "")
-        lowered = text.lower()
-        tokens = [
-            "文件", "文件夹", "目录", "桌面", "下载", "文稿", "文档", "路径", "读取", "打开文件", "搜索文件", "查找文件",
-            "写入文件", "新建文件", "移动文件", "重命名", "删除文件", "删除目录", "复制文件",
-            "发给我", "发送文件", "下载文件", "给我这个文件", "附件",
-            "file", "folder", "directory", "desktop", "downloads", "documents", "path", "read file", "open file", "search file",
-            "write file", "create file", "move file", "rename file", "delete file", "list files", "send me", "share file", "download file", "attachment",
-            "~/", "/Users/", "/Volumes/", "/tmp/",
-        ]
-        return any(token in text or token in lowered for token in tokens)
-
     def apply_rule_fallbacks(self, message: str, classified: dict) -> dict:
         result = dict(classified or {})
         text = str(message or "").strip()
         lowered = text.lower()
-        if not result.get("path"):
-            result["path"] = self.extract_path_hint(text)
-        if not result.get("fileName"):
-            result["fileName"] = self.extract_filename_hint(text)
-        if not result.get("query"):
-            result["query"] = result.get("fileName", "")
+        result["path"] = result.get("path") or self.extract_path_hint(text)
+        result["fileName"] = result.get("fileName") or self.extract_filename_hint(text)
+        result["query"] = result.get("query") or result["fileName"]
         action = str(result.get("action", "")).strip().lower() or "none"
         if action == "none":
-            if result.get("fileName") and any(token in text for token in ["发给我", "发送", "下载", "附件"]) or any(
-                token in lowered for token in ["send me", "share", "download", "attachment"]
-            ):
-                result["action"] = "send"
-                result["confidence"] = max(float(result.get("confidence", 0.0) or 0.0), 0.92)
-            elif any(token in text for token in ["查看", "列出", "有什么文件", "下面有什么"]) or any(
-                token in lowered for token in ["list", "show files", "what files", "what is under"]
-            ):
-                result["action"] = "list"
-                result["confidence"] = max(float(result.get("confidence", 0.0) or 0.0), 0.82)
-            elif result.get("fileName"):
-                result["action"] = "search"
-                result["confidence"] = max(float(result.get("confidence", 0.0) or 0.0), 0.78)
-        if not result.get("path") and result.get("action") in {"list", "search", "send"}:
+            if any(token in text for token in self.CLASSIFY_TOKENS) or any(token in lowered for token in self.CLASSIFY_TOKENS):
+                action = "classify"
+            elif any(token in text for token in self.SEND_TOKENS) or any(token in lowered for token in self.SEND_TOKENS):
+                action = "send"
+            elif any(token in text for token in self.LIST_TOKENS) or any(token in lowered for token in self.LIST_TOKENS):
+                action = "list"
+            elif any(token in text for token in self.SEARCH_TOKENS) or any(token in lowered for token in self.SEARCH_TOKENS):
+                action = "search"
+            elif any(token in text for token in self.READ_TOKENS) or any(token in lowered for token in self.READ_TOKENS):
+                action = "read"
+            elif result["fileName"]:
+                action = "search"
+        result["action"] = action
+        result["confidence"] = max(float(result.get("confidence", 0.0) or 0.0), 0.8 if action != "none" else 0.0)
+        if not result["path"] and action in {"list", "search", "send", "classify"}:
             result["path"] = str(Path.home())
-        if result.get("action") == "send" and not result.get("query"):
-            result["query"] = result.get("fileName", "")
         return result
 
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if not self.looks_like_file_request(message):
             return None
         classified = self.classify_file_request(message, locale, runtime)
-        action = classified.get("action", "none")
-        confidence = float(classified.get("confidence", 0.0) or 0.0)
-        if action == "none" or confidence < 0.55:
+        if classified.get("action") == "none":
             return None
-        return {"intent": "local-files", "action": action, "score": min(0.98, max(0.74, confidence))}
-
-    def extract_filename_hint(self, message: str) -> str:
-        text = str(message or "").strip()
-        explicit = re.findall(r"([A-Za-z0-9_\- .]+\.(?:pptx|ppt|xlsx|xls|docx|doc|pdf|txt|csv|md|jpg|jpeg|png|zip))", text, flags=re.IGNORECASE)
-        if explicit:
-            return explicit[0].strip()
-        return ""
-
-    def format_path(self, path: Path) -> str:
-        try:
-            return str(path.expanduser())
-        except Exception:
-            return str(path)
+        return {"intent": "local-files", "action": classified.get("action", "none"), "score": min(0.98, max(0.74, float(classified.get("confidence", 0.0) or 0.0)))}
 
     def list_directory(self, path: Path, limit: int = 40) -> dict:
         items = []
@@ -316,23 +281,14 @@ class Feature(HomeHubFeature):
     def create_download_artifact(self, source: Path, runtime: RuntimeBridge) -> dict:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", source.name).strip("-") or "download"
-        target_name = f"{stamp}-{safe_name}"
-        target = self.generated_root(runtime) / target_name
+        target = self.generated_root(runtime) / f"{stamp}-{safe_name}"
         shutil.copy2(source, target)
-        return {
-            "kind": "file",
-            "label": "Local File",
-            "fileName": source.name,
-            "path": str(target.relative_to(runtime.root)),
-            "url": f"/generated/local-files/{target.name}",
-            "sourcePath": str(source),
-        }
+        return {"kind": "file", "label": "Local File", "fileName": source.name, "path": str(target.relative_to(runtime.root)), "url": f"/generated/local-files/{target.name}", "sourcePath": str(source)}
 
     def read_text_file(self, path: Path, line_limit: int = 80) -> dict:
         text = path.read_text(encoding="utf-8", errors="replace")
         lines = text.splitlines()
-        selected = lines[: max(1, min(line_limit, 200))]
-        return {"path": str(path), "lineCount": len(lines), "content": "\n".join(selected).strip()}
+        return {"path": str(path), "lineCount": len(lines), "content": "\n".join(lines[: max(1, min(line_limit, 200))]).strip()}
 
     def write_text_file(self, path: Path, content: str) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,8 +333,34 @@ class Feature(HomeHubFeature):
         store["pendingDelete"] = None
         self.save_store(store, runtime)
 
-    def zh(self, locale: str, zh_text: str, en_text: str) -> str:
-        return zh_text if locale == "zh-CN" else en_text
+    def category_for_path(self, path: Path) -> str:
+        suffix = path.suffix.lower()
+        for category, extensions in self.CATEGORY_MAP.items():
+            if suffix in extensions:
+                return category
+        return "Documents"
+
+    def classify_directory(self, base: Path) -> dict:
+        moved = []
+        created_dirs = set()
+        for child in sorted(base.iterdir(), key=lambda item: item.name.lower()):
+            if child.is_dir():
+                continue
+            category = self.category_for_path(child)
+            target_dir = base / category
+            target_dir.mkdir(parents=True, exist_ok=True)
+            created_dirs.add(category)
+            target = target_dir / child.name
+            if target.exists():
+                stem = child.stem
+                suffix = child.suffix
+                index = 1
+                while target.exists():
+                    target = target_dir / f"{stem}-{index}{suffix}"
+                    index += 1
+            shutil.move(str(child), str(target))
+            moved.append({"source": str(child), "target": str(target), "category": category})
+        return {"path": str(base), "createdDirs": sorted(created_dirs), "moved": moved}
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if not self.looks_like_file_request(message):
@@ -398,8 +380,9 @@ class Feature(HomeHubFeature):
         if action == "cancel_delete":
             self.cancel_delete(runtime)
             return {"reply": self.zh(locale, "已取消删除。", "Delete canceled.")}
+
         path = self.resolve_path(classified.get("path", ""))
-        if action in {"list", "read", "move", "delete"}:
+        if action in {"list", "read", "move", "delete", "classify"}:
             ok, error = self.validate_path(path)
             if not ok:
                 return {"reply": self.zh(locale, f"路径不可用：{error}", f"Path is not available: {error}")}
@@ -407,13 +390,27 @@ class Feature(HomeHubFeature):
             ok, error = self.validate_path(path, allow_missing=True)
             if not ok:
                 return {"reply": self.zh(locale, f"目标路径不可用：{error}", f"Target path is not available: {error}")}
+
         if action == "list":
             if not path.is_dir():
                 return {"reply": self.zh(locale, f"{path} 不是目录。", f"{path} is not a directory.")}
             listing = self.list_directory(path)
             names = "、".join(item["name"] for item in listing["items"][:12]) if locale == "zh-CN" else ", ".join(item["name"] for item in listing["items"][:12])
+            requested_file = classified.get("fileName", "") or self.extract_filename_hint(message)
+            lowered_message = str(message or "").lower()
+            send_requested = (bool(requested_file) and any(token in message for token in self.SEND_TOKENS)) or any(token in lowered_message for token in self.SEND_TOKENS)
+            if send_requested and requested_file:
+                matched = self.choose_file_match(path, requested_file)
+                if matched:
+                    artifact = self.create_download_artifact(matched, runtime)
+                    self.remember_action(runtime, f"Listed {path} and prepared download for {matched}.")
+                    return {
+                        "reply": self.zh(locale, f"{path} 下有这些文件：{names or '空目录'}。我也已经把 {matched.name} 准备成附件了。", f"{path} contains: {names or 'empty directory'}. I also prepared {matched.name} for download."),
+                        "artifacts": [artifact],
+                    }
             self.remember_action(runtime, f"Listed {path}.")
-            return {"reply": self.zh(locale, f"{path} 下面有这些内容：{names or '空目录'}", f"{path} contains: {names or 'empty directory'}")}
+            return {"reply": self.zh(locale, f"{path} 下有这些文件：{names or '空目录'}", f"{path} contains: {names or 'empty directory'}")}
+
         if action == "search":
             base = self.resolve_path(classified.get("path", "")) if classified.get("path") else Path.home()
             if base.is_file():
@@ -425,6 +422,7 @@ class Feature(HomeHubFeature):
             names = "、".join(item["path"] for item in result["items"][:8]) if locale == "zh-CN" else ", ".join(item["path"] for item in result["items"][:8])
             self.remember_action(runtime, f"Searched {base} for {classified.get('query', '')}.")
             return {"reply": self.zh(locale, f"搜索结果：{names or '没有找到匹配文件'}", f"Search results: {names or 'No matching files found'}")}
+
         if action == "send":
             base = self.resolve_path(classified.get("path", "")) if classified.get("path") else Path.home()
             file_name = classified.get("fileName", "") or self.extract_filename_hint(message) or classified.get("query", "")
@@ -435,32 +433,36 @@ class Feature(HomeHubFeature):
                 if not ok or not base.is_dir():
                     return {"reply": self.zh(locale, f"搜索目录不可用：{error or 'not_a_directory'}", f"Search directory is not available: {error or 'not_a_directory'}")}
                 if not file_name:
-                    return {"reply": self.zh(locale, "请告诉我要发送的文件名。", "Tell me which file you want me to send.")}
+                    return {"reply": self.zh(locale, "请告诉我你想发送哪个文件。", "Tell me which file you want me to send.")}
                 matched = self.choose_file_match(base, file_name)
             if not file_name:
-                return {"reply": self.zh(locale, "请告诉我要发送的文件名。", "Tell me which file you want me to send.")}
+                return {"reply": self.zh(locale, "请告诉我你想发送哪个文件。", "Tell me which file you want me to send.")}
             if not matched:
-                return {"reply": self.zh(locale, f"没有在 {base} 找到 {file_name}。", f"I could not find {file_name} under {base}.")}
+                return {"reply": self.zh(locale, f"我没在 {base} 下找到 {file_name}。", f"I could not find {file_name} under {base}.")}
             artifact = self.create_download_artifact(matched, runtime)
             self.remember_action(runtime, f"Prepared download for {matched}.")
-            return {
-                "reply": self.zh(
-                    locale,
-                    f"我已经找到并准备好了文件：{matched.name}。你可以直接点击下面的附件下载。",
-                    f"I found the file and prepared it for download: {matched.name}. You can use the attachment below."
-                ),
-                "artifacts": [artifact],
-            }
+            return {"reply": self.zh(locale, f"我找到这个文件了，并已经准备成附件：{matched.name}。你可以直接下载。", f"I found the file and prepared it for download: {matched.name}."), "artifacts": [artifact]}
+
+        if action == "classify":
+            if not path.is_dir():
+                return {"reply": self.zh(locale, f"{path} 不是目录。", f"{path} is not a directory.")}
+            result = self.classify_directory(path)
+            created_dirs = "、".join(result["createdDirs"]) if locale == "zh-CN" else ", ".join(result["createdDirs"])
+            self.remember_action(runtime, f"Classified files under {path}.")
+            return {"reply": self.zh(locale, f"我已经按类型整理了 {path} 下的文件，并创建了这些文件夹：{created_dirs or '没有新增文件夹'}。", f"I organized the files under {path} by type and created: {created_dirs or 'no new folders'}."), "result": result}
+
         if action == "read":
-            if not path.is_file():
+            if not path.is_file() or path.suffix.lower() not in self.TEXT_EXTENSIONS:
                 return {"reply": self.zh(locale, f"{path} 不是可读取的文本文件。", f"{path} is not a readable text file.")}
             result = self.read_text_file(path, classified.get("lineLimit", 80))
             self.remember_action(runtime, f"Read {path}.")
             return {"reply": self.zh(locale, f"文件内容如下：\n{result['content']}", f"File contents:\n{result['content']}")}
+
         if action == "write":
             result = self.write_text_file(path, classified.get("content", ""))
             self.remember_action(runtime, f"Wrote {path}.")
             return {"reply": self.zh(locale, f"已写入文件：{result['path']}", f"Wrote file: {result['path']}")}
+
         if action == "move":
             destination = self.resolve_path(classified.get("destinationPath", ""))
             ok, error = self.validate_path(destination, allow_missing=True)
@@ -469,23 +471,17 @@ class Feature(HomeHubFeature):
             result = self.move_path(path, destination)
             self.remember_action(runtime, f"Moved {path} to {destination}.")
             return {"reply": self.zh(locale, f"已移动到：{result['target']}", f"Moved to: {result['target']}")}
+
         if action == "delete":
             pending = self.request_delete_confirmation(path, runtime)
-            return {"reply": self.zh(locale, f"即将删除：{pending['path']}。如果确认，请回复“确认删除”。", f"Pending delete: {pending['path']}. Reply with 'confirm delete' to continue.")}
+            return {"reply": self.zh(locale, f"待确认删除：{pending['path']}。回复“确认删除”继续。", f"Pending delete: {pending['path']}. Reply with 'confirm delete' to continue.")}
         return None
 
     def handle_api(self, method: str, path: str, query: dict, body: dict | None, runtime: RuntimeBridge) -> dict | None:
         payload = body or {}
         if method == "GET" and path == API_ROOT:
             store = self.get_store(runtime)
-            return {
-                "status": 200,
-                "body": {
-                    "ok": True,
-                    "pendingDelete": store.get("pendingDelete"),
-                    "recentActions": store.get("recentActions", [])[:12],
-                },
-            }
+            return {"status": 200, "body": {"ok": True, "pendingDelete": store.get("pendingDelete"), "recentActions": store.get("recentActions", [])[:12]}}
         if method == "POST" and path == API_LIST:
             target = self.resolve_path(str(payload.get("path", "")).strip())
             ok, error = self.validate_path(target)
@@ -529,6 +525,12 @@ class Feature(HomeHubFeature):
             if result is None:
                 return {"status": 400, "body": {"ok": False, "error": "no_pending_delete"}}
             return {"status": 200 if result.get("ok") else 400, "body": result}
+        if method == "POST" and path == API_CLASSIFY:
+            target = self.resolve_path(str(payload.get("path", "")).strip())
+            ok, error = self.validate_path(target)
+            if not ok or not target.is_dir():
+                return {"status": 400, "body": {"ok": False, "error": error or "not_a_directory"}}
+            return {"status": 200, "body": {"ok": True, "result": self.classify_directory(target)}}
         return None
 
 
