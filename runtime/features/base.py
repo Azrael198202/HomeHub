@@ -16,6 +16,9 @@ class RuntimeBridge:
     openai_json: Callable[[str, str, str], dict[str, Any] | None]
     analyze_image: Callable[[str, str, str, str], dict[str, Any] | None] | None = None
     network_lookup: Callable[[str, str, str, list[str] | None, list[str] | None], dict[str, Any]] | None = None
+    research_lookup: Callable[[str, str, str, list[str] | None, list[str] | None], dict[str, Any]] | None = None
+    query_knowledge: Callable[[str, int, float], list[dict[str, Any]]] | None = None
+    remember_knowledge: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
     invoke_feature: Callable[[str, dict[str, Any], str], dict[str, Any] | None] | None = None
     resolve_message: Callable[[str, str], dict[str, Any]] | None = None
     log: Callable[[str], None] | None = None

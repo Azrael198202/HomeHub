@@ -78,6 +78,9 @@ from runtime.server_components.semantic_memory import (
 )
 from runtime.cortex.architect import CortexArchitect
 from runtime.cortex.models import default_agent_cortex
+from runtime.execution_context import create_execution_context
+from runtime.knowledge_memory import query_knowledge_memory, remember_knowledge_item
+from runtime.research_pipeline import build_research_packet, evidence_to_knowledge_items
 from runtime.server_network import (
     build_source_labels,
     build_network_lookup_reply,
@@ -1630,6 +1633,17 @@ def perform_network_lookup(query, locale, policy_id="official-only", preferred_s
     )
 
 
+def perform_research_lookup(query, locale, policy_id="official-only", preferred_sources=None, allowed_domains=None):
+    return build_research_packet(
+        query,
+        locale,
+        perform_network_lookup,
+        policy_id=policy_id,
+        preferred_sources=preferred_sources,
+        allowed_domains=allowed_domains,
+    )
+
+
 def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
     runtime_profile = PERSISTED_SETTINGS.get("runtimeProfile", "edge-hybrid")
     api_key = SECRETS.get("openaiApiKey", "")
@@ -1672,6 +1686,9 @@ def build_runtime_bridge():
         openai_json=openai_chat_json,
         analyze_image=analyze_image_with_homehub,
         network_lookup=perform_network_lookup,
+        research_lookup=perform_research_lookup,
+        query_knowledge=query_knowledge_memory,
+        remember_knowledge=remember_knowledge_item,
         log=lambda message: print(f"[features] {message}"),
     )
     runtime.invoke_feature = lambda feature_id, payload, locale: FEATURE_MANAGER.invoke_feature(feature_id, payload, locale, runtime)
@@ -2876,9 +2893,11 @@ def _voice_context():
     return {
         "build_agent_factory_reply": build_agent_factory_reply,
         "build_clarification_reply": build_clarification_reply,
+        "create_execution_context": create_execution_context,
         "build_general_voice_reply": build_general_voice_reply,
         "build_grounded_network_reply": build_grounded_network_reply,
         "perform_autonomous_network_lookup": perform_autonomous_network_lookup,
+        "perform_research_lookup": perform_research_lookup,
         "build_network_unavailable_reply": build_network_unavailable_reply,
         "build_weather_reply": build_weather_reply,
         "build_network_lookup_reply": build_network_lookup_reply,
@@ -2896,11 +2915,14 @@ def _voice_context():
         "load_ollama_inventory": load_ollama_inventory,
         "looks_like_local_file_request": looks_like_local_file_request,
         "perform_network_lookup": perform_network_lookup,
+        "query_knowledge_memory": query_knowledge_memory,
+        "remember_knowledge_item": remember_knowledge_item,
         "record_route_semantic_example": record_route_semantic_example,
         "route_voice_request": route_voice_request,
         "select_model_route": select_model_route,
         "serialize_voice_route": serialize_voice_route,
         "set_pending_voice_clarification": _set_pending_voice_clarification,
+        "evidence_to_knowledge_items": evidence_to_knowledge_items,
     }
 
 

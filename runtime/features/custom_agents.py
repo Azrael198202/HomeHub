@@ -1715,7 +1715,7 @@ class Feature(HomeHubFeature):
             indent=4,
         )
         export_slug = self.english_slug(feature_name, "records")
-        return f'''from __future__ import annotations
+        return fr'''from __future__ import annotations
 
 import ast
 import json

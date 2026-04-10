@@ -134,10 +134,68 @@ def should_attempt_default_network_research(route) -> bool:
     }
 
 
+def is_probably_realtime_request(user_text: str, route: dict[str, Any]) -> bool:
+    text = str(user_text or "").strip()
+    lowered = text.lower()
+    task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
+    task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
+    if task_type in {"weather", "network_lookup"}:
+        return True
+    realtime_tokens = [
+        "latest",
+        "today",
+        "news",
+        "price",
+        "current",
+        "stock",
+        "forecast",
+        "breaking",
+        "recent",
+        "weather",
+        "today's",
+    ]
+    if any(token in lowered for token in realtime_tokens):
+        return True
+    return any(token in text for token in ["最新", "今天", "今日", "新闻", "价格", "天气", "现在", "实时", "株価"])
+
+
+def should_attempt_knowledge_lookup(user_text: str, route: dict[str, Any]) -> bool:
+    if not is_information_request(user_text):
+        return False
+    if is_probably_realtime_request(user_text, route):
+        return False
+    if str(route.get("kind", "")).strip() == "feature":
+        return False
+    task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
+    task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
+    return task_type in {"general_chat", "document_workflow", "study_plan", "bill_intake", "agent_creation"}
+
+
+def build_knowledge_reply(items: list[dict[str, Any]], locale: str) -> str:
+    if not items:
+        return ""
+    top = items[0] if isinstance(items[0], dict) else {}
+    summary = str(top.get("summary", "")).strip()
+    source = str(top.get("source", "")).strip()
+    title = str(top.get("title", "")).strip()
+    if locale == "zh-CN":
+        if source and title:
+            return f"根据本地知识库里的已整理信息，{summary} 来源：{title} ({source})。"
+        return f"根据本地知识库里的已整理信息，{summary}"
+    if locale == "ja-JP":
+        if source and title:
+            return f"ローカル知識メモリの整理済み情報では、{summary} 出典: {title} ({source})。"
+        return f"ローカル知識メモリの整理済み情報では、{summary}"
+    if source and title:
+        return f"Based on HomeHub's local knowledge memory: {summary} Source: {title} ({source})."
+    return f"Based on HomeHub's local knowledge memory: {summary}"
+
+
 def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[str, Any]:
     runtime = context["build_runtime_bridge"]()
     original_text = user_text
     combined_text = user_text
+    execution_context = context["create_execution_context"](original_text, locale)
     clarification_context = context["get_pending_voice_clarification"]()
     if is_simple_greeting(original_text) and not clarification_context:
         reply = (
@@ -198,8 +256,11 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         )
 
     route = context["route_voice_request"](combined_text, locale)
+    execution_context.set_route_payload(route)
     lookup_result = None
     ui_action = None
+    research_packet = None
+    knowledge_hits: list[dict[str, Any]] = []
 
     if route.get("kind") == "clarify":
         pending = {
@@ -219,7 +280,12 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
     if clarification_context:
         context["learn_from_clarification"](clarification_context, route, combined_text, locale, user_text)
 
+    effective_text = combined_text if clarification_context else original_text
     fallback_reply = context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+
+    if should_attempt_knowledge_lookup(effective_text, route):
+        knowledge_hits = context["query_knowledge_memory"](effective_text, 3, 0.2)
+        execution_context.add_knowledge(knowledge_hits)
 
     if route.get("kind") == "feature":
         result = context["feature_manager"].dispatch_voice_intent(route, combined_text, locale, runtime) or {}
@@ -230,7 +296,8 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         reply = normalize_resolution_reply(context["build_weather_reply"](combined_text if clarification_context else original_text, locale), fallback_reply)
         artifacts = []
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
-        lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
+        research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
+        lookup_result = research_packet
         if not lookup_result.get("ok"):
             reply = context["build_network_unavailable_reply"](combined_text if clarification_context else original_text, locale, "network_lookup")
         else:
@@ -255,9 +322,13 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             reply = normalize_resolution_reply(autonomous.get("reply"), fallback_reply)
             ui_action = autonomous.get("uiAction")
             artifacts = autonomous.get("artifacts", [])
+        elif knowledge_hits:
+            reply = normalize_resolution_reply(build_knowledge_reply(knowledge_hits, locale), fallback_reply)
+            artifacts = []
         else:
             if should_attempt_default_network_research(route):
-                lookup_result = context["perform_autonomous_network_lookup"](combined_text if clarification_context else original_text, locale, "official-only")
+                research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
+                lookup_result = research_packet
             reply = normalize_resolution_reply((
                 context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale)
                 if lookup_result and lookup_result.get("ok")
@@ -265,13 +336,26 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             ), fallback_reply)
             artifacts = []
 
-    effective_text = combined_text if clarification_context else original_text
     if should_promote_to_network(effective_text, route, reply):
-        lookup_result = context["perform_autonomous_network_lookup"](effective_text, locale, "official-only")
+        research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
+        lookup_result = research_packet
         if lookup_result.get("ok"):
             reply = normalize_resolution_reply(context["build_grounded_network_reply"](effective_text, lookup_result, locale), reply)
         elif should_attempt_default_network_research(route):
             reply = normalize_resolution_reply(context["build_network_unavailable_reply"](effective_text, locale, "network_lookup"), reply)
+
+    if isinstance(research_packet, dict):
+        execution_context.add_evidence(research_packet.get("evidence", []))
+        execution_context.add_tool_result({"tool": "research_lookup", "ok": bool(research_packet.get("ok")), "query": effective_text})
+        if research_packet.get("ok") and not is_probably_realtime_request(effective_text, route):
+            for item in context["evidence_to_knowledge_items"](research_packet):
+                remembered = context["remember_knowledge_item"](item)
+                if remembered:
+                    execution_context.memory_writeback.setdefault("knowledgeItems", []).append(remembered)
+    if knowledge_hits:
+        execution_context.add_tool_result({"tool": "knowledge_lookup", "ok": True, "count": len(knowledge_hits), "query": effective_text})
+    execution_context.artifacts = artifacts if isinstance(artifacts, list) else []
+    execution_context.add_conclusion(reply)
 
     context["clear_pending_voice_clarification"]()
     recorder = context.get("record_route_semantic_example")
@@ -290,6 +374,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         "uiAction": ui_action,
         "lookupResult": lookup_result,
         "artifacts": artifacts,
+        "executionContext": execution_context.to_dict(),
     }
 
 
