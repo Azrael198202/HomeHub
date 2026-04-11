@@ -9,6 +9,7 @@ from runtime.network_lookup_extensions import (
     remember_lookup_sources,
     should_attempt_source_reference_lookup,
 )
+from runtime.voice_route_guards import should_block_network_for_local_request
 
 
 def normalize_resolution_reply(reply_value: Any, fallback: str) -> str:
@@ -301,12 +302,13 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
 
     effective_text = combined_text if clarification_context else original_text
     fallback_reply = context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
+    block_network_for_local_request = should_block_network_for_local_request(effective_text, route, context["looks_like_local_file_request"])
 
     source_reference_lookup = None
-    if should_attempt_knowledge_lookup(effective_text, route):
+    if not block_network_for_local_request and should_attempt_knowledge_lookup(effective_text, route):
         knowledge_hits = context["query_knowledge_memory"](effective_text, 3, 0.2)
         execution_context.add_knowledge(knowledge_hits)
-    if should_attempt_source_reference_lookup(effective_text, route, knowledge_hits, is_information_request):
+    if not block_network_for_local_request and should_attempt_source_reference_lookup(effective_text, route, knowledge_hits, is_information_request):
         source_reference_lookup = lookup_from_source_references(effective_text, context)
         if source_reference_lookup:
             execution_context.add_tool_result(
@@ -391,7 +393,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             reply = normalize_resolution_reply(build_knowledge_reply(knowledge_hits, locale), fallback_reply)
             artifacts = []
         else:
-            if should_attempt_default_network_research(route):
+            if not block_network_for_local_request and should_attempt_default_network_research(route):
                 if source_reference_lookup and source_reference_lookup.get("ok"):
                     lookup_result = source_reference_lookup
                 else:
@@ -411,7 +413,7 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             ), fallback_reply)
             artifacts = []
 
-    if should_promote_to_network(effective_text, route, reply):
+    if not block_network_for_local_request and should_promote_to_network(effective_text, route, reply):
         if source_reference_lookup and source_reference_lookup.get("ok"):
             lookup_result = source_reference_lookup
         else:

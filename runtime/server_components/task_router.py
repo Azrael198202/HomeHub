@@ -14,6 +14,11 @@ try:
 except ModuleNotFoundError:
     from runtime.network_lookup_extensions import infer_network_task_spec
 
+try:
+    from local_request_guard import looks_like_explicit_local_path_request
+except ModuleNotFoundError:
+    from runtime.local_request_guard import looks_like_explicit_local_path_request
+
 
 TaskSpec = dict[str, Any]
 
@@ -51,10 +56,24 @@ ZH_DOCUMENT_TOKENS = [
 ]
 ZH_STUDY_TOKENS = ["\u5b66\u4e60\u8ba1\u5212", "\u4f5c\u4e1a", "\u590d\u4e60", "\u5b66\u4e60"]
 ZH_TRAVEL_LOOKUP_TOKENS = ["\u673a\u7968", "\u822a\u73ed", "\u65b0\u5e72\u7ebf", "\u706b\u8f66\u7968", "\u9ad8\u94c1", "\u5217\u8f66", "\u7968\u4ef7", "\u8d39\u7528"]
+ZH_GREETING_TOKENS = ["你好", "您好", "早上好", "晚上好", "嗨", "哈喽"]
 
 
 def has_cjk(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", str(text or "")))
+
+
+def is_brief_greeting(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    lowered = text.lower()
+    if not text:
+        return False
+    english = {"hi", "hello", "hey", "good morning", "good evening", "good afternoon"}
+    if lowered in english or lowered.startswith("hello homehub") or lowered.startswith("hi homehub"):
+        return True
+    if len(text) <= 20 and any(token in text for token in ZH_GREETING_TOKENS):
+        return True
+    return False
 
 
 def detect_input_modes(user_text: str) -> list[str]:
@@ -262,6 +281,30 @@ def build_task_spec(
                 "intent": "ui-action",
                 "summary": "Navigate the TV shell UI directly.",
                 "preferredExecution": "local",
+            }
+        )
+        return spec
+
+    if is_brief_greeting(user_text):
+        spec.update(
+            {
+                "taskType": "general_chat",
+                "intent": "general-chat",
+                "summary": "Short greeting or casual household conversation.",
+                "preferredExecution": "local",
+                "reasoning": "greeting-guard",
+            }
+        )
+        return spec
+
+    if looks_like_explicit_local_path_request(user_text):
+        spec.update(
+            {
+                "taskType": "document_workflow",
+                "intent": "local-file-request",
+                "summary": "Inspect, read, classify, or manage local files and folders on this device.",
+                "preferredExecution": "local",
+                "reasoning": "local-request-guard",
             }
         )
         return spec
