@@ -7,15 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    from server_components.semantic_vector_backends import VECTOR_DIMENSION, make_dense_vector
-except ModuleNotFoundError:
-    from runtime.server_components.semantic_vector_backends import VECTOR_DIMENSION, make_dense_vector
-
-
 MEMORY_FILE = Path(__file__).resolve().parent / "data" / "network_route_memory.json"
 MAX_ITEMS = 800
 SCHEMA_VERSION = 1
+VECTOR_DIMENSION = 256
 
 
 def _now_iso() -> str:
@@ -32,7 +27,21 @@ def _tokenize(text: str) -> list[str]:
 
 
 def _embedding(text: str) -> list[float]:
-    return make_dense_vector(_tokenize(text), dimension=VECTOR_DIMENSION)
+    tokens = _tokenize(text)
+    if not tokens:
+        return [0.0] * VECTOR_DIMENSION
+    bucket = [0.0] * VECTOR_DIMENSION
+    for token in tokens:
+        token_text = str(token or "").strip()
+        if not token_text:
+            continue
+        index = hash(token_text) % VECTOR_DIMENSION
+        sign = -1.0 if (hash(f"sign:{token_text}") % 2) else 1.0
+        bucket[index] += sign
+    norm = sum(value * value for value in bucket) ** 0.5
+    if norm <= 0:
+        return bucket
+    return [round(value / norm, 6) for value in bucket]
 
 
 def _dense_cosine(left: list[float], right: list[float]) -> float:
@@ -48,6 +57,14 @@ def _dense_cosine(left: list[float], right: list[float]) -> float:
     if left_norm <= 0 or right_norm <= 0:
         return 0.0
     return dot / math.sqrt(left_norm * right_norm)
+
+
+def _token_overlap_score(query_text: str, search_text: str) -> float:
+    left = set(_tokenize(query_text))
+    right = set(_tokenize(search_text))
+    if not left or not right:
+        return 0.0
+    return len(left & right) / max(1, min(len(left), len(right)))
 
 
 def _default_routes() -> list[dict[str, Any]]:
@@ -160,6 +177,9 @@ def _default_routes() -> list[dict[str, Any]]:
             "examples": [
                 "英伟达今天的股价是多少",
                 "苹果公司股票价格",
+                "苹果公司今天的股价是多少",
+                "苹果今天股价",
+                "今天 Apple 股价是多少",
                 "stock price today",
             ],
             "preferredSources": ["finance.yahoo.com", "marketwatch.com", "nasdaq.com", "nikkei.com"],
@@ -234,6 +254,23 @@ def _default_payload() -> dict[str, Any]:
     }
 
 
+def _merge_seed_routes(payload: dict[str, Any]) -> dict[str, Any]:
+    existing_items = payload.get("items", []) if isinstance(payload.get("items", []), list) else []
+    existing_keys = {
+        f"{str(item.get('routeKey', '')).strip()}::{str(item.get('sourceText', '')).strip()}"
+        for item in existing_items
+        if isinstance(item, dict)
+    }
+    merged = list(existing_items)
+    for item in _default_routes():
+        seed_key = f"{str(item.get('routeKey', '')).strip()}::{str(item.get('sourceText', '')).strip()}"
+        if seed_key in existing_keys:
+            continue
+        merged.append(item)
+    payload["items"] = merged[:MAX_ITEMS]
+    return payload
+
+
 def _ensure_parent() -> None:
     MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -252,6 +289,7 @@ def load_network_route_memory() -> dict[str, Any]:
     items = payload.get("items", [])
     if not isinstance(items, list) or not items:
         payload = _default_payload()
+    payload = _merge_seed_routes(payload)
     return payload
 
 
@@ -274,7 +312,9 @@ def classify_network_route(query_text: str, limit: int = 3, threshold: float = 0
     for item in load_network_route_memory().get("items", []):
         if not isinstance(item, dict) or not item.get("accepted", True):
             continue
-        score = _dense_cosine(query_embedding, item.get("embedding", []))
+        dense_score = _dense_cosine(query_embedding, item.get("embedding", []))
+        lexical_score = _token_overlap_score(query, str(item.get("searchText", "")).strip())
+        score = max(dense_score, (dense_score * 0.55) + (lexical_score * 0.45), lexical_score)
         if score < threshold:
             continue
         scored.append({"score": round(score, 3), "item": item})
@@ -283,12 +323,40 @@ def classify_network_route(query_text: str, limit: int = 3, threshold: float = 0
 
 
 def best_network_route(query_text: str) -> dict[str, Any]:
-    matches = classify_network_route(query_text, limit=1)
+    matches = classify_network_route(query_text, limit=8)
+    if not matches:
+        matches = classify_network_route(query_text, limit=8, threshold=0.08)
     if matches:
-        item = matches[0]["item"]
+        grouped: dict[str, dict[str, Any]] = {}
+        for entry in matches:
+            item = entry.get("item", {}) if isinstance(entry.get("item", {}), dict) else {}
+            route_key = str(item.get("routeKey", "")).strip()
+            if not route_key:
+                continue
+            bucket = grouped.setdefault(
+                route_key,
+                {
+                    "score": 0.0,
+                    "bestItem": item,
+                    "count": 0,
+                },
+            )
+            score = float(entry.get("score", 0.0) or 0.0)
+            bucket["score"] += score
+            bucket["count"] += 1
+            if score > float(bucket["bestItem"].get("_matchScore", 0.0) or 0.0):
+                item = dict(item)
+                item["_matchScore"] = score
+                bucket["bestItem"] = item
+        ranked = sorted(
+            grouped.items(),
+            key=lambda pair: (float(pair[1]["score"]), int(pair[1]["count"]), str(pair[0])),
+            reverse=True,
+        )
+        item = ranked[0][1]["bestItem"]
         return {
             "routeKey": str(item.get("routeKey", "")).strip(),
-            "score": float(matches[0].get("score", 0.0) or 0.0),
+            "score": float(ranked[0][1]["score"] or 0.0),
             "preferredSources": list(item.get("preferredSources", [])) if isinstance(item.get("preferredSources", []), list) else [],
             "allowedDomains": list(item.get("allowedDomains", [])) if isinstance(item.get("allowedDomains", []), list) else [],
             "queryPatterns": list(item.get("queryPatterns", [])) if isinstance(item.get("queryPatterns", []), list) else [],

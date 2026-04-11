@@ -29,6 +29,24 @@ def infer_research_hints(query_text: str) -> dict[str, Any]:
     }
 
 
+def infer_network_task_spec(query_text: str) -> dict[str, Any] | None:
+    route = best_network_route(query_text)
+    route_key = str(route.get("routeKey", "")).strip()
+    score = float(route.get("score", 0.0) or 0.0)
+    if route_key not in {"flight", "train", "apple-purchase", "recipe", "news", "stocks", "knowledge"}:
+        return None
+    if score < 0.2:
+        return None
+    return {
+        "taskType": "network_lookup",
+        "intent": f"network-{route_key}",
+        "summary": str(route.get("summary", "")).strip() or "Query approved external sources and return a sourced summary.",
+        "preferredExecution": "hybrid",
+        "confidence": score,
+        "routeKey": route_key,
+    }
+
+
 def append_topic_specific_query_candidates(candidates: list[str], query_text: str, locale: str, preferred_sources: list[str] | None = None) -> list[str]:
     route = best_network_route(query_text)
     route_sources = list(route.get("preferredSources", [])) if isinstance(route.get("preferredSources", []), list) else []

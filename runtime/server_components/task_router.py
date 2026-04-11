@@ -9,6 +9,11 @@ try:
 except ModuleNotFoundError:
     from runtime.server_components.semantic_memory import infer_from_semantic_memory, query_semantic_memory
 
+try:
+    from network_lookup_extensions import infer_network_task_spec
+except ModuleNotFoundError:
+    from runtime.network_lookup_extensions import infer_network_task_spec
+
 
 TaskSpec = dict[str, Any]
 
@@ -264,6 +269,17 @@ def build_task_spec(
     direct_spec = apply_rule_based_task_hints(dict(spec), user_text)
     if direct_spec.get("taskType") in {"weather", "time_query", "reminder", "schedule"}:
         return direct_spec
+
+    semantic_network_spec = infer_network_task_spec(user_text)
+    if isinstance(semantic_network_spec, dict):
+        spec["taskType"] = str(semantic_network_spec.get("taskType", spec["taskType"])).strip() or spec["taskType"]
+        spec["intent"] = str(semantic_network_spec.get("intent", spec["intent"])).strip() or spec["intent"]
+        spec["summary"] = str(semantic_network_spec.get("summary", spec["summary"])).strip() or spec["summary"]
+        preferred = str(semantic_network_spec.get("preferredExecution", spec["preferredExecution"])).strip()
+        if preferred in {"local", "cloud", "hybrid"}:
+            spec["preferredExecution"] = preferred
+        spec["reasoning"] = "semantic-network-route-memory"
+        return spec
 
     memory_spec = infer_from_semantic_memory(user_text, locale)
     if memory_spec:
