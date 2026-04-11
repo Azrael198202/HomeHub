@@ -80,10 +80,14 @@ from runtime.cortex.architect import CortexArchitect
 from runtime.cortex.models import default_agent_cortex
 from runtime.execution_context import create_execution_context
 from runtime.knowledge_memory import query_knowledge_memory, remember_knowledge_item
+from runtime.network_lookup_extensions import append_topic_specific_query_candidates, infer_research_hints
+from runtime.network_query_planner import run_iterative_network_lookup
 from runtime.research_pipeline import build_research_packet, evidence_to_knowledge_items
+from runtime.source_reference_memory import query_source_reference_memory, remember_source_reference
 from runtime.server_network import (
     build_source_labels,
     build_network_lookup_reply,
+    perform_reference_url_lookup as perform_reference_url_lookup_impl,
     perform_controlled_network_lookup as perform_controlled_network_lookup_impl,
     perform_network_lookup as perform_network_lookup_impl,
 )
@@ -1599,7 +1603,7 @@ def json_post(url, payload, headers=None):
         raise RuntimeError(f"Network error: {exc}") from exc
 
 
-def json_get(url, headers=None, timeout=30):
+def json_get(url, headers=None, timeout=60):
     request = urllib.request.Request(url, headers=headers or {}, method="GET")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = response.read()
@@ -1642,6 +1646,10 @@ def perform_research_lookup(query, locale, policy_id="official-only", preferred_
         preferred_sources=preferred_sources,
         allowed_domains=allowed_domains,
     )
+
+
+def perform_reference_url_lookup(urls):
+    return perform_reference_url_lookup_impl(urls, json_get)
 
 
 def openai_chat_json(system_prompt, user_prompt, model_name="gpt-4o-mini"):
@@ -2203,6 +2211,7 @@ def build_grounded_network_reply(query_text, lookup_result, locale):
     )
     if flight_like:
         excerpts = " ".join(str(item.get("excerpt", "")).strip() for item in sources[:3]).lower()
+        titles = " ".join(str(item.get("title", "")).strip() for item in sources[:3]).lower()
         has_numeric_price = bool(re.search(r"(?:¥|￥|\$)\s*\d+|\d+\s*(?:jpy|usd|cny|rmb|元|円|yen|dollars?)", excerpts))
         has_time_pattern = bool(re.search(r"\b\d{1,2}:\d{2}\b|\d{1,2}\s*(?:am|pm)|\d{1,2}时\d{0,2}分", excerpts))
         has_specific_flight_detail = has_numeric_price or has_time_pattern or any(
@@ -2223,17 +2232,27 @@ def build_grounded_network_reply(query_text, lookup_result, locale):
         )
         source_labels = build_source_labels(sources)
         if not has_specific_flight_detail or generic_search_page:
+            price_match = re.search(r"(?:¥|￥|\$)\s*\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:,\d{3})*(?:\.\d+)?\s*(?:jpy|usd|cny|rmb|元|円|yen|dollars?)", excerpts, flags=re.IGNORECASE)
+            price_text = price_match.group(0) if price_match else ""
+            schedule_available = "时刻表" in titles or "航班时刻表" in titles or "schedule" in titles
             if locale == "zh-CN":
-                base = (
-                    "我已经查到可用的机票搜索来源，但它们目前提供的主要是搜索入口，还没有直接给出“日本全境到美国全境、5月31日”的完整航班时间和价格列表。"
-                    "这类查询范围太大，时间和价格会随出发城市、到达城市、是否直飞而变化。"
-                    "如果你补充出发城市和到达城市，例如“东京到洛杉矶”或“福冈到纽约”，我就可以继续按时间和价格帮你整理。"
-                )
+                details = []
+                if price_text:
+                    details.append(f"当前抓到的公开搜索结果里，票价线索约为 {price_text}")
+                if schedule_available:
+                    details.append("并且已经找到对应航线的航班时刻表来源")
+                base = "我已经查到这条航线的公开机票搜索结果。"
+                if details:
+                    base += " " + "，".join(details) + "。"
+                else:
+                    base += " 目前来源主要提供搜索入口和时刻表页。"
+                base += " 实时起飞时刻和成交票价会随航空公司、经停方案和库存变化，请以来源页当下结果为准。"
                 return f"{base}\n来源：{'；'.join(source_labels)}" if source_labels else base
             base = (
-                "I found usable flight search sources, but they are still returning search-entry pages rather than a concrete Japan-to-USA flight list for May 31. "
-                "This route is too broad, and times and prices depend on the departure city, arrival city, and whether you want direct flights. "
-                "If you tell me a concrete route such as Tokyo to Los Angeles or Fukuoka to New York, I can refine the result."
+                "I found usable public flight-search sources for this route. "
+                + (f"The visible fare signal is about {price_text}. " if price_text else "")
+                + ("A timetable source for this route is also available. " if schedule_available else "")
+                + "Live departure times and sold fares still vary by airline, stop pattern, and availability, so the linked sources remain the authoritative final check."
             )
             return f"{base}\nSources: {'; '.join(source_labels)}" if source_labels else base
     source_briefs = []
@@ -2366,6 +2385,7 @@ def build_network_query_candidates(query_text, locale, preferred_sources=None):
             )
         for source in preferred_sources:
             candidates.append(f"{query} site:{source}")
+    candidates = append_topic_specific_query_candidates(candidates, query, locale, preferred_sources)
     unique = []
     for item in candidates:
         normalized = str(item or "").strip()
@@ -2375,25 +2395,30 @@ def build_network_query_candidates(query_text, locale, preferred_sources=None):
 
 
 def perform_autonomous_network_lookup(query_text, locale, policy_id="official-only", preferred_sources=None, allowed_domains=None):
-    best_result = {"ok": False, "error": "no_query"}
-    best_score = -1
-    for candidate in build_network_query_candidates(query_text, locale, preferred_sources):
-        result = perform_network_lookup(candidate, locale, policy_id, preferred_sources, allowed_domains)
-        if not isinstance(result, dict):
-            continue
-        sources = result.get("sources", []) if isinstance(result.get("sources", []), list) else []
-        score = len(sources) * 10 + len(str(result.get("answer", "")).strip())
-        if score > best_score:
-            best_score = score
-            best_result = result
-        if result.get("ok") and sources:
-            reply = build_grounded_network_reply(candidate, result, locale)
-            if not is_weak_grounded_reply(reply):
-                result["autonomousQuery"] = candidate
-                return result
-    if isinstance(best_result, dict):
-        best_result["autonomousQuery"] = next(iter(build_network_query_candidates(query_text, locale, preferred_sources)), str(query_text or "").strip())
-    return best_result
+    route_hints = infer_research_hints(query_text)
+    merged_sources = list(route_hints.get("preferredSources", [])) if isinstance(route_hints.get("preferredSources", []), list) else []
+    for item in preferred_sources or []:
+        source = str(item or "").strip()
+        if source and source not in merged_sources:
+            merged_sources.append(source)
+    merged_domains = list(route_hints.get("allowedDomains", [])) if isinstance(route_hints.get("allowedDomains", []), list) else []
+    for item in allowed_domains or []:
+        domain = str(item or "").strip()
+        if domain and domain not in merged_domains:
+            merged_domains.append(domain)
+    return run_iterative_network_lookup(
+        query_text,
+        locale,
+        policy_id,
+        merged_sources,
+        merged_domains,
+        route_hints,
+        build_network_query_candidates,
+        perform_network_lookup,
+        build_grounded_network_reply,
+        is_weak_grounded_reply,
+        openai_chat_json=openai_chat_json,
+    )
 
 
 def build_feature_intent_catalog(locale):
@@ -2561,13 +2586,8 @@ def build_weather_reply(user_text, locale):
     high_c = active_weather.get("highC")
     low_c = active_weather.get("lowC")
     if not location or temperature is None:
-        lookup_result = perform_autonomous_network_lookup(
-            user_text,
-            locale,
-            "official-only",
-            preferred_sources=["weather.com", "weather.com.cn", "weathernews.jp", "weather.gov"],
-            allowed_domains=["weather.com", "weather.com.cn", "weathernews.jp", "weather.gov"],
-        )
+        hints = infer_research_hints(user_text)
+        lookup_result = perform_autonomous_network_lookup(user_text, locale, "official-only", hints.get("preferredSources"), hints.get("allowedDomains"))
         if lookup_result.get("ok"):
             return build_grounded_network_reply(user_text, lookup_result, locale)
         if locale == "zh-CN":
@@ -2691,6 +2711,18 @@ def route_voice_request(user_text, locale):
         }
         routed["clarificationQuestion"] = ""
         routed["reasoning"] = "Task spec identified a weather request, so HomeHub answered through the dedicated weather path."
+    if task_spec["taskType"] == "network_lookup":
+        routed["kind"] = "general"
+        routed["clarificationQuestion"] = ""
+        routed["selected"] = {
+            **(routed.get("selected") or {}),
+            "intent": "network-lookup",
+            "featureId": "homehub-core",
+            "featureName": "HomeHub Core",
+            "action": "cortex_network_grounded_reply",
+            "score": max(0.72, float((routed.get("selected") or {}).get("score", 0.4) or 0.4)),
+        }
+        routed["reasoning"] = "Task spec identified a live network lookup, so HomeHub bypassed follow-up clarification and executed the grounded research path directly."
     if cortex_plan.get("shouldNetwork") and routed.get("kind") == "general" and task_spec["taskType"] != "weather":
         routed["selected"] = {
             **(routed.get("selected") or {}),
@@ -2923,6 +2955,8 @@ def _voice_context():
         "build_grounded_network_reply": build_grounded_network_reply,
         "perform_autonomous_network_lookup": perform_autonomous_network_lookup,
         "perform_research_lookup": perform_research_lookup,
+        "perform_reference_url_lookup": perform_reference_url_lookup,
+        "infer_research_hints": infer_research_hints,
         "build_network_unavailable_reply": build_network_unavailable_reply,
         "build_weather_reply": build_weather_reply,
         "build_network_lookup_reply": build_network_lookup_reply,
@@ -2941,7 +2975,9 @@ def _voice_context():
         "looks_like_local_file_request": looks_like_local_file_request,
         "perform_network_lookup": perform_network_lookup,
         "query_knowledge_memory": query_knowledge_memory,
+        "query_source_reference_memory": query_source_reference_memory,
         "remember_knowledge_item": remember_knowledge_item,
+        "remember_source_reference": remember_source_reference,
         "record_route_semantic_example": record_route_semantic_example,
         "route_voice_request": route_voice_request,
         "select_model_route": select_model_route,

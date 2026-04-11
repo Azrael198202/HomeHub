@@ -98,7 +98,10 @@ def reset_runtime_state() -> None:
     if customize_dir.exists():
         for path in customize_dir.iterdir():
             if path.name != "__init__.py":
-                path.unlink(missing_ok=True)
+                if path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
+                else:
+                    path.unlink(missing_ok=True)
     for feature_id in ["family_bills", "reminder", "bills"]:
         target = ROOT / "runtime" / "data" / f"{feature_id}.json"
         if target.exists():

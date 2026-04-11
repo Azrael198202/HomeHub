@@ -4,6 +4,12 @@ import re
 from datetime import datetime
 from typing import Any
 
+from runtime.network_lookup_extensions import (
+    lookup_from_source_references,
+    remember_lookup_sources,
+    should_attempt_source_reference_lookup,
+)
+
 
 def normalize_resolution_reply(reply_value: Any, fallback: str) -> str:
     text = str(reply_value if reply_value is not None else "").strip()
@@ -144,7 +150,7 @@ def is_probably_realtime_request(user_text: str, route: dict[str, Any]) -> bool:
     lowered = text.lower()
     task_spec = route.get("taskSpec", {}) if isinstance(route.get("taskSpec", {}), dict) else {}
     task_type = str(task_spec.get("taskType", "general_chat")).strip() or "general_chat"
-    if task_type in {"weather", "network_lookup"}:
+    if task_type == "weather":
         return True
     realtime_tokens = [
         "latest",
@@ -158,10 +164,18 @@ def is_probably_realtime_request(user_text: str, route: dict[str, Any]) -> bool:
         "recent",
         "weather",
         "today's",
+        "price",
+        "fare",
+        "ticket",
+        "flight",
+        "train",
+        "shinkansen",
+        "macbook air price",
+        "macbook pro price",
     ]
     if any(token in lowered for token in realtime_tokens):
         return True
-    return any(token in text for token in ["最新", "今天", "今日", "新闻", "价格", "天气", "现在", "实时", "株価"])
+    return any(token in text for token in ["最新", "今天", "今日", "新闻", "价格", "票价", "费用", "天气", "现在", "实时", "株価", "机票", "火车票", "新干线"])
 
 
 def should_attempt_knowledge_lookup(user_text: str, route: dict[str, Any]) -> bool:
@@ -288,9 +302,21 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
     effective_text = combined_text if clarification_context else original_text
     fallback_reply = context["build_general_voice_reply"](combined_text if clarification_context else original_text, locale, route.get("modelRoute"))
 
+    source_reference_lookup = None
     if should_attempt_knowledge_lookup(effective_text, route):
         knowledge_hits = context["query_knowledge_memory"](effective_text, 3, 0.2)
         execution_context.add_knowledge(knowledge_hits)
+    if should_attempt_source_reference_lookup(effective_text, route, knowledge_hits, is_information_request):
+        source_reference_lookup = lookup_from_source_references(effective_text, context)
+        if source_reference_lookup:
+            execution_context.add_tool_result(
+                {
+                    "tool": "source_reference_lookup",
+                    "ok": True,
+                    "query": effective_text,
+                    "count": len(source_reference_lookup.get("sourceReferenceHits", [])),
+                }
+            )
 
     if route.get("kind") == "feature":
         result = context["feature_manager"].dispatch_voice_intent(route, combined_text, locale, runtime) or {}
@@ -298,11 +324,45 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
         ui_action = result.get("uiAction")
         artifacts = result.get("artifacts", [])
     elif (route.get("taskSpec") or {}).get("taskType") == "weather":
-        reply = normalize_resolution_reply(context["build_weather_reply"](combined_text if clarification_context else original_text, locale), fallback_reply)
+        if source_reference_lookup and source_reference_lookup.get("ok"):
+            lookup_result = source_reference_lookup
+        else:
+            hints = context["infer_research_hints"](effective_text)
+            research_packet = context["perform_research_lookup"](
+                effective_text,
+                locale,
+                "official-only",
+                hints.get("preferredSources"),
+                hints.get("allowedDomains"),
+            )
+            lookup_result = research_packet
+        if lookup_result.get("ok"):
+            reply = normalize_resolution_reply(context["build_grounded_network_reply"](effective_text, lookup_result, locale), fallback_reply)
+        else:
+            reply = normalize_resolution_reply(context["build_weather_reply"](combined_text if clarification_context else original_text, locale), fallback_reply)
         artifacts = []
     elif (route.get("taskSpec") or {}).get("taskType") == "network_lookup":
-        research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
-        lookup_result = research_packet
+        if source_reference_lookup and source_reference_lookup.get("ok"):
+            lookup_result = source_reference_lookup
+        else:
+            hints = context["infer_research_hints"](effective_text)
+            if is_probably_realtime_request(effective_text, route):
+                lookup_result = context["perform_autonomous_network_lookup"](
+                    effective_text,
+                    locale,
+                    "official-only",
+                    hints.get("preferredSources"),
+                    hints.get("allowedDomains"),
+                )
+            else:
+                research_packet = context["perform_research_lookup"](
+                    effective_text,
+                    locale,
+                    "official-only",
+                    hints.get("preferredSources"),
+                    hints.get("allowedDomains"),
+                )
+                lookup_result = research_packet
         if not lookup_result.get("ok"):
             reply = context["build_network_unavailable_reply"](combined_text if clarification_context else original_text, locale, "network_lookup")
         else:
@@ -332,8 +392,18 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             artifacts = []
         else:
             if should_attempt_default_network_research(route):
-                research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
-                lookup_result = research_packet
+                if source_reference_lookup and source_reference_lookup.get("ok"):
+                    lookup_result = source_reference_lookup
+                else:
+                    hints = context["infer_research_hints"](effective_text)
+                    research_packet = context["perform_research_lookup"](
+                        effective_text,
+                        locale,
+                        "official-only",
+                        hints.get("preferredSources"),
+                        hints.get("allowedDomains"),
+                    )
+                    lookup_result = research_packet
             reply = normalize_resolution_reply((
                 context["build_grounded_network_reply"](combined_text if clarification_context else original_text, lookup_result, locale)
                 if lookup_result and lookup_result.get("ok")
@@ -342,12 +412,24 @@ def resolve_voice_request(user_text, locale, context: dict[str, Any]) -> dict[st
             artifacts = []
 
     if should_promote_to_network(effective_text, route, reply):
-        research_packet = context["perform_research_lookup"](effective_text, locale, "official-only")
-        lookup_result = research_packet
+        if source_reference_lookup and source_reference_lookup.get("ok"):
+            lookup_result = source_reference_lookup
+        else:
+            hints = context["infer_research_hints"](effective_text)
+            research_packet = context["perform_research_lookup"](
+                effective_text,
+                locale,
+                "official-only",
+                hints.get("preferredSources"),
+                hints.get("allowedDomains"),
+            )
+            lookup_result = research_packet
         if lookup_result.get("ok"):
             reply = normalize_resolution_reply(context["build_grounded_network_reply"](effective_text, lookup_result, locale), reply)
         elif should_attempt_default_network_research(route):
             reply = normalize_resolution_reply(context["build_network_unavailable_reply"](effective_text, locale, "network_lookup"), reply)
+
+    remember_lookup_sources(effective_text, lookup_result, context, execution_context)
 
     if isinstance(research_packet, dict):
         execution_context.add_evidence(research_packet.get("evidence", []))

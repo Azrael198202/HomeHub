@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import html
 import re
-from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 
 try:
     import trafilatura
@@ -19,6 +20,16 @@ def normalize_domain(value):
     if host.startswith("www."):
         host = host[4:]
     return host.split(":")[0]
+
+
+def sanitize_url_for_request(url):
+    parsed = urlparse(str(url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return str(url or "").strip()
+    safe_path = quote(parsed.path or "/", safe="/%:@()+,;=-._~")
+    safe_query = quote(parsed.query or "", safe="=&%:@()+,;/-._~")
+    safe_fragment = quote(parsed.fragment or "", safe="=&%:@()+,;/-._~")
+    return urlunparse((parsed.scheme, parsed.netloc, safe_path, parsed.params, safe_query, safe_fragment))
 
 
 def domain_allowed(host, allowed_domains):
@@ -103,6 +114,91 @@ def clean_network_excerpt(text, limit=220):
     return joined[:limit].rstrip(" ,;:") + ("..." if len(joined) > limit else "")
 
 
+def excerpt_looks_low_quality(text):
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return True
+    markers = [
+        "all rights reserved",
+        "copyright",
+        "隐私",
+        "条款",
+        "举报电话",
+        "沪icp",
+        "网信算备",
+        "platform information",
+    ]
+    return any(token in lowered for token in markers)
+
+
+def _clean_html_text(value):
+    text = html.unescape(re.sub(r"(?s)<[^>]+>", " ", str(value or "")))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def extract_search_result_snippets(html_text, max_results=5):
+    body = str(html_text or "")
+    if not body:
+        return []
+    results = []
+    seen = set()
+    blocks = re.findall(r'(?is)<div[^>]+class="[^"]*result[^"]*"[^>]*>(.*?)</div>\s*</div>', body)
+    if not blocks:
+        blocks = re.findall(r'(?is)<div[^>]+class="[^"]*web-result[^"]*"[^>]*>(.*?)</div>', body)
+    if not blocks:
+        blocks = [body]
+    for block in blocks:
+        link_match = re.search(r'(?is)<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', block)
+        if not link_match:
+            link_match = re.search(r'(?is)<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', block)
+        if not link_match:
+            continue
+        candidate = str(link_match.group(1) or "").strip()
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        if "duckduckgo.com" in parsed.netloc:
+            uddg = parse_qs(parsed.query).get("uddg", [])
+            if uddg:
+                candidate = unquote(str(uddg[0]).strip())
+        final_parsed = urlparse(candidate)
+        if final_parsed.scheme not in {"http", "https"}:
+            continue
+        host = normalize_domain(final_parsed.netloc)
+        if not host or host in seen or is_private_or_local_host(host):
+            continue
+        title = _clean_html_text(link_match.group(2))
+        snippet_match = re.search(r'(?is)<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', block)
+        if not snippet_match:
+            snippet_match = re.search(r'(?is)<div[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</div>', block)
+        if not snippet_match:
+            snippet_match = re.search(r'(?is)<span[^>]+class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</span>', block)
+        snippet = clean_network_excerpt(_clean_html_text(snippet_match.group(1) if snippet_match else ""), 320)
+        results.append(
+            {
+                "ok": True,
+                "url": candidate,
+                "title": title or host,
+                "excerpt": snippet,
+            }
+        )
+        seen.add(host)
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def fetch_search_results_page(query, json_get):
+    search_query = str(query or "").strip()
+    if not search_query:
+        return ""
+    search_url = f"https://duckduckgo.com/html/?q={quote(search_query)}"
+    try:
+        return str(json_get(search_url, headers={"User-Agent": "HomeHub/0.1"}, timeout=45))
+    except Exception:
+        return ""
+
+
 def build_source_labels(sources):
     labels = []
     for item in sources[:3]:
@@ -159,7 +255,7 @@ def fetch_allowed_url(url, allowed_domains, json_get):
     if not domain_allowed(host, allowed_domains):
         return {"ok": False, "error": f"domain_not_allowed:{host}"}
     try:
-        content = json_get(url, headers={"User-Agent": "HomeHub/0.1"})
+        content = json_get(sanitize_url_for_request(url), headers={"User-Agent": "HomeHub/0.1"})
     except Exception as exc:
         return {"ok": False, "error": f"fetch_failed:{exc}"}
     if isinstance(content, dict):
@@ -287,7 +383,7 @@ def fetch_discovered_url(url, json_get):
     if is_private_or_local_host(parsed.netloc):
         return {"ok": False, "error": "private_or_local_host"}
     try:
-        content = json_get(url, headers={"User-Agent": "HomeHub/0.1"}, timeout=20)
+        content = json_get(sanitize_url_for_request(url), headers={"User-Agent": "HomeHub/0.1"}, timeout=45)
     except Exception as exc:
         return {"ok": False, "error": f"fetch_failed:{exc}"}
     if isinstance(content, dict):
@@ -298,32 +394,15 @@ def fetch_discovered_url(url, json_get):
 
 
 def discover_search_result_urls(query, json_get, max_results=5):
-    search_query = str(query or "").strip()
-    if not search_query:
-        return []
-    search_url = f"https://duckduckgo.com/html/?q={quote(search_query)}"
-    try:
-        html = str(json_get(search_url, headers={"User-Agent": "HomeHub/0.1"}, timeout=20))
-    except Exception:
+    html = fetch_search_results_page(query, json_get)
+    if not html:
         return []
     urls = []
     seen = set()
-    for match in re.findall(r'href="([^"]+)"', html):
-        candidate = str(match or "").strip()
-        if not candidate:
-            continue
-        if candidate.startswith("//duckduckgo.com/l/?"):
-            candidate = f"https:{candidate}"
-        parsed = urlparse(candidate)
-        if "duckduckgo.com" in parsed.netloc:
-            uddg = parse_qs(parsed.query).get("uddg", [])
-            if uddg:
-                candidate = unquote(str(uddg[0]).strip())
-        final_parsed = urlparse(candidate)
-        if final_parsed.scheme not in {"https", "http"}:
-            continue
-        host = normalize_domain(final_parsed.netloc)
-        if not host or host in seen or is_private_or_local_host(host) or "duckduckgo.com" in host:
+    for item in extract_search_result_snippets(html, max_results=max_results):
+        candidate = str(item.get("url", "")).strip()
+        host = normalize_domain(candidate)
+        if not candidate or not host or host in seen:
             continue
         seen.add(host)
         urls.append(candidate)
@@ -336,17 +415,39 @@ def perform_network_lookup(query, locale, policies, json_get, policy_id="officia
     controlled = perform_controlled_network_lookup(query, locale, policies, json_get, policy_id, preferred_sources, allowed_domains)
     if controlled.get("ok"):
         return controlled
+    search_html = fetch_search_results_page(query, json_get)
+    snippet_sources = extract_search_result_snippets(search_html, max_results=3)
     discovered_sources = []
     for url in discover_search_result_urls(query, json_get, max_results=3):
         fetched = fetch_discovered_url(url, json_get)
         if fetched.get("ok"):
             discovered_sources.append(fetched)
-    if not discovered_sources:
+    merged_sources = []
+    by_host = {}
+    for item in snippet_sources + discovered_sources:
+        if not isinstance(item, dict):
+            continue
+        host = normalize_domain(item.get("url", ""))
+        if not host:
+            continue
+        current = by_host.get(host)
+        if current is None:
+            by_host[host] = dict(item)
+            continue
+        current_excerpt = str(current.get("excerpt", "")).strip()
+        next_excerpt = str(item.get("excerpt", "")).strip()
+        if excerpt_looks_low_quality(current_excerpt) and next_excerpt:
+            current["excerpt"] = next_excerpt
+        if not str(current.get("title", "")).strip() and str(item.get("title", "")).strip():
+            current["title"] = str(item.get("title", "")).strip()
+    merged_sources = list(by_host.values())
+    sources = merged_sources[:3]
+    if not sources:
         return controlled
-    answer = discovered_sources[0].get("excerpt", "").strip()
+    answer = sources[0].get("excerpt", "").strip()
     if len(answer) > 320:
         answer = answer[:320].rstrip() + "..."
-    title = str(discovered_sources[0].get("title", "")).strip()
+    title = str(sources[0].get("title", "")).strip()
     if title:
         answer = f"{title}: {answer}" if answer else title
     return {
@@ -354,6 +455,46 @@ def perform_network_lookup(query, locale, policies, json_get, policy_id="officia
         "policy": policy_id or "official-only",
         "allowedDomains": allowed_domains or [],
         "answer": answer,
-        "sources": discovered_sources,
-        "discovered": True,
+        "sources": sources,
+        "discovered": bool(discovered_sources),
+        "searchSnippets": bool(snippet_sources),
+    }
+
+
+def perform_reference_url_lookup(urls, json_get, max_results=3):
+    normalized_urls = []
+    seen = set()
+    for item in urls or []:
+        candidate = str(item or "").strip()
+        if not candidate:
+            continue
+        host = normalize_domain(candidate)
+        if not host or host in seen:
+            continue
+        seen.add(host)
+        normalized_urls.append(candidate)
+        if len(normalized_urls) >= max(1, max_results):
+            break
+    if not normalized_urls:
+        return {"ok": False, "error": "no_reference_urls", "sources": []}
+    sources = []
+    for url in normalized_urls:
+        fetched = fetch_discovered_url(url, json_get)
+        if fetched.get("ok"):
+            sources.append(fetched)
+    if not sources:
+        return {"ok": False, "error": "reference_fetch_failed", "sources": []}
+    primary = sources[0]
+    title = str(primary.get("title", "")).strip()
+    excerpt = str(primary.get("excerpt", "")).strip()
+    answer = excerpt[:320].rstrip() + ("..." if len(excerpt) > 320 else "") if excerpt else ""
+    if title:
+        answer = f"{title}: {answer}" if answer else title
+    return {
+        "ok": True,
+        "policy": "source-reference",
+        "allowedDomains": [normalize_domain(item.get("url", "")) for item in sources if isinstance(item, dict)],
+        "answer": answer,
+        "sources": sources,
+        "referenceLookup": True,
     }

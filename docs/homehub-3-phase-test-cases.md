@@ -24,7 +24,7 @@
 
 ### 4. 本地文件查询与附件回传
 
-- Query: `查看 C:\Users\hy\OneDrive\ドキュメント 下面有什么文件，AI_Agent_Build2026 en.pptx文件发给我。`
+- Query: `查看 ./Users/home/Documents 下面有什么文件，AI_Agent_Build2026 en.pptx文件发给我。`
 - Expected: 返回目录内容并附带目标文件。
 
 ## 阶段2
@@ -90,5 +90,5 @@
 
 ### 16. 样本文档分类
 
-- Query: `将E:\sample documents下的文件，进行分类。类型创建新的文件夹。`
+- Query: `将 /Users/home/Documents下的文件，进行分类。类型创建新的文件夹。`
 - Expected: 按文件类型创建分类文件夹。

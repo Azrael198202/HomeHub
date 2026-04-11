@@ -158,8 +158,8 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
         "sttProvider": "google",
         "ttsProvider": "google",
         "runtimeProfile": "low-memory",
-        "bootstrapConsent": False,
-        "bootstrapCompleted": False,
+        "bootstrapConsent": True,
+        "bootstrapCompleted": True,
         "assistantAvatarMode": "custom",
         "assistantAvatarCustomModelUrl": "/generated/avatar/pixellabs-glb-3347.glb",
     }
@@ -195,8 +195,8 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
         "sttProvider": stt_provider,
         "ttsProvider": tts_provider,
         "runtimeProfile": runtime_profile,
-        "bootstrapConsent": bool(data.get("bootstrapConsent", False)),
-        "bootstrapCompleted": bool(data.get("bootstrapCompleted", False)),
+        "bootstrapConsent": bool(data.get("bootstrapConsent", True)),
+        "bootstrapCompleted": bool(data.get("bootstrapCompleted", True)),
         "assistantAvatarMode": assistant_avatar_mode,
         "assistantAvatarCustomModelUrl": assistant_avatar_custom_model_url,
     }

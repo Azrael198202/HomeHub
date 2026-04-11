@@ -1873,7 +1873,7 @@ class Feature(HomeHubFeature):
             return {{}}
         fields: dict[str, str] = {{}}
         for field in self.blueprint_fields():
-            pattern = re.compile(re.escape(field) + r"\\s*[：:]\\s*([^，,；;\\n]+)")
+            pattern = re.compile(re.escape(field) + r"\s*[：:]\s*([^，,；;\n]+)")
             match = pattern.search(source)
             if match:
                 value = match.group(1).strip()
@@ -1881,7 +1881,7 @@ class Feature(HomeHubFeature):
                     fields[field] = value
         if fields:
             return fields
-        chunks = re.split(r"[，,；;\\n]+", source)
+        chunks = re.split(r"[，,；;\n]+", source)
         for chunk in chunks:
             if "：" not in chunk and ":" not in chunk:
                 continue
@@ -1890,6 +1890,22 @@ class Feature(HomeHubFeature):
             value = value.strip()
             if key and value:
                 fields[key] = value
+        if fields:
+            return fields
+        amount_field = self.amount_field_candidates()[0] if self.amount_field_candidates() else ""
+        content_field = ""
+        for field in self.blueprint_fields():
+            lowered = field.lower()
+            if any(token in field for token in ["内容", "项目", "备注", "说明"]) or any(token in lowered for token in ["content", "item", "note", "memo", "description"]):
+                content_field = field
+                break
+        if not content_field:
+            content_field = self.default_primary_field()
+        amount = self.extract_amount_from_text(source)
+        if amount > 0 and amount_field:
+            fields[amount_field] = str(int(amount) if amount.is_integer() else amount)
+        if source and content_field and source != fields.get(content_field, ""):
+            fields[content_field] = source
         return fields
 
     def summarize_fields(self, fields: dict) -> str:
@@ -2008,12 +2024,28 @@ class Feature(HomeHubFeature):
         except (TypeError, ValueError):
             return 0.0
 
+    def extract_amount_from_text(self, text: str) -> float:
+        source = str(text or "").strip()
+        if not source:
+            return 0.0
+        for pattern in [
+            r"(-?\d[\d,]*(?:\.\d+)?)\s*(?:日元|円|yen|jpy|元|人民币|rmb|usd|美元|dollars?)",
+            r"(?:金额|总额|价格|消费|支出|费用|amount|total|price|cost|expense)\D{0,6}(-?\d[\d,]*(?:\.\d+)?)",
+        ]:
+            match = re.search(pattern, source, flags=re.IGNORECASE)
+            if match:
+                return self.parse_amount(match.group(1))
+        return 0.0
+
     def item_amount(self, item: dict) -> float:
         record_fields = item.get("fields", {{}}) if isinstance(item.get("fields", {{}}), dict) else {{}}
         for field in self.amount_field_candidates():
             amount = self.parse_amount(record_fields.get(field, ""))
             if amount > 0:
                 return amount
+        amount = self.extract_amount_from_text(item.get("sourceText", ""))
+        if amount > 0:
+            return amount
         for value in record_fields.values():
             amount = self.parse_amount(value)
             if amount > 0:
@@ -2023,8 +2055,8 @@ class Feature(HomeHubFeature):
     def extract_threshold(self, text: str) -> float:
         source = str(text or "")
         for pattern in [
-            r"(?:超出|超过|高于|大于)\\s*(\\d+(?:\\.\\d+)?)",
-            r"(?:over|above|greater than)\\s*(\\d+(?:\\.\\d+)?)",
+            r"(?:超出|超过|高于|大于)\s*(\d+(?:\.\d+)?)",
+            r"(?:over|above|greater than)\s*(\d+(?:\.\d+)?)",
         ]:
             match = re.search(pattern, source, flags=re.IGNORECASE)
             if match:
@@ -2176,17 +2208,18 @@ class Feature(HomeHubFeature):
             return "network_lookup"
         return "create_record"
 
-    def build_list_reply(self, items: list[dict], locale: str) -> str:
+    def build_list_reply(self, items: list[dict], locale: str, total_count: int | None = None) -> str:
         if not items:
             return "还没有记录。" if locale == "zh-CN" else ("まだ記録はありません。" if locale == "ja-JP" else "There are no records yet.")
+        count = total_count if isinstance(total_count, int) and total_count >= 0 else len(items)
         lines = []
         for item in items[:5]:
             lines.append(f"{{item.get('title', 'Untitled')}}：{{item.get('summary', '') or '-'}}")
         if locale == "zh-CN":
-            return f"{{self.feature_name}} 当前有 {{len(items)}} 条记录。最近几条是：" + "；".join(lines)
+            return f"{{self.feature_name}} 当前有 {{count}} 条记录。最近几条是：" + "；".join(lines)
         if locale == "ja-JP":
-            return f"{{self.feature_name}} には {{len(items)}} 件の記録があります。最近の内容: " + "；".join(lines)
-        return f"{{self.feature_name}} currently has {{len(items)}} records. Recent items: " + "; ".join(lines)
+            return f"{{self.feature_name}} には {{count}} 件の記録があります。最近の内容: " + "；".join(lines)
+        return f"{{self.feature_name}} currently has {{count}} records. Recent items: " + "; ".join(lines)
 
     def run_feature(self, runtime: RuntimeBridge, source: str, payload: dict | None = None) -> dict:
         request = dict(payload or {{}})
@@ -2253,6 +2286,7 @@ class Feature(HomeHubFeature):
             }}
         keyword = str(request.get("keyword", "")).strip()
         items = self.list_records(runtime, keyword, int(request.get("limit", 5) or 5))
+        total_count = len(self.get_store(runtime).get("items", []))
         summary = {{"action": "list_records", "count": len(items), "generatedAt": self.now_iso()}}
         store["lastSummary"] = summary
         self.save_store(store, runtime)
@@ -2261,22 +2295,35 @@ class Feature(HomeHubFeature):
             "action": "list_records",
             "items": items,
             "summary": summary,
-            "reply": self.build_list_reply(items, locale),
+            "reply": self.build_list_reply(items, locale, total_count=total_count),
             "lastRun": store.get("lastRun", ""),
             "blueprint": BLUEPRINT,
         }}
 
     def should_continue_agent_draft(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
-        if not str(message or '').strip():
+        text = str(message or "").strip()
+        if not text:
             return False
-        if self.is_confirmation_message(message) or self.is_cancel_request(message) or self.is_revision_message(message):
+        if self.is_confirmation_message(text) or self.is_cancel_request(text) or self.is_revision_message(text):
             return True
-        if self.is_create_request(message) or self.matches_activation_phrase(message, locale) or self.looks_like_agent_topic(message):
+        if self.is_create_request(text) or self.matches_activation_phrase(text, locale) or self.looks_like_agent_topic(text):
             return True
-        classified = self.classify_agent_message(message, locale, runtime)
+        classified = self.classify_agent_message(text, locale, runtime)
         action = str(classified.get('action', '')).strip()
         confidence = float(classified.get('confidence', 0.0) or 0.0)
-        return action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6
+        if action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6:
+            return True
+        active_draft = self.get_collecting_agent(runtime) or self.get_review_agent(runtime)
+        if not active_draft:
+            return False
+        lowered = text.lower()
+        if self.looks_like_small_talk(text) or self.looks_like_file_system_request(text) or self.is_general_time_or_weather_query(text):
+            return False
+        if any(token in text for token in ["语音", "文字", "图片", "截图", "OCR", "账单", "提醒", "邮件", "短信", "时间", "人物", "方式", "功能", "用于", "用来", "负责", "支持", "记录", "查询", "整理", "汇总"]) or any(
+            token in lowered for token in ["voice", "text", "image", "ocr", "bill", "expense", "email", "sms", "time", "person", "feature", "used to", "handle", "record", "track", "summarize"]
+        ):
+            return True
+        return True
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         result = self.run_feature(runtime, "voice", {{"message": message, "locale": locale}})
@@ -2484,9 +2531,24 @@ def load_feature() -> HomeHubFeature:
     def match_voice_intent(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if self.looks_like_small_talk(message):
             return None
+        lowered = message.lower()
+        named_agent = self.find_agent_by_hint(message, runtime)
+        if (
+            isinstance(named_agent, dict)
+            and named_agent.get("status") == "complete"
+            and str(named_agent.get("generatedFeatureId", "")).strip()
+            and not self.is_create_request(message)
+            and not self.is_edit_request(message)
+        ):
+            return {
+                "intent": "custom-agent-builder",
+                "action": "operational_agent",
+                "score": 0.995,
+                "reason": "explicit_named_agent",
+                "targetAgentName": str(named_agent.get("name", "")).strip(),
+            }
         if self.looks_like_file_system_request(message):
             return None
-        lowered = message.lower()
         collecting = self.get_collecting_agent(runtime)
         review = self.get_review_agent(runtime)
         operational = self.find_matching_operational_agent(message, runtime)
@@ -2533,20 +2595,47 @@ def load_feature() -> HomeHubFeature:
         return None
 
     def should_continue_agent_draft(self, message: str, locale: str, runtime: RuntimeBridge) -> bool:
-        if not str(message or '').strip():
+        text = str(message or "").strip()
+        if not text:
             return False
-        if self.is_confirmation_message(message) or self.is_cancel_request(message) or self.is_revision_message(message):
+        if self.is_confirmation_message(text) or self.is_cancel_request(text) or self.is_revision_message(text):
             return True
-        if self.is_create_request(message) or self.matches_activation_phrase(message, locale) or self.looks_like_agent_topic(message):
+        if self.is_create_request(text) or self.matches_activation_phrase(text, locale) or self.looks_like_agent_topic(text):
             return True
-        classified = self.classify_agent_message(message, locale, runtime)
+        classified = self.classify_agent_message(text, locale, runtime)
         action = str(classified.get('action', '')).strip()
         confidence = float(classified.get('confidence', 0.0) or 0.0)
-        return action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6
+        if action in {'create_agent', 'continue_collecting', 'review_blueprint', 'edit_agent', 'show_agent', 'general_agent_help'} and confidence >= 0.6:
+            return True
+        active_draft = self.get_collecting_agent(runtime) or self.get_review_agent(runtime)
+        if not active_draft:
+            return False
+        lowered = text.lower()
+        if self.looks_like_small_talk(text) or self.looks_like_file_system_request(text) or self.is_general_time_or_weather_query(text):
+            return False
+        if any(token in text for token in ["语音", "文字", "图片", "截图", "OCR", "账单", "提醒", "邮件", "短信", "时间", "人物", "方式", "功能", "用于", "用来", "负责", "支持", "记录", "查询", "整理", "汇总"]) or any(
+            token in lowered for token in ["voice", "text", "image", "ocr", "bill", "expense", "email", "sms", "time", "person", "feature", "used to", "handle", "record", "track", "summarize"]
+        ):
+            return True
+        return True
 
     def handle_voice_chat(self, message: str, locale: str, runtime: RuntimeBridge) -> dict | None:
         if self.looks_like_small_talk(message):
             return None
+        named_agent = self.find_agent_by_hint(message, runtime)
+        if (
+            isinstance(named_agent, dict)
+            and named_agent.get("status") == "complete"
+            and str(named_agent.get("generatedFeatureId", "")).strip()
+            and not self.is_create_request(message)
+            and not self.is_edit_request(message)
+        ):
+            artifact_result = self.handle_artifact_generation(named_agent, message, runtime, locale)
+            if artifact_result:
+                return artifact_result
+            result = self.handle_operational_report(named_agent, message, runtime, locale)
+            if result:
+                return result
         if self.looks_like_file_system_request(message):
             return None
         collecting = self.get_collecting_agent(runtime)

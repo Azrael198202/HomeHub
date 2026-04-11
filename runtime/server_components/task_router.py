@@ -45,6 +45,7 @@ ZH_DOCUMENT_TOKENS = [
     "\u7167\u7247",
 ]
 ZH_STUDY_TOKENS = ["\u5b66\u4e60\u8ba1\u5212", "\u4f5c\u4e1a", "\u590d\u4e60", "\u5b66\u4e60"]
+ZH_TRAVEL_LOOKUP_TOKENS = ["\u673a\u7968", "\u822a\u73ed", "\u65b0\u5e72\u7ebf", "\u706b\u8f66\u7968", "\u9ad8\u94c1", "\u5217\u8f66", "\u7968\u4ef7", "\u8d39\u7528"]
 
 
 def has_cjk(text: str) -> bool:
@@ -119,9 +120,12 @@ def build_semantic_route_examples(user_text: str, locale: str, limit: int = 3) -
 def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
     lowered = str(user_text or "").lower()
     raw = str(user_text or "")
+    travel_lookup = any(token in raw for token in ZH_TRAVEL_LOOKUP_TOKENS) or any(
+        token in lowered for token in ["flight", "airfare", "ticket", "plane", "shinkansen", "train", "rail fare"]
+    )
 
     if any(token in lowered for token in ["weather", "forecast", "temperature", "rain"]) or any(
-        token in raw for token in ["\u5929\u6c14", "\u6c14\u6e29", "\u964d\u96e8", "\u9884\u62a5", "\u5929\u6c17"]
+        token in raw for token in ["\u5929\u6c14", "\u6c14\u6e29", "\u964d\u96e8", "\u4e0b\u96e8", "\u9884\u62a5", "\u5929\u6c17"]
     ):
         spec.update(
             {
@@ -133,6 +137,8 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
         )
 
     if spec["taskType"] != "weather" and (
+        travel_lookup
+        or
         any(token in lowered for token in ["search", "lookup", "look up", "web", "online", "official", "latest", "news", "price"]) or any(
         token in raw for token in ZH_NETWORK_TOKENS
         )
@@ -169,7 +175,7 @@ def apply_rule_based_task_hints(spec: TaskSpec, user_text: str) -> TaskSpec:
             }
         )
 
-    if any(token in lowered for token in ["schedule", "calendar", "meeting", "event"]) or any(token in raw for token in ZH_SCHEDULE_TOKENS):
+    if not travel_lookup and (any(token in lowered for token in ["schedule", "calendar", "meeting", "event"]) or any(token in raw for token in ZH_SCHEDULE_TOKENS)):
         spec.update(
             {
                 "taskType": "schedule",

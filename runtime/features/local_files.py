@@ -155,6 +155,19 @@ class Feature(HomeHubFeature):
                 text = text.split(marker, 1)[0].strip()
         return text.rstrip("\\/")
 
+    def extract_search_query_hint(self, message: str) -> str:
+        text = str(message or "").strip()
+        patterns = [
+            r"(?:搜索|查找|寻找)\s+.+?\s+下面的\s+(.+?)\s*(?:文件|文件夹|file|files)$",
+            r"(?:搜索|查找|寻找)\s+(.+?)\s*(?:文件|文件夹|file|files)$",
+            r"(?:search|find|lookup)\s+.+?\s+for\s+(.+?)\s*(?:file|files)$",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return str(match.group(1) or "").strip(" ，。")
+        return ""
+
     def extract_filename_hint(self, message: str) -> str:
         explicit = re.findall(r"([A-Za-z0-9_\- .]+\.(?:pptx|ppt|xlsx|xls|docx|doc|pdf|txt|csv|md|jpg|jpeg|png|zip|mp4|mov|mp3|wav|json|ini|log))", str(message or ""), flags=re.IGNORECASE)
         return explicit[0].strip() if explicit else ""
@@ -207,6 +220,11 @@ class Feature(HomeHubFeature):
             elif result["fileName"]:
                 action = "search"
         result["action"] = action
+        if action == "search" and not str(result.get("query", "")).strip():
+            result["query"] = self.extract_search_query_hint(text)
+        query = str(result.get("query", "")).strip()
+        query = re.sub(r"\s*(文件|文件夹|目录|路径|file|files|folder|directory)\s*$", "", query, flags=re.IGNORECASE).strip()
+        result["query"] = query or result.get("fileName", "")
         result["confidence"] = max(float(result.get("confidence", 0.0) or 0.0), 0.8 if action != "none" else 0.0)
         if not result["path"] and action in {"list", "search", "send", "classify"}:
             result["path"] = str(Path.home())
@@ -348,7 +366,15 @@ class Feature(HomeHubFeature):
                 continue
             category = self.category_for_path(child)
             target_dir = base / category
-            target_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                return {
+                    "path": str(base),
+                    "createdDirs": sorted(created_dirs),
+                    "moved": moved,
+                    "error": f"mkdir_failed:{exc}",
+                }
             created_dirs.add(category)
             target = target_dir / child.name
             if target.exists():
@@ -358,7 +384,15 @@ class Feature(HomeHubFeature):
                 while target.exists():
                     target = target_dir / f"{stem}-{index}{suffix}"
                     index += 1
-            shutil.move(str(child), str(target))
+            try:
+                shutil.move(str(child), str(target))
+            except OSError as exc:
+                return {
+                    "path": str(base),
+                    "createdDirs": sorted(created_dirs),
+                    "moved": moved,
+                    "error": f"move_failed:{exc}",
+                }
             moved.append({"source": str(child), "target": str(target), "category": category})
         return {"path": str(base), "createdDirs": sorted(created_dirs), "moved": moved}
 
@@ -447,6 +481,15 @@ class Feature(HomeHubFeature):
             if not path.is_dir():
                 return {"reply": self.zh(locale, f"{path} 不是目录。", f"{path} is not a directory.")}
             result = self.classify_directory(path)
+            if result.get("error"):
+                return {
+                    "reply": self.zh(
+                        locale,
+                        f"我识别到这是一个分类请求，但当前进程没有权限在 {path} 下创建分类文件夹。请换到 HomeHub 工作区目录或 /tmp 再试一次。",
+                        f"I recognized this as a classify request, but the current process cannot create category folders under {path}. Try again in the HomeHub workspace or under /tmp.",
+                    ),
+                    "result": result,
+                }
             created_dirs = "、".join(result["createdDirs"]) if locale == "zh-CN" else ", ".join(result["createdDirs"])
             self.remember_action(runtime, f"Classified files under {path}.")
             return {"reply": self.zh(locale, f"我已经按类型整理了 {path} 下的文件，并创建了这些文件夹：{created_dirs or '没有新增文件夹'}。", f"I organized the files under {path} by type and created: {created_dirs or 'no new folders'}."), "result": result}

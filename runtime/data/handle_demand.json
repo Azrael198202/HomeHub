@@ -2,8 +2,30 @@
   "settings": {
     "enabled": true
   },
-  "items": [],
+  "items": [
+    {
+      "id": "handle_demand-item-20260410T2220",
+      "title": "Replace with a real record structure",
+      "summary": "请在活动安排中记录: 周日去上野公园野餐",
+      "fields": {
+        "请在活动安排中记录": "周日去上野公园野餐"
+      },
+      "sourceText": "请在活动安排中记录：周日去上野公园野餐，参加成员爸爸妈妈和小明，注意带水壶",
+      "createdAt": "2026-04-10T22:20",
+      "updatedAt": "2026-04-10T22:20"
+    }
+  ],
   "recentActions": [
+    {
+      "id": "handle_demand-20260410T2220",
+      "summary": "Recorded an item for Handle demand: 用于记智能体: Replace with a real record structure.",
+      "createdAt": "2026-04-10T22:20"
+    },
+    {
+      "id": "handle_demand-20260410T2220",
+      "summary": "Exported 0 records from Handle demand: 用于记智能体.",
+      "createdAt": "2026-04-10T22:20"
+    },
     {
       "id": "handle_demand-20260409T2217",
       "summary": "Exported 0 records from Handle demand: 你好智能体.",
@@ -15,6 +37,10 @@
       "createdAt": "2026-04-09T22:17"
     }
   ],
-  "lastRun": "2026-04-09T22:17",
-  "lastSummary": {}
+  "lastRun": "2026-04-10T22:20",
+  "lastSummary": {
+    "action": "list_records",
+    "count": 1,
+    "generatedAt": "2026-04-10T22:20"
+  }
 }
