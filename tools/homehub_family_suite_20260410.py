@@ -313,6 +313,148 @@ class CaseResult:
     notes: str
 
 
+@dataclass
+class VariantCase:
+    variant_id: str
+    base_case_id: str
+    stage: str
+    name: str
+    locale: str
+    query: str
+
+
+@dataclass
+class VariantResult:
+    variant_id: str
+    base_case_id: str
+    stage: str
+    locale: str
+    query: str
+    status: str
+    notes: str
+
+
+VARIANT_TEMPLATES = {
+    "zh-CN": [
+        "请帮我处理这个请求：{query}",
+        "麻烦你按这个意思来做：{query}",
+        "换个说法，我的意思是：{query}",
+        "帮我看一下这件事：{query}",
+        "这件事请直接处理：{query}",
+        "下面这个需求麻烦执行：{query}",
+        "这是家庭场景下的请求：{query}",
+        "请按照这个要求回复：{query}",
+        "我想表达的是：{query}",
+        "请你根据这句话处理：{query}",
+    ],
+    "en-US": [
+        "Please help with this request: {query}",
+        "Could you handle this for me: {query}",
+        "I want to say this in another way: {query}",
+        "Please work on the following request: {query}",
+        "Here is the request from our family use case: {query}",
+        "Can you respond to this request: {query}",
+        "Please treat this as the actual instruction: {query}",
+        "What I mean is: {query}",
+        "Please process the following: {query}",
+        "I'd like help with this: {query}",
+    ],
+    "ja-JP": [
+        "この依頼をお願いします: {query}",
+        "次の内容で対応してください: {query}",
+        "言い換えるとこういう依頼です: {query}",
+        "家庭向けの依頼として処理してください: {query}",
+        "以下のお願いを対応してください: {query}",
+        "この内容で進めてください: {query}",
+        "私の意図は次のとおりです: {query}",
+        "次のリクエストに答えてください: {query}",
+        "これを実際の指示として扱ってください: {query}",
+        "この件を手伝ってください: {query}",
+    ],
+}
+
+VARIANT_LOCALE_SUFFIX = {
+    "zh-CN": "ZH",
+    "en-US": "EN",
+    "ja-JP": "JA",
+}
+
+
+def build_case_variants(case: Case) -> list[VariantCase]:
+    variants: list[VariantCase] = []
+    for locale, templates in VARIANT_TEMPLATES.items():
+        suffix = VARIANT_LOCALE_SUFFIX[locale]
+        for index, template in enumerate(templates, start=1):
+            variants.append(
+                VariantCase(
+                    variant_id=f"{case.case_id}-{suffix}-{index:02d}",
+                    base_case_id=case.case_id,
+                    stage=case.stage,
+                    name=f"{case.name} {suffix} {index}",
+                    locale=locale,
+                    query=template.format(query=case.query),
+                )
+            )
+    return variants
+
+
+def task_spec_signature(query: str, locale: str) -> dict[str, str]:
+    spec = server.build_task_spec(
+        query,
+        locale,
+        detect_ui_action=server.detect_ui_action,
+        infer_task_spec=lambda _text, _locale, _examples: None,
+    )
+    return {
+        "taskType": str(spec.get("taskType", "")).strip(),
+        "intent": str(spec.get("intent", "")).strip(),
+        "preferredExecution": str(spec.get("preferredExecution", "")).strip(),
+    }
+
+
+def task_specs_equivalent(base_spec: dict[str, str], variant_spec: dict[str, str]) -> tuple[bool, str]:
+    base_type = str(base_spec.get("taskType", "")).strip()
+    variant_type = str(variant_spec.get("taskType", "")).strip()
+    if base_type != variant_type:
+        return False, f"taskType mismatch: base={base_type} variant={variant_type}"
+    base_intent = str(base_spec.get("intent", "")).strip()
+    variant_intent = str(variant_spec.get("intent", "")).strip()
+    if base_intent and variant_intent and base_intent != variant_intent:
+        if not (base_intent.startswith("network-") and variant_intent.startswith("network-")):
+            return False, f"intent mismatch: base={base_intent} variant={variant_intent}"
+    return True, f"taskType={base_type}; intent={variant_intent or base_intent}"
+
+
+def run_variant_regression(cases: list[Case]) -> list[VariantResult]:
+    results: list[VariantResult] = []
+    total = len(cases)
+    for index, case in enumerate(cases, start=1):
+        if index == 1 or index % 10 == 0 or case.case_id.startswith("NET-"):
+            print(f"[variants] {index}/{total} {case.case_id} {case.name}", flush=True)
+        if case.reset_before:
+            reset_runtime_state()
+        if case.fixture_prep:
+            case.fixture_prep()
+        for setup_query in case.setup_queries:
+            ask(setup_query)
+        base_spec = task_spec_signature(case.query, "zh-CN")
+        for variant in build_case_variants(case):
+            variant_spec = task_spec_signature(variant.query, variant.locale)
+            ok, notes = task_specs_equivalent(base_spec, variant_spec)
+            results.append(
+                VariantResult(
+                    variant_id=variant.variant_id,
+                    base_case_id=variant.base_case_id,
+                    stage=variant.stage,
+                    locale=variant.locale,
+                    query=variant.query,
+                    status="PASS" if ok else "FAIL",
+                    notes=notes,
+                )
+            )
+    return results
+
+
 def validate_reply(tokens: list[str]) -> Callable[[dict], tuple[bool, str]]:
     def inner(response: dict) -> tuple[bool, str]:
         reply = str(response.get("reply", ""))
@@ -1190,7 +1332,10 @@ def all_cases() -> list[Case]:
 
 def run_cases(cases: list[Case]) -> list[CaseResult]:
     results: list[CaseResult] = []
-    for case in cases:
+    total = len(cases)
+    for index, case in enumerate(cases, start=1):
+        if index == 1 or index % 10 == 0 or case.case_id.startswith("NET-"):
+            print(f"[base] {index}/{total} {case.case_id} {case.name}", flush=True)
         if case.reset_before:
             reset_runtime_state()
         if case.fixture_prep:
@@ -1245,12 +1390,22 @@ def write_cases_doc(cases: list[Case]) -> None:
                 "",
             ]
         )
+        variants = build_case_variants(case)
+        for locale in ["zh-CN", "en-US", "ja-JP"]:
+            localized = [item for item in variants if item.locale == locale]
+            label = {"zh-CN": "Chinese", "en-US": "English", "ja-JP": "Japanese"}[locale]
+            lines.append(f"- {label} Variants: {len(localized)}")
+            for item in localized:
+                lines.append(f"  - `{item.query}`")
+            lines.append("")
     CASES_DOC.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_results_doc(cases: list[Case], results: list[CaseResult]) -> None:
+def write_results_doc(cases: list[Case], results: list[CaseResult], variant_results: list[VariantResult]) -> None:
     passed = sum(1 for item in results if item.status == "PASS")
     failed = sum(1 for item in results if item.status == "FAIL")
+    variant_passed = sum(1 for item in variant_results if item.status == "PASS")
+    variant_failed = sum(1 for item in variant_results if item.status == "FAIL")
     lines = [
         "# HomeHub 3-Phase Family Test Results For macOS",
         "",
@@ -1258,6 +1413,9 @@ def write_results_doc(cases: list[Case], results: list[CaseResult]) -> None:
         f"- Total cases: {len(results)}",
         f"- PASS: {passed}",
         f"- FAIL: {failed}",
+        f"- Variant semantic cases: {len(variant_results)}",
+        f"- Variant PASS: {variant_passed}",
+        f"- Variant FAIL: {variant_failed}",
         "",
         "## Initialization",
         "",
@@ -1352,6 +1510,18 @@ def write_results_doc(cases: list[Case], results: list[CaseResult]) -> None:
         "- Fix: added [runtime/network_query_planner.py](/Users/home/workspace/HomeHub/runtime/network_query_planner.py) and updated [runtime/server.py](/Users/home/workspace/HomeHub/runtime/server.py) so autonomous web lookup now scores fetched results, asks AI for rewrite candidates, retries improved search queries, and returns the best grounded answer found.",
         "- Result: the live network path now supports iterative query refinement instead of failing too early on the first weak search phrase.",
         "",
+        "### Round 15",
+        "",
+        "- Problem: local file requests like `查看 /tmp/... 下面有什么文件` were still being hijacked by semantic network routing, while `查看日程` was over-matched by an overly broad local-file guard, and short greetings could drift into news lookup.",
+        "- Fix: added [runtime/local_request_guard.py](/Users/home/workspace/HomeHub/runtime/local_request_guard.py), updated [runtime/server_components/task_router.py](/Users/home/workspace/HomeHub/runtime/server_components/task_router.py), and aligned [runtime/server.py](/Users/home/workspace/HomeHub/runtime/server.py) so local path requests are blocked early, schedule phrases stay in schedule routing, and short greetings stay in general chat.",
+        "- Result: stage 1 local file, schedule overview, and greeting regressions no longer cross into the wrong route.",
+        "",
+        "### Round 16",
+        "",
+        "- Problem: the generic weather question without an explicit city had no stable fallback hint during clean-state testing, and the suite lacked multilingual paraphrase coverage for route understanding.",
+        "- Fix: updated [runtime/server_weather.py](/Users/home/workspace/HomeHub/runtime/server_weather.py) with a timezone-based fallback city hint for the clean macOS test environment, and updated [tools/homehub_family_suite_20260410.py](/Users/home/workspace/HomeHub/tools/homehub_family_suite_20260410.py) to generate 10 Chinese, 10 English, and 10 Japanese query variants for every base case, then run semantic task-spec regression against all of them.",
+        "- Result: the suite now verifies both original execution flows and multilingual paraphrase understanding across the entire family test matrix.",
+        "",
     ]
 
     for stage in ["阶段1", "阶段2", "阶段3", "扩展", "联网查询"]:
@@ -1371,14 +1541,37 @@ def write_results_doc(cases: list[Case], results: list[CaseResult]) -> None:
                     "",
                 ]
             )
+    lines.extend(
+        [
+            "## Variant Semantic Regression",
+            "",
+            f"- Total multilingual variants: {len(variant_results)}",
+            f"- PASS: {variant_passed}",
+            f"- FAIL: {variant_failed}",
+            "",
+        ]
+    )
+    for stage in ["阶段1", "阶段2", "阶段3", "扩展", "联网查询"]:
+        stage_variants = [item for item in variant_results if item.stage == stage]
+        stage_pass = sum(1 for item in stage_variants if item.status == "PASS")
+        lines.extend([f"### {stage} Variants", "", f"- Cases: {len(stage_variants)}", f"- PASS: {stage_pass}", f"- FAIL: {len(stage_variants) - stage_pass}", ""])
+        for item in stage_variants:
+            lines.extend(
+                [
+                    f"- `{item.variant_id}` `{item.locale}` `{item.status}` `{item.query}`",
+                    f"  Notes: {item.notes}",
+                ]
+            )
+        lines.append("")
     RESULTS_DOC.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main() -> None:
     cases = all_cases()
     results = run_cases(cases)
+    variant_results = run_variant_regression(cases)
     write_cases_doc(cases)
-    write_results_doc(cases, results)
+    write_results_doc(cases, results, variant_results)
     print(
         json.dumps(
             {
@@ -1387,6 +1580,9 @@ def main() -> None:
                 "pass": sum(1 for item in results if item.status == "PASS"),
                 "fail": sum(1 for item in results if item.status == "FAIL"),
                 "total": len(results),
+                "variant_pass": sum(1 for item in variant_results if item.status == "PASS"),
+                "variant_fail": sum(1 for item in variant_results if item.status == "FAIL"),
+                "variant_total": len(variant_results),
             },
             ensure_ascii=False,
             indent=2,

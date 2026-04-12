@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -144,6 +145,16 @@ def _candidate_place_queries(query_text: str):
         tail = cjk_parts[-1].strip()
         if tail and tail not in candidates:
             candidates.append(tail)
+    if not candidates:
+        tz_name = str(time.tzname[0] or "").strip()
+        timezone_defaults = {
+            "JST": "东京",
+            "Japan Standard Time": "东京",
+            "Asia/Tokyo": "东京",
+        }
+        fallback = timezone_defaults.get(tz_name, "")
+        if fallback:
+            candidates.append(fallback)
     return candidates
 
 

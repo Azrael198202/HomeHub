@@ -73,6 +73,11 @@ def is_brief_greeting(user_text: str) -> bool:
         return True
     if len(text) <= 20 and any(token in text for token in ZH_GREETING_TOKENS):
         return True
+    for separator in [":", "：", "\n"]:
+        if separator in text:
+            tail = text.split(separator, 1)[-1].strip()
+            if tail and tail != text and is_brief_greeting(tail):
+                return True
     return False
 
 
