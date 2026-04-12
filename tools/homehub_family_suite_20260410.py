@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -334,45 +335,6 @@ class VariantResult:
     notes: str
 
 
-VARIANT_TEMPLATES = {
-    "zh-CN": [
-        "请帮我处理这个请求：{query}",
-        "麻烦你按这个意思来做：{query}",
-        "换个说法，我的意思是：{query}",
-        "帮我看一下这件事：{query}",
-        "这件事请直接处理：{query}",
-        "下面这个需求麻烦执行：{query}",
-        "这是家庭场景下的请求：{query}",
-        "请按照这个要求回复：{query}",
-        "我想表达的是：{query}",
-        "请你根据这句话处理：{query}",
-    ],
-    "en-US": [
-        "Please help with this request: {query}",
-        "Could you handle this for me: {query}",
-        "I want to say this in another way: {query}",
-        "Please work on the following request: {query}",
-        "Here is the request from our family use case: {query}",
-        "Can you respond to this request: {query}",
-        "Please treat this as the actual instruction: {query}",
-        "What I mean is: {query}",
-        "Please process the following: {query}",
-        "I'd like help with this: {query}",
-    ],
-    "ja-JP": [
-        "この依頼をお願いします: {query}",
-        "次の内容で対応してください: {query}",
-        "言い換えるとこういう依頼です: {query}",
-        "家庭向けの依頼として処理してください: {query}",
-        "以下のお願いを対応してください: {query}",
-        "この内容で進めてください: {query}",
-        "私の意図は次のとおりです: {query}",
-        "次のリクエストに答えてください: {query}",
-        "これを実際の指示として扱ってください: {query}",
-        "この件を手伝ってください: {query}",
-    ],
-}
-
 VARIANT_LOCALE_SUFFIX = {
     "zh-CN": "ZH",
     "en-US": "EN",
@@ -380,11 +342,1594 @@ VARIANT_LOCALE_SUFFIX = {
 }
 
 
+def strip_trailing_punctuation(text: str) -> str:
+    return text.rstrip("。！？?.! ")
+
+
+def uniq_keep_order(items: list[str], expected: int = 10) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for item in items:
+        normalized = item.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(normalized)
+        if len(output) == expected:
+            return output
+    return output
+
+
+def fill_variants(items: list[str], fallback: str, expected: int = 10) -> list[str]:
+    output = uniq_keep_order(items, expected=expected)
+    if len(output) >= expected:
+        return output[:expected]
+    seed = strip_trailing_punctuation(fallback)
+    for idx in range(1, expected - len(output) + 1):
+        output.append(f"{seed}（变体{idx}）")
+    return output[:expected]
+
+
+def weather_city(query: str) -> str:
+    marker = "今天"
+    if marker in query:
+        city = query.split(marker, 1)[0]
+        return city.replace("请告诉我", "").strip(" ，,")
+    return ""
+
+
+def split_path_and_filename(query: str) -> tuple[str, str]:
+    match = re.match(r"查看 (.+?) 下面有什么文件，(.+?) 文件发给我[。.]?", query)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def split_list_dir(query: str) -> str:
+    match = re.match(r"查看 (.+?) 下面有什么文件", query)
+    return match.group(1) if match else ""
+
+
+def split_search_dir(query: str) -> tuple[str, str]:
+    match = re.match(r"搜索 (.+?) 下面的 (.+?) 文件", query)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def split_classify_dir(query: str) -> str:
+    match = re.match(r"将 (.+?) 下的文件，进行分类。类型创建新的文件夹。", query)
+    return match.group(1) if match else ""
+
+
+def split_agent_name(query: str) -> str:
+    match = re.match(r"创建智能体，名称为(.+?)[。.]?$", query)
+    return match.group(1) if match else ""
+
+
+def split_expense(query: str) -> tuple[str, str, str]:
+    match = re.match(r"记录今日(\d+点\d+分)，(.+?)消费(\d+)日元", query)
+    if match:
+        return match.group(1), match.group(2), match.group(3)
+    return "", "", ""
+
+
+def split_records_target(query: str) -> str:
+    match = re.match(r"查看(.+?)有哪些记录", query)
+    return match.group(1) if match else ""
+
+
+def split_export_target(query: str) -> tuple[str, str]:
+    if query.startswith("导出") and query.endswith("表格"):
+        return query[2:-2], "table"
+    if query.startswith("导出") and query.endswith("文档"):
+        return query[2:-2], "document"
+    if query.startswith("导出"):
+        return query[2:], "export"
+    return "", ""
+
+
+def split_threshold_amount(query: str) -> str:
+    match = re.search(r"超过?(\d+)日元|超出(\d+)日元", query)
+    if not match:
+        return ""
+    return next(group for group in match.groups() if group)
+
+
+def split_record_into_agent(query: str) -> tuple[str, str]:
+    match = re.match(r"请在(.+?)中记录：(.+)", query)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def split_schedule_with_reminder(query: str) -> tuple[str, str, str]:
+    match = re.match(r"(.+?)安排(.+?)，并提前(\d+)分钟提醒我", query)
+    if match:
+        return match.group(1), match.group(2), match.group(3)
+    return "", "", ""
+
+
+def split_simple_reminder(query: str) -> tuple[str, str]:
+    match = re.match(r"(.+?)提醒(.+)", query)
+    if match:
+        return match.group(1), match.group(2)
+    return "", ""
+
+
+def english_variants(query: str) -> list[str]:
+    q = strip_trailing_punctuation(query)
+    if q in {"你好", "你好啊 HomeHub", "早上好", "晚上好"}:
+        mapping = {
+            "你好": ["Hello", "Hi", "Hello HomeHub", "Hi there", "Hey HomeHub", "Good to see you", "Hello there", "Hi HomeHub", "Hey there", "Greetings"],
+            "你好啊 HomeHub": ["Hi HomeHub", "Hello HomeHub", "Hey HomeHub", "Good to see you, HomeHub", "Hi there, HomeHub", "Hello there, HomeHub", "Hey there, HomeHub", "Morning, HomeHub", "Good day, HomeHub", "Greetings, HomeHub"],
+            "早上好": ["Good morning", "Morning", "Good morning, HomeHub", "Morning, HomeHub", "Wishing you a good morning", "Hope you're having a good morning", "Hi, good morning", "Hello this morning", "Good morning there", "Morning there"],
+            "晚上好": ["Good evening", "Evening", "Good evening, HomeHub", "Evening, HomeHub", "Hope you're having a good evening", "Wishing you a pleasant evening", "Hi, good evening", "Hello this evening", "Good evening there", "Evening there"],
+        }
+        return mapping[q]
+
+    city = weather_city(q)
+    if "天气" in q or "气温" in q or "下雨" in q:
+        if city:
+            items = [
+                f"What is the weather like in {city} today?",
+                f"Can you check today's weather in {city}?",
+                f"Tell me the weather in {city} today.",
+                f"How's the weather in {city} today?",
+                f"Please give me today's forecast in {city}.",
+            ]
+        else:
+            items = [
+                "What is the weather like today?",
+                "Can you check today's weather?",
+                "Tell me the weather today.",
+                "How's the weather today?",
+                "Please give me today's forecast.",
+            ]
+        if "最高温" in q and "最低温" in q:
+            items.extend(
+                [
+                    f"What are today's high and low temperatures in {city}?",
+                    f"Please tell me today's max and min temperatures in {city}.",
+                    f"I want the temperature range in {city} today.",
+                    f"How warm and how cool will it get in {city} today?",
+                    f"Give me today's high and low for {city}.",
+                ]
+            )
+        elif "最高温" in q:
+            items.extend(
+                [
+                    f"What's the high temperature in {city or 'the area'} today?",
+                    f"Tell me today's high temperature in {city}." if city else "Tell me today's high temperature.",
+                    f"How warm will it get in {city} today?" if city else "How warm will it get today?",
+                    f"Please check today's forecast and high temperature for {city or 'today'}.",
+                    f"I'd like today's weather and the high temperature in {city}." if city else "I'd like today's weather and the high temperature.",
+                ]
+            )
+        elif "下雨" in q:
+            items.extend(
+                [
+                    f"Will it rain in {city} today?",
+                    f"Can you check whether it's going to rain in {city} today?",
+                    f"Is rain expected in {city} today?",
+                    f"Tell me if I should expect rain in {city} today.",
+                    f"Please check today's rain chances in {city}.",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"What's today's temperature in {city}?",
+                    f"Tell me the temperature in {city} today.",
+                    f"How many degrees is it in {city} today?",
+                    f"Can you check today's temperature for {city}?",
+                    f"I'd like to know the current temperature in {city} today." if city else "I'd like to know the current temperature today.",
+                ]
+            )
+        return fill_variants(items, q)
+
+    path, filename = split_path_and_filename(q)
+    if path and filename:
+        return [
+            f"Show me the files in {path}, and send me {filename}.",
+            f"List the files under {path}, then send over {filename}.",
+            f"What's inside {path}? Please send me {filename}.",
+            f"Can you check {path} and share {filename} with me?",
+            f"Please look in {path}, list the files, and send {filename}.",
+            f"I want to see the files in {path}; also send me {filename}.",
+            f"Open {path}, tell me what files are there, and send {filename}.",
+            f"Check the contents of {path} and forward {filename} to me.",
+            f"Could you list the files in {path} and send me {filename}?",
+            f"Please inspect {path} and share the file {filename}.",
+        ]
+
+    path = split_list_dir(q)
+    if path:
+        return [
+            f"Show me the files in {path}.",
+            f"List the files under {path}.",
+            f"What files are in {path}?",
+            f"Can you check what files are inside {path}?",
+            f"Please tell me what files are under {path}.",
+            f"I want to see the contents of {path}.",
+            f"Open {path} and list what's there.",
+            f"Please inspect {path} and show me the files.",
+            f"Give me a file list for {path}.",
+            f"Could you look in {path} and tell me what files are there?",
+        ]
+
+    path, keyword = split_search_dir(q)
+    if path:
+        return [
+            f"Search for files related to {keyword} under {path}.",
+            f"Find the {keyword} files in {path}.",
+            f"Please look through {path} for files matching {keyword}.",
+            f"Can you search {path} for any {keyword} files?",
+            f"Show me files about {keyword} under {path}.",
+            f"I need you to find {keyword}-related files in {path}.",
+            f"Please check {path} and search for {keyword} files.",
+            f"Look in {path} for anything named around {keyword}.",
+            f"Search the folder {path} for {keyword}.",
+            f"Could you find files connected to {keyword} in {path}?",
+        ]
+
+    if q.startswith("读取 "):
+        file_path = q[3:]
+        return [
+            f"Read {file_path}.",
+            f"Please open and read {file_path}.",
+            f"Show me the contents of {file_path}.",
+            f"Can you read the file {file_path}?",
+            f"I want to see what's inside {file_path}.",
+            f"Please open {file_path} and tell me what's in it.",
+            f"Check the contents of {file_path} for me.",
+            f"Read through {file_path} and show it to me.",
+            f"Could you display the contents of {file_path}?",
+            f"Take a look at {file_path} and read it out.",
+        ]
+
+    path = split_classify_dir(q)
+    if path:
+        return [
+            f"Organize the files in {path} by type and create new folders.",
+            f"Sort the files under {path} into new folders by file type.",
+            f"Please classify the files in {path} and make folders for each type.",
+            f"Can you group the files in {path} by type using new folders?",
+            f"Arrange the files in {path} into folders based on file type.",
+            f"Please tidy up {path} by sorting files into type-based folders.",
+            f"Create new folders by type and move the files in {path} accordingly.",
+            f"I need the files in {path} categorized by type into separate folders.",
+            f"Please organize everything in {path} into folders according to file type.",
+            f"Classify the files in {path} and create a folder for each type.",
+        ]
+
+    when, action = split_simple_reminder(q)
+    if q == "提醒列表":
+        return [
+            "Show me my reminder list.",
+            "List all reminders.",
+            "What reminders do I have?",
+            "Can you display my reminders?",
+            "Please show the current reminders.",
+            "I want to check my reminder list.",
+            "Open the reminder list for me.",
+            "Please tell me all active reminders.",
+            "What is on my reminders list?",
+            "Let me see the reminders.",
+        ]
+
+    if q == "查看日程":
+        return [
+            "Show me the schedule.",
+            "Open my schedule.",
+            "Let me see today's schedule.",
+            "Can you display the calendar?",
+            "Please show the agenda.",
+            "I want to check the schedule.",
+            "What's on the calendar?",
+            "Please pull up the schedule.",
+            "Show the upcoming schedule.",
+            "Let me look at the agenda.",
+        ]
+
+    prefix, event, minutes = split_schedule_with_reminder(q)
+    if prefix and event:
+        when_text = prefix
+        return [
+            f"Schedule {event} {when_text} and remind me {minutes} minutes early.",
+            f"Please add {event} for {when_text}, with a reminder {minutes} minutes before.",
+            f"Set up {event} {when_text} and alert me {minutes} minutes in advance.",
+            f"Can you schedule {event} {when_text} and remind me {minutes} minutes ahead of time?",
+            f"Put {event} on the schedule for {when_text} and send a {minutes}-minute early reminder.",
+            f"Arrange {event} {when_text}, and make sure I get a reminder {minutes} minutes before.",
+            f"Create a schedule entry for {event} {when_text} with a {minutes}-minute advance reminder.",
+            f"Please add {event} at {when_text} and notify me {minutes} minutes beforehand.",
+            f"Book {event} for {when_text} and remind me {minutes} minutes before it starts.",
+            f"Set {event} for {when_text} and give me an alert {minutes} minutes early.",
+        ]
+
+    if when and action and "提醒" in q:
+        return [
+            f"Remind me {when} to {action}.",
+            f"Set a reminder {when} for me to {action}.",
+            f"Please remind me {when} that I need to {action}.",
+            f"Can you create a reminder {when} for {action}?",
+            f"I need a reminder {when} to {action}.",
+            f"Put in a reminder for {when}: {action}.",
+            f"Schedule a reminder {when} so I remember to {action}.",
+            f"Please alert me {when} to {action}.",
+            f"Set me a {when} reminder to {action}.",
+            f"Create a reminder telling me {when} to {action}.",
+        ]
+
+    agent_name = split_agent_name(q)
+    if agent_name:
+        return [
+            f"Create an agent named {agent_name}.",
+            f"Please create a new agent called {agent_name}.",
+            f"I want to make an agent named {agent_name}.",
+            f"Set up an agent with the name {agent_name}.",
+            f"Can you create the agent {agent_name}?",
+            f"Please add a new agent named {agent_name}.",
+            f"Create a custom agent called {agent_name}.",
+            f"Help me create an agent named {agent_name}.",
+            f"Make a new agent and name it {agent_name}.",
+            f"Start creating an agent called {agent_name}.",
+        ]
+
+    if q == "确认创建":
+        return [
+            "Confirm the creation.",
+            "Please go ahead and create it.",
+            "Yes, confirm creation.",
+            "That's good, create it now.",
+            "Proceed with the creation.",
+            "Please confirm and finish creating it.",
+            "Go ahead with creating it.",
+            "I confirm, please create it.",
+            "Create it as discussed.",
+            "Finalize the creation.",
+        ]
+
+    if q.startswith("可以") or q.startswith("用于"):
+        core = q
+        return [
+            f"It should support this: {core}",
+            f"Please make sure it can do the following: {core}",
+            f"The agent needs this capability: {core}",
+            f"This is the function I want it to have: {core}",
+            f"It should be able to handle this: {core}",
+            f"Please configure it for this use: {core}",
+            f"I need the agent to cover this requirement: {core}",
+            f"The intended capability is: {core}",
+            f"Make it support the following scenario: {core}",
+            f"This should be part of the agent behavior: {core}",
+        ]
+
+    time_text, item, amount = split_expense(q)
+    if time_text:
+        return [
+            f"Record an expense of {amount} yen for {item} at {time_text} today.",
+            f"Please log {item} costing {amount} yen at {time_text} today.",
+            f"Add a spending record for {item}: {amount} yen at {time_text} today.",
+            f"Track {amount} yen spent on {item} at {time_text} today.",
+            f"Please record today's {time_text} expense: {item}, {amount} yen.",
+            f"Log that I spent {amount} yen on {item} at {time_text} today.",
+            f"Enter an expense for {item} at {time_text} today, amount {amount} yen.",
+            f"Add today's {time_text} purchase of {item} for {amount} yen.",
+            f"Please save a bill entry for {item} costing {amount} yen at {time_text}.",
+            f"Record today's {item} expense of {amount} yen at {time_text}.",
+        ]
+
+    target = split_records_target(q)
+    if target:
+        return [
+            f"Show me the records in {target}.",
+            f"What records are in {target}?",
+            f"Please list the entries under {target}.",
+            f"Can you display all records in {target}?",
+            f"I want to check the records for {target}.",
+            f"Let me see what has been recorded in {target}.",
+            f"Please open {target} and show the entries.",
+            f"List everything recorded in {target}.",
+            f"Could you pull up the records from {target}?",
+            f"Show all entries stored in {target}.",
+        ]
+
+    target, export_type = split_export_target(q)
+    if target:
+        noun = {"table": "table", "document": "document", "export": "data export"}[export_type]
+        return [
+            f"Export {target}.",
+            f"Please export {target}.",
+            f"I need an export of {target}.",
+            f"Can you export the {noun} for {target}?",
+            f"Generate an export for {target}.",
+            f"Please create an export file for {target}.",
+            f"Export the data from {target}.",
+            f"Could you prepare an export for {target}?",
+            f"I want to download the exported {noun} for {target}.",
+            f"Please output {target} as an export file.",
+        ]
+
+    amount = split_threshold_amount(q)
+    if amount:
+        return [
+            f"What's the total spending up to today? If it goes over {amount} yen, send a reminder to HomeHub.",
+            f"Please calculate total spending through today, and alert HomeHub if it exceeds {amount} yen.",
+            f"Show me the total spent so far today; if it's above {amount} yen, send a reminder to HomeHub.",
+            f"Check the spending total up to today and notify HomeHub when it passes {amount} yen.",
+            f"I want the total expense so far, with a HomeHub reminder if it is over {amount} yen.",
+            f"Tell me today's cumulative spending, and if it exceeds {amount} yen, send an alert to HomeHub.",
+            f"Please total the spending up to now and trigger a HomeHub reminder above {amount} yen.",
+            f"How much has been spent by today? Send HomeHub a reminder if the amount is greater than {amount} yen.",
+            f"Calculate the total expenses through today and push a reminder to HomeHub once it goes past {amount} yen.",
+            f"Give me the total spending so far and send a HomeHub reminder if it crosses {amount} yen.",
+        ]
+
+    if q == "到今天为止消费总额是多少，并将消费的信息生成excel文档":
+        return [
+            "What's the total spending up to today, and generate an Excel file with the expense details.",
+            "Please calculate total spending through today and create an Excel document of the expenses.",
+            "Show me the total spent so far today, and export the spending data to Excel.",
+            "Tell me the total expenses up to today and make an Excel file with the details.",
+            "I want today's cumulative spending and an Excel export of the expense information.",
+            "Please total the spending so far and generate an Excel sheet of all expense records.",
+            "How much have we spent up to today? Also create an Excel file of the spending details.",
+            "Calculate the total spending through today and output the expense data as Excel.",
+            "Give me the spending total so far and build an Excel document from the expense info.",
+            "Please provide today's total expense amount and export the expense details into Excel.",
+        ]
+
+    agent_name, content = split_record_into_agent(q)
+    if agent_name:
+        return [
+            f"Please add this record to {agent_name}: {content}",
+            f"Record the following in {agent_name}: {content}",
+            f"Can you save this entry in {agent_name}: {content}",
+            f"Log this information under {agent_name}: {content}",
+            f"Please create a new record in {agent_name}: {content}",
+            f"Put this into {agent_name}: {content}",
+            f"Add this content to {agent_name}: {content}",
+            f"Save the following note in {agent_name}: {content}",
+            f"Enter this record for {agent_name}: {content}",
+            f"Please store this in {agent_name}: {content}",
+        ]
+
+    if "机票时间和票价" in q or "航班时间和价格" in q:
+        return [
+            f"Please check the flight times and fares for {q.replace('东京到旧金山 ', 'Tokyo to San Francisco on ').replace(' 的具体机票时间和票价', '')}.",
+            "Find me the flight schedule and ticket prices from Tokyo to San Francisco for the requested date.",
+            "I want the flight times and fares for Tokyo to San Francisco on that date.",
+            "Can you look up the specific flight schedule and pricing from Tokyo to San Francisco?",
+            "Please check flights from Tokyo to San Francisco and tell me the times and prices.",
+            "Show me the available Tokyo to San Francisco flights and ticket prices for the requested date.",
+            "Help me find flight times and fares from Tokyo to San Francisco.",
+            "I need the detailed flight schedule and pricing for Tokyo to San Francisco.",
+            "Please look up airfare and departure times from Tokyo to San Francisco.",
+            "Check reliable flight options from Tokyo to San Francisco and tell me the prices.",
+        ]
+
+    if "新干线" in q or "火车票时间和票价" in q:
+        return [
+            "Please check the train schedule and fares for the requested trip.",
+            "Find the train times and ticket prices for that route.",
+            "I want the available train departures and fares for that trip.",
+            "Can you look up the train timetable and cost for the requested route?",
+            "Show me the train options, times, and prices for that trip.",
+            "Please tell me the train schedule and fare information for the route.",
+            "Help me find train times and ticket prices for the requested date.",
+            "I need the timetable and fare details for that train trip.",
+            "Please check rail departures and pricing for the requested journey.",
+            "Look up the train schedule and fare details for me.",
+        ]
+
+    if "MacBook Air 还是 MacBook Pro" in q:
+        return [
+            "For everyday office work, which is a better fit: MacBook Air or MacBook Pro? Please use Apple's website as the reference.",
+            "Please compare MacBook Air and MacBook Pro for normal office use based on Apple's official site.",
+            "Which should I buy for daily office work, a MacBook Air or a MacBook Pro? Reference Apple.com.",
+            "Using Apple's official information, tell me whether MacBook Air or MacBook Pro is more suitable for office tasks.",
+            "I need advice on MacBook Air versus MacBook Pro for regular work, based on Apple's website.",
+            "Please use Apple's official site to recommend either MacBook Air or MacBook Pro for office use.",
+            "For standard work tasks, is MacBook Air or MacBook Pro the better choice? Refer to Apple.",
+            "Check Apple's website and advise me on MacBook Air versus MacBook Pro for everyday work.",
+            "Based on Apple's official info, which laptop is more appropriate for office work: Air or Pro?",
+            "Help me decide between MacBook Air and MacBook Pro for office use using Apple's site.",
+        ]
+
+    if "Apple 官网里 13 英寸 MacBook Air 的起售价是多少" in q:
+        return [
+            "What is the starting price of the 13-inch MacBook Air on Apple's website?",
+            "Please check Apple's site for the base price of the 13-inch MacBook Air.",
+            "How much does the 13-inch MacBook Air start at on Apple.com?",
+            "Tell me the official starting price for Apple's 13-inch MacBook Air.",
+            "I want the entry price of the 13-inch MacBook Air from Apple's site.",
+            "Can you look up the starting price of the 13-inch MacBook Air on the Apple website?",
+            "Please find the listed base price for the 13-inch MacBook Air on Apple.com.",
+            "What's the official entry-level price of the 13-inch MacBook Air at Apple?",
+            "Check Apple's website and tell me the starting price for the 13-inch MacBook Air.",
+            "Show me the Apple website price that the 13-inch MacBook Air starts from.",
+        ]
+
+    if "Apple 官网里 MacBook Pro 14 英寸的起售价是多少" in q:
+        return [
+            "What is the starting price of the 14-inch MacBook Pro on Apple's website?",
+            "Please check Apple's site for the base price of the 14-inch MacBook Pro.",
+            "How much does the 14-inch MacBook Pro start at on Apple.com?",
+            "Tell me the official starting price for Apple's 14-inch MacBook Pro.",
+            "I want the entry price of the 14-inch MacBook Pro from Apple's site.",
+            "Can you look up the starting price of the 14-inch MacBook Pro on the Apple website?",
+            "Please find the listed base price for the 14-inch MacBook Pro on Apple.com.",
+            "What's the official entry-level price of the 14-inch MacBook Pro at Apple?",
+            "Check Apple's website and tell me the starting price for the 14-inch MacBook Pro.",
+            "Show me the Apple website price that the 14-inch MacBook Pro starts from.",
+        ]
+
+    if q.startswith("请联网搜索 ") or q.startswith("根据本地知识库，") or q == "Time Machine 主要是做什么的":
+        topic = q.replace("请联网搜索 ", "").replace("根据本地知识库，", "")
+        return [
+            f"What is {topic}?",
+            f"Please explain what {topic} is.",
+            f"I'd like to know what {topic} means.",
+            f"Can you tell me what {topic} is?",
+            f"Give me an explanation of {topic}.",
+            f"Help me understand {topic}.",
+            f"Please introduce {topic} in simple terms.",
+            f"What does {topic} do?",
+            f"Could you explain the purpose of {topic}?",
+            f"Tell me the main idea behind {topic}.",
+        ]
+
+    if q == "今天日本有什么热点新闻，请给我两条摘要":
+        return [
+            "What are the top news stories in Japan today? Please give me two short summaries.",
+            "Please find today's trending news in Japan and provide two summaries.",
+            "Show me two brief summaries of today's major news in Japan.",
+            "Can you tell me two hot news topics in Japan today with short summaries?",
+            "I want two concise summaries of today's biggest news in Japan.",
+            "Please check the latest hot news in Japan today and summarize two items.",
+            "Give me two short summaries of what's making headlines in Japan today.",
+            "What is trending in Japan today? Please summarize two news items.",
+            "Please provide two brief summaries of current hot topics in Japan today.",
+            "Find two important Japanese news stories from today and summarize them.",
+        ]
+
+    if "股价是多少" in q:
+        company = "NVIDIA" if "英伟达" in q else "Apple"
+        with_change = "涨跌情况如何" in q
+        items = [
+            f"What is {company}'s stock price today?",
+            f"Please check {company}'s share price for today.",
+            f"How much is {company} stock trading at today?",
+            f"Tell me today's stock price for {company}.",
+            f"I want today's market price for {company} stock.",
+        ]
+        if with_change:
+            items.extend(
+                [
+                    f"What's {company}'s stock price today, and how much is it up or down?",
+                    f"Please give me today's {company} share price and price change.",
+                    f"How is {company} stock moving today? Include the current price.",
+                    f"Tell me {company}'s stock price and today's gain or loss.",
+                    f"Check today's {company} stock price together with the daily change.",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"Can you look up the current stock price of {company} today?",
+                    f"Please tell me the latest {company} stock price today.",
+                    f"Show me how much {company} stock costs today.",
+                    f"I'd like to know today's quoted price for {company}.",
+                    f"Check the current share price of {company} for me today.",
+                ]
+            )
+        return items
+
+    if "菜谱" in q:
+        return [
+            "Please find me a recipe for this meal and tell me the key ingredients and steps.",
+            "I need a recipe for this dish, including the main ingredients and how to make it.",
+            "Can you look up a recipe and give me the ingredients and method?",
+            "Please suggest a recipe for this and include the ingredient list and instructions.",
+            "Find a good recipe for this meal and explain the main ingredients and steps.",
+            "I want the recipe, the essential ingredients, and the cooking method.",
+            "Please search for a recipe and summarize the ingredients and directions.",
+            "Help me cook this by giving me a recipe with ingredients and steps.",
+            "Can you provide a recipe and walk me through the main steps?",
+            "Please tell me what ingredients I need and how to make this dish.",
+        ]
+
+    if "给孩子讲讲" in q or "用孩子能听懂的话解释" in q or "用容易理解的话" in q:
+        return [
+            "Please explain this in a way a child can easily understand.",
+            "Can you describe this in simple words for a child?",
+            "I want a kid-friendly explanation of this topic.",
+            "Please explain this simply enough for a child to follow.",
+            "Help me explain this to a child in easy language.",
+            "Can you make this explanation easy for kids?",
+            "Please give me a child-friendly version of the explanation.",
+            "Explain this in simple everyday language for a child.",
+            "I need a very easy explanation that a child can understand.",
+            "Please teach this topic in a child-friendly way.",
+        ]
+
+    return [
+        q,
+        f"Please help me with this: {q}",
+        f"Can you handle this request: {q}",
+        f"I want to ask this another way: {q}",
+        f"Please work on the following: {q}",
+        f"Could you take care of this for me: {q}",
+        f"Please treat this as the request: {q}",
+        f"What I need is: {q}",
+        f"Please respond to this request: {q}",
+        f"I'd like help with this request: {q}",
+    ]
+
+
+def chinese_variants(query: str) -> list[str]:
+    q = strip_trailing_punctuation(query)
+    if q == "你好":
+        return ["你好", "您好", "嗨，你好", "哈喽", "HomeHub 你好", "你好呀", "早啊，你好", "嘿，你好", "在吗，你好", "跟你打个招呼，你好"]
+    if q == "你好啊 HomeHub":
+        return ["你好啊 HomeHub", "HomeHub 你好呀", "嗨 HomeHub", "哈喽 HomeHub", "HomeHub 在吗", "HomeHub 你好", "嘿 HomeHub 你好", "跟你打个招呼 HomeHub", "HomeHub 早上好", "HomeHub 晚上好"]
+    if q == "早上好":
+        return ["早上好", "早安", "早呀", "早上好呀", "早安 HomeHub", "今天早上好", "早，你好", "早晨好", "新的一天早上好", "跟你说声早安"]
+    if q == "晚上好":
+        return ["晚上好", "晚安前先打个招呼", "晚上好呀", "晚上好 HomeHub", "今晚好", "这个晚上好呀", "晚上见，先问个好", "晚上好，你在吗", "跟你说声晚上好", "今晚上好"]
+
+    city = weather_city(q)
+    if "天气" in q or "气温" in q or "下雨" in q:
+        place = city or "今天"
+        items = [
+            f"帮我查下{place}的天气",
+            f"想知道{place}天气怎么样",
+            f"看一下{place}天气情况",
+            f"请告诉我{place}天气如何",
+            f"查查{place}的天气预报",
+        ]
+        if "最高温" in q and "最低温" in q:
+            items.extend(
+                [
+                    f"{city}今天最高温和最低温分别是多少",
+                    f"帮我看看{city}今天温度区间",
+                    f"请告诉我{city}今天最高和最低气温",
+                    f"{city}今天最热和最冷大概多少度",
+                    f"查下{city}今天的高低温",
+                ]
+            )
+        elif "最高温" in q:
+            items.extend(
+                [
+                    f"{city or '今天'}最高温多少",
+                    f"帮我查一下{city or ''}今天最高气温".strip(),
+                    f"请告诉我{city or ''}今天会到多少度".strip(),
+                    f"{city or '今天'}天气和最高温都告诉我",
+                    f"想知道{city or ''}今天最热多少度".strip(),
+                ]
+            )
+        elif "下雨" in q:
+            items.extend(
+                [
+                    f"{city}今天会不会下雨",
+                    f"帮我看下{city}今天有没有雨",
+                    f"请查一下{city}今天降雨情况",
+                    f"{city}今天下雨概率高吗",
+                    f"我想知道{city}今天是否有雨",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"{city}今天多少度",
+                    f"帮我查下{city}今天气温",
+                    f"请告诉我{city}今天温度",
+                    f"{city}今天气温大概多少",
+                    f"我想知道{city}今天有多热",
+                ]
+            )
+        return fill_variants(items, q)
+
+    path, filename = split_path_and_filename(q)
+    if path and filename:
+        return [
+            f"看看 {path} 里有什么文件，再把 {filename} 发给我",
+            f"帮我列出 {path} 下面的文件，并把 {filename} 传给我",
+            f"查看一下 {path} 的文件列表，然后把 {filename} 给我",
+            f"请检查 {path} 里有哪些文件，顺便发送 {filename}",
+            f"我想看 {path} 下的文件，同时把 {filename} 发我",
+            f"打开 {path} 看看文件情况，再把 {filename} 发过来",
+            f"帮我确认 {path} 里有哪些内容，并发送文件 {filename}",
+            f"列一下 {path} 里的文件，再把 {filename} 共享给我",
+            f"看一下 {path}，并把其中的 {filename} 发给我",
+            f"请先查看 {path} 下的文件，再发送 {filename}",
+        ]
+
+    path = split_list_dir(q)
+    if path:
+        return [
+            f"查看 {path} 下面有哪些文件",
+            f"帮我列出 {path} 下的文件",
+            f"{path} 里都有什么文件",
+            f"请看一下 {path} 的文件列表",
+            f"我想知道 {path} 下面有哪些内容",
+            f"打开 {path} 看看里面的文件",
+            f"帮我确认 {path} 下都有哪些文件",
+            f"列一下 {path} 里的文件",
+            f"请检查 {path} 目录下的文件",
+            f"看看 {path} 里面有什么",
+        ]
+
+    path, keyword = split_search_dir(q)
+    if path:
+        return [
+            f"搜索 {path} 下面和 {keyword} 相关的文件",
+            f"帮我在 {path} 里找 {keyword} 文件",
+            f"请查找 {path} 下包含 {keyword} 的文件",
+            f"看看 {path} 里面有没有 {keyword} 相关文件",
+            f"在 {path} 目录里搜索 {keyword}",
+            f"帮我检索 {path} 下的 {keyword} 文件",
+            f"请在 {path} 中查一下 {keyword} 文件",
+            f"找找 {path} 里面和 {keyword} 有关的文件",
+            f"查看 {path} 下是否有 {keyword} 文件",
+            f"在 {path} 里搜一下关键词 {keyword}",
+        ]
+
+    if q.startswith("读取 "):
+        file_path = q[3:]
+        return [
+            f"读取一下 {file_path}",
+            f"帮我打开并读取 {file_path}",
+            f"看一下 {file_path} 里的内容",
+            f"请读取文件 {file_path}",
+            f"我想查看 {file_path} 的内容",
+            f"打开 {file_path} 给我看看",
+            f"帮我读一下 {file_path}",
+            f"请展示 {file_path} 里的内容",
+            f"查看并读取 {file_path}",
+            f"把 {file_path} 打开读给我看",
+        ]
+
+    path = split_classify_dir(q)
+    if path:
+        return [
+            f"把 {path} 下的文件按类型分类，并新建对应文件夹",
+            f"帮我把 {path} 里面的文件按类型整理到新文件夹里",
+            f"请将 {path} 下的文件按文件类型归类，并创建新目录",
+            f"把 {path} 里的文件分类整理，按类型新建文件夹",
+            f"帮我整理 {path} 下的文件，按类型分别放到新文件夹",
+            f"请按类型对 {path} 里的文件进行分类并创建目录",
+            f"把 {path} 下文件按类别分好，并建立对应文件夹",
+            f"将 {path} 中的文件按照类型整理归档到新文件夹",
+            f"帮我把 {path} 目录里的文件按类型分组",
+            f"请把 {path} 里的内容按文件类型创建文件夹后分类",
+        ]
+
+    if q == "提醒列表":
+        return ["提醒列表", "查看提醒列表", "把提醒列表给我看看", "显示一下当前提醒", "我想看提醒事项", "列出所有提醒", "帮我打开提醒列表", "看看有哪些提醒", "现在的提醒都有什么", "把我的提醒展示一下"]
+
+    if q == "查看日程":
+        return ["查看日程", "看一下日程安排", "帮我打开日程", "显示一下日程", "我想看今天的日程", "列出当前日程", "把日程安排给我看看", "查看一下日历安排", "看看接下来的安排", "帮我展示日程表"]
+
+    prefix, event, minutes = split_schedule_with_reminder(q)
+    if prefix and event:
+        return [
+            f"{prefix}安排{event}，提前{minutes}分钟提醒我",
+            f"帮我把{event}安排在{prefix}，并提前{minutes}分钟提醒",
+            f"请在{prefix}安排{event}，记得提前{minutes}分钟通知我",
+            f"把{event}加到{prefix}的日程里，并在前{minutes}分钟提醒我",
+            f"我想在{prefix}安排{event}，提前{minutes}分钟给我提醒",
+            f"请帮我预约{prefix}的{event}，并提前{minutes}分钟提醒",
+            f"在{prefix}创建{event}日程，提前{minutes}分钟通知我",
+            f"把{event}定在{prefix}，并设置提前{minutes}分钟提醒",
+            f"请安排{prefix}的{event}，到时前{minutes}分钟提醒我",
+            f"帮我新增{event}这个安排，时间是{prefix}，提醒提前{minutes}分钟",
+        ]
+
+    when, action = split_simple_reminder(q)
+    if when and action and "提醒" in q:
+        return [
+            f"{when}提醒我{action}",
+            f"帮我设置一个提醒，{when}{action}",
+            f"请在{when}提醒我去{action}" if not action.startswith("给") else f"请在{when}提醒我{action}",
+            f"到{when}记得提醒我{action}",
+            f"我想在{when}收到提醒：{action}",
+            f"请给我设一个{when}的提醒，内容是{action}",
+            f"{when}帮我提醒一下{action}",
+            f"记得在{when}提醒我{action}",
+            f"请添加提醒：{when}{action}",
+            f"到{when}通知我{action}",
+        ]
+
+    agent_name = split_agent_name(q)
+    if agent_name:
+        return [
+            f"创建一个名为{agent_name}的智能体",
+            f"帮我新建智能体，名字叫{agent_name}",
+            f"请创建智能体 {agent_name}",
+            f"我想创建一个叫{agent_name}的智能体",
+            f"新增智能体，名称设为{agent_name}",
+            f"请帮我建立名为{agent_name}的智能体",
+            f"创建新的自定义智能体：{agent_name}",
+            f"把智能体名称设成{agent_name}并创建",
+            f"帮我做一个{agent_name}智能体",
+            f"新建智能体，叫做{agent_name}",
+        ]
+
+    if q == "确认创建":
+        return ["确认创建", "请确认创建", "好的，创建吧", "可以，开始创建", "没问题，确认生成", "继续创建", "就按这个创建", "确认并完成创建", "请直接创建", "可以，执行创建"]
+
+    if q.startswith("可以") or q.startswith("用于"):
+        return [
+            q,
+            f"它需要支持这样的能力：{q}",
+            f"请把这个能力加进去：{q}",
+            f"这个智能体要能做到：{q}",
+            f"我希望它具备这个功能：{q}",
+            f"请按这个用途来配置：{q}",
+            f"它的主要功能应该是：{q}",
+            f"请让它支持以下场景：{q}",
+            f"这个智能体的目标是：{q}",
+            f"能力要求如下：{q}",
+        ]
+
+    time_text, item, amount = split_expense(q)
+    if time_text:
+        return [
+            f"记录今天{time_text}{item}消费{amount}日元",
+            f"帮我登记今日{time_text}的{item}支出{amount}日元",
+            f"请记录今天{time_text}花了{amount}日元买{item}",
+            f"把今天{time_text}{item}这笔{amount}日元记下来",
+            f"新增一条消费记录：今日{time_text}，{item}，{amount}日元",
+            f"今天{time_text}{item}花费{amount}日元，请帮我记录",
+            f"请登记{time_text}这笔{item}消费，金额{amount}日元",
+            f"把今日{time_text}的{item}支出{amount}日元录入账单",
+            f"记录一下今天{time_text}{item}用了{amount}日元",
+            f"帮我添加消费：{time_text} {item} {amount}日元",
+        ]
+
+    target = split_records_target(q)
+    if target:
+        return [
+            f"查看{target}里的记录",
+            f"帮我列出{target}有哪些记录",
+            f"{target}目前都记录了什么",
+            f"请显示{target}的全部记录",
+            f"我想看一下{target}里的内容",
+            f"把{target}的记录给我看看",
+            f"查看一下{target}都有哪些条目",
+            f"帮我打开{target}记录",
+            f"列出{target}目前的记录",
+            f"请展示{target}中的所有记录",
+        ]
+
+    target, export_type = split_export_target(q)
+    if target:
+        return [
+            f"导出{target}",
+            f"把{target}导出来",
+            f"请帮我导出{target}",
+            f"生成{target}的导出文件",
+            f"我想导出{target}的数据",
+            f"请把{target}内容输出成文件",
+            f"帮我准备{target}的导出结果",
+            f"导出一下{target}相关内容",
+            f"请生成{target}的可导出文件",
+            f"把{target}做成导出文档",
+        ]
+
+    amount = split_threshold_amount(q)
+    if amount:
+        return [
+            f"统计到今天为止的消费总额，如果超过{amount}日元就发提醒到 homehub",
+            f"帮我看截至今天总共花了多少钱，超出{amount}日元时提醒 homehub",
+            f"请计算当前累计消费，若高于{amount}日元就通知 homehub",
+            f"到今天为止一共消费多少？超过{amount}日元请提醒 homehub",
+            f"我想知道累计消费金额，若超过{amount}日元就发送提醒到 homehub",
+            f"请汇总今天前的消费总额，超出{amount}日元时给 homehub 发提醒",
+            f"帮我核算总消费，超过{amount}日元就触发 homehub 提醒",
+            f"查一下截止今天的支出总额，若大于{amount}日元请提醒 homehub",
+            f"算一下目前总消费，如果超了{amount}日元就通知 homehub",
+            f"把到今天为止的消费加总，超过{amount}日元时发送提醒给 homehub",
+        ]
+
+    if q == "到今天为止消费总额是多少，并将消费的信息生成excel文档":
+        return [
+            "统计到今天为止的消费总额，并把消费信息生成 Excel 文档",
+            "帮我算一下当前消费总额，再导出 Excel 明细",
+            "请汇总截至今天的消费，并生成一份 Excel 文件",
+            "到今天为止一共花了多少？顺便把消费信息做成 Excel",
+            "我想看累计消费总额，并导出消费 Excel 文档",
+            "请统计总支出，同时生成消费明细的 Excel",
+            "帮我把消费总额算出来，并把记录导出成 Excel",
+            "请生成截至今天的消费汇总和 Excel 文档",
+            "看一下当前总消费，再输出一份 Excel 表格",
+            "把到今天的消费合计出来，并生成 Excel 文件",
+        ]
+
+    agent_name, content = split_record_into_agent(q)
+    if agent_name:
+        return [
+            f"请在{agent_name}中新增记录：{content}",
+            f"帮我把这条内容记到{agent_name}里：{content}",
+            f"把以下信息记录到{agent_name}：{content}",
+            f"请将{content}录入到{agent_name}",
+            f"在{agent_name}里添加这条记录：{content}",
+            f"帮我往{agent_name}中写入：{content}",
+            f"请保存到{agent_name}：{content}",
+            f"将这条信息登记到{agent_name}：{content}",
+            f"请在{agent_name}里面记录下：{content}",
+            f"把{content}这条内容存到{agent_name}",
+        ]
+
+    if "机票时间和票价" in q or "航班时间和价格" in q:
+        return [
+            "帮我查一下对应航线的航班时间和票价",
+            "请看一下这趟航班的大概时间和价格",
+            "我想知道这条航线的具体机票时间与票价",
+            "查查这次出行的航班班次和费用",
+            "请帮我找一下相关航班时刻和价格信息",
+            "看看这趟飞机什么时候飞、票价多少",
+            "帮我检索这条航线的时间和机票价格",
+            "请查询对应日期的航班安排和票价",
+            "我需要这次飞行的大概时间和费用",
+            "请给我这条航线的靠谱航班时间和价格",
+        ]
+
+    if "新干线" in q or "火车票时间和票价" in q:
+        return [
+            "帮我查一下这趟列车的时间和票价",
+            "请查询对应路线的车次时间和费用",
+            "我想知道这段行程的列车班次和价格",
+            "看看这条线路什么时候有车、票价多少",
+            "帮我找一下这趟车的时刻表和费用",
+            "请查这段路程的火车时间和票价",
+            "帮我检索对应日期的车票时间和价格",
+            "我需要这次铁路出行的具体时间和费用",
+            "请看一下可选列车和票价信息",
+            "查询一下这趟旅程的时刻和票价",
+        ]
+
+    if "MacBook Air 还是 MacBook Pro" in q:
+        return [
+            "日常办公更适合买 MacBook Air 还是 MacBook Pro，请参考 Apple 官网",
+            "请基于 Apple 官网，给我建议日常办公选 Air 还是 Pro",
+            "平时办公用的话，MacBook Air 和 MacBook Pro 哪个更合适？参考 Apple 官网",
+            "帮我对比一下 MacBook Air 和 MacBook Pro，看看办公场景选哪个更好",
+            "想买办公电脑，Air 和 Pro 哪个更值得，麻烦参考 Apple 官方信息",
+            "请结合 Apple 官网内容，判断办公使用更推荐 Air 还是 Pro",
+            "普通办公场景下，MacBook Air 和 MacBook Pro 怎么选，请参考官网",
+            "帮我按照 Apple 官网信息，分析 Air 和 Pro 哪个适合办公",
+            "如果是日常办公，Apple 官网里 Air 和 Pro 哪个更匹配",
+            "请参考 Apple 官方网站，推荐一款更适合办公的 MacBook",
+        ]
+
+    if "Apple 官网里 13 英寸 MacBook Air 的起售价是多少" in q:
+        return [
+            "Apple 官网里 13 英寸 MacBook Air 多少钱起",
+            "帮我查一下 Apple 官网 13 英寸 MacBook Air 的起步价",
+            "请告诉我 Apple 官网 13 英寸 MacBook Air 的起售价",
+            "13 英寸 MacBook Air 在 Apple 官方网站上的最低价格是多少",
+            "我想知道 Apple 官网 13 英寸 MacBook Air 的入门价格",
+            "查查 Apple 网站上 13 英寸 MacBook Air 的起始价格",
+            "请看一下 13 英寸 MacBook Air 在 Apple 官网卖多少钱起",
+            "Apple 官方网站里 13 英寸 MacBook Air 起价多少",
+            "帮我确认 13 英寸 MacBook Air 的官方起售价",
+            "请查询 Apple 官网 13 英寸 MacBook Air 的基础售价",
+        ]
+
+    if "Apple 官网里 MacBook Pro 14 英寸的起售价是多少" in q:
+        return [
+            "Apple 官网里 14 英寸 MacBook Pro 多少钱起",
+            "帮我查一下 Apple 官网 14 英寸 MacBook Pro 的起步价",
+            "请告诉我 Apple 官网 14 英寸 MacBook Pro 的起售价",
+            "14 英寸 MacBook Pro 在 Apple 官方网站上的最低价格是多少",
+            "我想知道 Apple 官网 14 英寸 MacBook Pro 的入门价格",
+            "查查 Apple 网站上 14 英寸 MacBook Pro 的起始价格",
+            "请看一下 14 英寸 MacBook Pro 在 Apple 官网卖多少钱起",
+            "Apple 官方网站里 14 英寸 MacBook Pro 起价多少",
+            "帮我确认 14 英寸 MacBook Pro 的官方起售价",
+            "请查询 Apple 官网 14 英寸 MacBook Pro 的基础售价",
+        ]
+
+    if q.startswith("请联网搜索 ") or q.startswith("根据本地知识库，") or q == "Time Machine 主要是做什么的":
+        topic = q.replace("请联网搜索 ", "").replace("根据本地知识库，", "")
+        return [
+            f"{topic}是什么",
+            f"请解释一下{topic}",
+            f"我想知道{topic}的意思",
+            f"帮我讲讲{topic}",
+            f"请介绍一下{topic}",
+            f"{topic}主要是干什么的",
+            f"告诉我{topic}有什么作用",
+            f"能不能说明一下{topic}",
+            f"请简单解释{topic}",
+            f"我想了解{topic}到底是什么",
+        ]
+
+    if q == "今天日本有什么热点新闻，请给我两条摘要":
+        return [
+            "今天日本有哪些热点新闻，给我两条摘要",
+            "帮我看下日本今天的热门新闻，并总结两条",
+            "请给我两条今天日本热点新闻的简要摘要",
+            "我想知道今天日本有什么大新闻，麻烦总结两条",
+            "查一下今天日本的新闻热点，给我两条简介",
+            "请整理两条今天日本的热门新闻摘要",
+            "今天日本上了哪些新闻热点，给我概括两条",
+            "帮我筛两条今天日本的重点新闻并总结",
+            "请提供两条今天日本热点新闻的简短概述",
+            "看看今天日本有什么值得关注的新闻，给我两条摘要",
+        ]
+
+    if "股价是多少" in q:
+        company = "英伟达" if "英伟达" in q else "苹果公司"
+        items = [
+            f"{company}今天的股价是多少",
+            f"帮我查一下{company}今日股价",
+            f"请告诉我{company}今天股价",
+            f"{company}今天股票价格多少",
+            f"我想知道{company}当前股价",
+        ]
+        if "涨跌情况如何" in q:
+            items.extend(
+                [
+                    f"{company}今天股价多少，涨跌怎么样",
+                    f"帮我看下{company}今日股价和涨跌幅",
+                    f"请查一下{company}今天的股价表现",
+                    f"{company}今天股票价格和涨跌情况告诉我",
+                    f"我想了解{company}今天股价及涨跌变化",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"帮我看看{company}今天股价多少",
+                    f"请查询{company}今日市场价格",
+                    f"{company}今天每股多少钱",
+                    f"看一下{company}股票今天报价",
+                    f"请告诉我{company}目前的股票价格",
+                ]
+            )
+        return items
+
+    if "菜谱" in q:
+        return [
+            q,
+            "帮我找一个合适的菜谱，并告诉我主要食材和步骤",
+            "请给我这个菜的做法，顺便列出食材",
+            "我想做这道菜，麻烦给我菜谱和步骤",
+            "帮我查一下相关菜谱，告诉我怎么做",
+            "请提供这道菜的食材清单和做法",
+            "给我一个适合的做法，并说明主要材料",
+            "我需要这道菜的菜谱、食材和步骤",
+            "请帮我整理一个简单可做的菜谱",
+            "查一下这类菜适合的做法和所需食材",
+        ]
+
+    if "给孩子讲讲" in q or "用孩子能听懂的话解释" in q or "用容易理解的话" in q:
+        return [
+            q,
+            "请用孩子容易理解的话解释一下",
+            "帮我用小朋友能听懂的方式讲讲这个",
+            "请把这个内容讲得简单一点，适合孩子听",
+            "我想让孩子听懂，麻烦通俗解释",
+            "请用很简单的话说明这个问题",
+            "帮我做一个儿童版解释",
+            "请像给小学生讲课一样解释",
+            "换成适合孩子理解的说法告诉我",
+            "请用生活化的例子给孩子讲讲",
+        ]
+
+    return [
+        q,
+        f"请帮我处理：{q}",
+        f"麻烦你帮我办这件事：{q}",
+        f"换个说法就是：{q}",
+        f"我想表达的是：{q}",
+        f"请按照这个意思来做：{q}",
+        f"帮我看一下：{q}",
+        f"请直接处理这个需求：{q}",
+        f"麻烦执行一下：{q}",
+        f"请根据这句话处理：{q}",
+    ]
+
+
+def japanese_variants(query: str) -> list[str]:
+    q = strip_trailing_punctuation(query)
+    if q in {"你好", "你好啊 HomeHub", "早上好", "晚上好"}:
+        mapping = {
+            "你好": ["こんにちは", "やあ、こんにちは", "こんにちは HomeHub", "どうも、こんにちは", "お疲れさま、こんにちは", "こんにちは、元気？", "やあ HomeHub", "こんにちは、お願いします", "ちょっと挨拶です、こんにちは", "もしもし、こんにちは"],
+            "你好啊 HomeHub": ["こんにちは HomeHub", "やあ HomeHub", "HomeHub、こんにちは", "どうも HomeHub", "こんにちは、HomeHub さん", "HomeHub、元気？", "やあ、HomeHub", "HomeHub に挨拶です", "もしもし HomeHub", "Hello HomeHub"],
+            "早上好": ["おはよう", "おはようございます", "おはよう HomeHub", "朝の挨拶です、おはよう", "今朝もおはよう", "やあ、おはよう", "おはようございます、HomeHub", "朝ですね、おはよう", "今日もおはよう", "おはよう、元気？"],
+            "晚上好": ["こんばんは", "こんばんは HomeHub", "今晩は", "やあ、こんばんは", "こんばんは、HomeHub さん", "今夜もこんばんは", "夜の挨拶です、こんばんは", "こんばんは、元気？", "お疲れさま、こんばんは", "こんばんは、よろしくお願いします"],
+        }
+        return mapping[q]
+
+    if "天气" in q or "气温" in q or "下雨" in q:
+        city = weather_city(q)
+        if city:
+            items = [
+                f"{city}の今日の天気を教えて",
+                f"{city}は今日どんな天気か知りたい",
+                f"{city}の今日の天気予報を見て",
+                f"{city}の天気を確認して",
+                f"{city}は今日はどんな天気？",
+            ]
+        else:
+            items = [
+                "今日の天気を教えて",
+                "今日はどんな天気か知りたい",
+                "今日の天気予報を見て",
+                "天気を確認して",
+                "今日はどんな天気？",
+            ]
+        if "最高温" in q and "最低温" in q:
+            items.extend(
+                [
+                    f"{city}の今日の最高気温と最低気温を教えて" if city else "今日の最高気温と最低気温を教えて",
+                    f"{city}の今日の気温の幅を知りたい" if city else "今日の気温の幅を知りたい",
+                    f"{city}の今日の高温と低温を確認して" if city else "今日の高温と低温を確認して",
+                    f"{city}は今日いちばん暑い時と寒い時で何度？" if city else "今日は一番暑い時と寒い時で何度？",
+                    f"{city}の今日の最高・最低気温を見て" if city else "今日の最高・最低気温を見て",
+                ]
+            )
+        elif "最高温" in q:
+            items.extend(
+                [
+                    f"{city}の今日の最高気温は何度？" if city else "今日の最高気温は何度？",
+                    f"{city}の天気と最高気温を教えて" if city else "今日の天気と最高気温を教えて",
+                    f"{city}は今日何度まで上がる？" if city else "今日は何度まで上がる？",
+                    f"{city}の今日の一番高い気温を知りたい" if city else "今日の一番高い気温を知りたい",
+                    f"{city}の今日の天気と最高気温を確認して" if city else "今日の天気と最高気温を確認して",
+                ]
+            )
+        elif "下雨" in q:
+            items.extend(
+                [
+                    f"{city}は今日雨が降る？" if city else "今日は雨が降る？",
+                    f"{city}の今日の降水状況を教えて" if city else "今日の降水状況を教えて",
+                    f"{city}で今日は雨の可能性がある？" if city else "今日は雨の可能性がある？",
+                    f"{city}の今日の雨予報を確認して" if city else "今日の雨予報を確認して",
+                    f"{city}は今日は雨になるか見て" if city else "今日は雨になるか見て",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"{city}の今日の気温は何度？" if city else "今日の気温は何度？",
+                    f"{city}の今日の温度を教えて" if city else "今日の温度を教えて",
+                    f"{city}は今日は何度くらい？" if city else "今日は何度くらい？",
+                    f"{city}の今日の気温を確認して" if city else "今日の気温を確認して",
+                    f"{city}の今日の温度が知りたい" if city else "今日の温度が知りたい",
+                ]
+            )
+        return fill_variants(items, q)
+
+    path, filename = split_path_and_filename(q)
+    if path and filename:
+        return [
+            f"{path} にあるファイルを見せて、そのあと {filename} を送って",
+            f"{path} のファイル一覧を出して、{filename} を送ってください",
+            f"{path} に何があるか確認して、{filename} を共有して",
+            f"{path} の中身を見せてから {filename} を送って",
+            f"{path} を確認して、{filename} を私に渡して",
+            f"{path} のファイルを一覧表示して、{filename} を送信して",
+            f"{path} にあるものを教えて、{filename} も送って",
+            f"{path} を開いてファイルを確認し、{filename} を送ってください",
+            f"{path} の内容を見て、{filename} を共有してください",
+            f"{path} にあるファイルを確認したうえで {filename} を送って",
+        ]
+
+    path = split_list_dir(q)
+    if path:
+        return [
+            f"{path} にあるファイルを見せて",
+            f"{path} 配下のファイルを一覧にして",
+            f"{path} の中に何のファイルがあるか教えて",
+            f"{path} のファイル一覧を確認したい",
+            f"{path} の内容を見せてください",
+            f"{path} に入っているファイルを表示して",
+            f"{path} を開いて中身を確認して",
+            f"{path} 配下のファイルを教えて",
+            f"{path} に何があるかチェックして",
+            f"{path} のファイル構成を見せて",
+        ]
+
+    path, keyword = split_search_dir(q)
+    if path:
+        return [
+            f"{path} で {keyword} に関連するファイルを探して",
+            f"{path} 配下の {keyword} ファイルを検索して",
+            f"{path} の中から {keyword} に関係するファイルを見つけて",
+            f"{path} で {keyword} を含むファイルを探して",
+            f"{path} の {keyword} 関連ファイルを見たい",
+            f"{path} を検索して {keyword} ファイルを見つけて",
+            f"{path} にある {keyword} ファイルを確認して",
+            f"{path} の中で {keyword} に近いファイルを探して",
+            f"{path} から {keyword} ファイルを見つけてください",
+            f"{path} 内の {keyword} に関するファイルを検索して",
+        ]
+
+    if q.startswith("读取 "):
+        file_path = q[3:]
+        return [
+            f"{file_path} を読んで",
+            f"{file_path} を開いて内容を見せて",
+            f"{file_path} の中身を確認して",
+            f"{file_path} を読み取ってください",
+            f"{file_path} の内容を表示して",
+            f"{file_path} を開いて読んでほしい",
+            f"{file_path} のファイル内容を教えて",
+            f"{file_path} を確認して内容を見せて",
+            f"{file_path} を読んで内容を共有して",
+            f"{file_path} の中身を表示してください",
+        ]
+
+    path = split_classify_dir(q)
+    if path:
+        return [
+            f"{path} のファイルを種類ごとに分類して、新しいフォルダを作って",
+            f"{path} 配下のファイルをタイプ別に整理して新規フォルダを作成して",
+            f"{path} のファイルを種類ごとに分けてフォルダを作って",
+            f"{path} にあるファイルを形式別に分類してほしい",
+            f"{path} の中身をタイプごとに新しいフォルダへ整理して",
+            f"{path} のファイルを種類別フォルダにまとめて",
+            f"{path} のファイルを分類し、タイプごとにフォルダを作成して",
+            f"{path} にあるものをファイル種類ごとに整理して",
+            f"{path} のファイルをタイプ別に振り分けて新規フォルダを作って",
+            f"{path} をファイル種別ごとに整理してほしい",
+        ]
+
+    if q == "提醒列表":
+        return ["リマインダー一覧を見せて", "今のリマインダーを表示して", "リマインダーのリストを確認したい", "登録済みのリマインダーを教えて", "リマインダー一覧を開いて", "いま入っているリマインダーを見たい", "リマインダーを全部表示して", "現在の通知予定を見せて", "リマインダー内容を確認して", "登録中のリマインダー一覧を出して"]
+
+    if q == "查看日程":
+        return ["予定を見せて", "スケジュールを開いて", "日程を確認したい", "今の予定表を表示して", "カレンダー予定を見せて", "予定一覧を出して", "これからの予定を確認して", "スケジュール内容を教えて", "日程表を見たい", "登録されている予定を表示して"]
+
+    prefix, event, minutes = split_schedule_with_reminder(q)
+    if prefix and event:
+        return [
+            f"{prefix}に{event}を予定に入れて、{minutes}分前に知らせて",
+            f"{prefix}の{event}を登録して、{minutes}分前にリマインドして",
+            f"{prefix}に{event}を設定し、{minutes}分前に通知して",
+            f"{prefix}の予定として{event}を追加して、{minutes}分前に教えて",
+            f"{event}を{prefix}に入れて、{minutes}分前に知らせてください",
+            f"{prefix}の{event}をスケジュールして、{minutes}分前に通知して",
+            f"{prefix}に{event}を登録して、事前に{minutes}分前で知らせて",
+            f"{prefix}の{event}を予定表に入れ、{minutes}分前にリマインドして",
+            f"{event}を{prefix}に追加して、{minutes}分前の通知を設定して",
+            f"{prefix}に{event}を予定登録し、{minutes}分前に教えて",
+        ]
+
+    when, action = split_simple_reminder(q)
+    if when and action and "提醒" in q:
+        return [
+            f"{when}に{action}とリマインドして",
+            f"{when}に{action}ことを知らせて",
+            f"{when}用に「{action}」のリマインダーを設定して",
+            f"{when}になったら{action}と通知して",
+            f"{when}のリマインダーとして{action}を登録して",
+            f"{when}に{action}の通知を入れて",
+            f"{when}に{action}ことを忘れないよう知らせて",
+            f"{when}の時刻で{action}をリマインドして",
+            f"{when}に私へ{action}と伝えて",
+            f"{when}用に{action}の通知を作って",
+        ]
+
+    agent_name = split_agent_name(q)
+    if agent_name:
+        return [
+            f"{agent_name} という名前のエージェントを作って",
+            f"{agent_name} というエージェントを新規作成して",
+            f"{agent_name} 名義でエージェントを作成して",
+            f"{agent_name} というカスタムエージェントを作って",
+            f"{agent_name} のエージェントを作りたい",
+            f"{agent_name} を名前にしてエージェントを作って",
+            f"{agent_name} という新しいエージェントを追加して",
+            f"{agent_name} という名称で作成してください",
+            f"{agent_name} のエージェントを立ち上げて",
+            f"{agent_name} を名前とするエージェントを設定して",
+        ]
+
+    if q == "确认创建":
+        return ["作成を確定して", "この内容で作成して", "はい、作成を進めて", "そのまま作成して", "問題ないので作成して", "作成を確定してください", "この設定で完成させて", "その内容で作って", "では作成を続けて", "確定して作成して"]
+
+    if q.startswith("可以") or q.startswith("用于"):
+        return [
+            q,
+            f"この機能を持たせてください: {q}",
+            f"次の用途に対応できるようにして: {q}",
+            f"このエージェントには次の役割が必要です: {q}",
+            f"以下の機能をサポートしてほしいです: {q}",
+            f"この用途で使えるように設定してください: {q}",
+            f"次の内容に対応するエージェントにして: {q}",
+            f"この能力を含めてください: {q}",
+            f"想定している機能はこれです: {q}",
+            f"この要件を満たすようにしてください: {q}",
+        ]
+
+    time_text, item, amount = split_expense(q)
+    if time_text:
+        return [
+            f"今日の{time_text}に{item}で{amount}円使った記録を追加して",
+            f"{time_text}の{item} {amount}円を支出として記録して",
+            f"今日{time_text}の{item}代{amount}円を登録して",
+            f"{time_text}に使った{item} {amount}円を家計に記録して",
+            f"今日{time_text}の支出として{item} {amount}円を保存して",
+            f"{item}に{amount}円使ったので、今日{time_text}の記録に入れて",
+            f"今日の{time_text}、{item}で{amount}円使ったことを記録して",
+            f"{time_text}の{item}購入 {amount}円を登録して",
+            f"今日{time_text}の{item}支出{amount}円を追加して",
+            f"家計記録に{time_text}の{item} {amount}円を入れて",
+        ]
+
+    target = split_records_target(q)
+    if target:
+        return [
+            f"{target} の記録を見せて",
+            f"{target} にある記録一覧を表示して",
+            f"{target} の登録内容を確認したい",
+            f"{target} の記録を全部見たい",
+            f"{target} に入っている情報を見せて",
+            f"{target} の内容を一覧表示して",
+            f"{target} の記録を教えて",
+            f"{target} のエントリーを確認して",
+            f"{target} の登録データを開いて",
+            f"{target} に何が記録されているか見せて",
+        ]
+
+    target, export_type = split_export_target(q)
+    if target:
+        return [
+            f"{target} をエクスポートして",
+            f"{target} のデータを出力して",
+            f"{target} を書き出してください",
+            f"{target} の内容をエクスポートしたい",
+            f"{target} のエクスポートファイルを作って",
+            f"{target} を外部出力して",
+            f"{target} の記録をファイルで出して",
+            f"{target} のデータを出力形式にして",
+            f"{target} をダウンロードできる形で出して",
+            f"{target} のエクスポートを準備して",
+        ]
+
+    amount = split_threshold_amount(q)
+    if amount:
+        return [
+            f"今日までの支出合計を出して、{amount}円を超えたら homehub に通知して",
+            f"ここまでの出費総額を確認し、{amount}円超なら homehub にリマインドして",
+            f"今日までの累計支出を計算して、{amount}円を超える場合は homehub に知らせて",
+            f"現在までの支出合計を見て、{amount}円超過で homehub に通知して",
+            f"今日までにいくら使ったか集計し、{amount}円を超えたら homehub に送って",
+            f"支出総額を確認して、{amount}円より多ければ homehub に知らせて",
+            f"累計支出が{amount}円を超えたとき homehub に通知が行くようにして",
+            f"今日時点の支出合計を出し、{amount}円超なら homehub にアラートして",
+            f"ここまでの消費額を計算し、{amount}円を超えた場合は homehub に送信して",
+            f"総支出を見て、{amount}円を超過したら homehub へリマインダーを出して",
+        ]
+
+    if q == "到今天为止消费总额是多少，并将消费的信息生成excel文档":
+        return [
+            "今日までの支出総額を出して、支出情報を Excel にまとめて",
+            "ここまでの支出合計を計算して、Excel 文書を作って",
+            "今日時点の消費総額を確認し、Excel ファイルも生成して",
+            "支出合計を出して、明細を Excel にしてほしい",
+            "累計支出とその内容を Excel で出力して",
+            "今日までの出費を集計して、Excel 形式でまとめて",
+            "支出の合計を教えて、その情報を Excel にして",
+            "現在までの消費額を計算し、Excel ファイルを作成して",
+            "ここまでの支出情報を Excel 文書として出して",
+            "支出合計の確認と、Excel への書き出しをお願い",
+        ]
+
+    agent_name, content = split_record_into_agent(q)
+    if agent_name:
+        return [
+            f"{agent_name} に次の内容を記録して: {content}",
+            f"{agent_name} へこの情報を追加して: {content}",
+            f"{agent_name} にこの記録を保存して: {content}",
+            f"{agent_name} に {content} を登録して",
+            f"{agent_name} の記録として {content} を入れて",
+            f"{agent_name} に以下を記録してください: {content}",
+            f"{agent_name} へこの内容を書き込んで: {content}",
+            f"{agent_name} に新しい記録を追加: {content}",
+            f"{content} を {agent_name} に保存して",
+            f"{agent_name} にこの内容を残して: {content}",
+        ]
+
+    if "机票时间和票价" in q or "航班时间和价格" in q:
+        return [
+            "この条件のフライト時間と料金を調べて",
+            "対象の便のスケジュールと価格を確認して",
+            "この移動の航空券の時間と値段を知りたい",
+            "該当するフライトの時刻と料金を見て",
+            "この路線の航空券情報を調べて",
+            "便の出発時間と価格を確認してほしい",
+            "このフライトの具体的な時間と運賃を探して",
+            "対象日の航空券スケジュールと料金を見せて",
+            "この旅程のフライト時刻と価格を調べて",
+            "信頼できる情報源でフライト時間と料金を確認して",
+        ]
+
+    if "新干线" in q or "火车票时间和票价" in q:
+        return [
+            "この区間の列車時刻と料金を調べて",
+            "該当ルートの電車の時間と運賃を確認して",
+            "この移動の列車スケジュールと価格を知りたい",
+            "対象日の列車時刻表と料金を見て",
+            "この区間の乗車時間と値段を調べて",
+            "電車の発車時刻と料金を確認してほしい",
+            "この旅程の列車情報を調べて",
+            "該当する鉄道の時間と価格を見せて",
+            "このルートの時刻表と運賃を確認して",
+            "列車の所要時間と料金情報を探して",
+        ]
+
+    if "MacBook Air 还是 MacBook Pro" in q:
+        return [
+            "普段の事務作業なら MacBook Air と MacBook Pro のどちらが向いているか、Apple 公式を参考に教えて",
+            "Apple 公式サイトを参考に、日常業務には Air と Pro のどちらが合うか教えて",
+            "通常のオフィスワーク用に MacBook Air と Pro を比べてほしい",
+            "Apple 公式情報ベースで、仕事用なら Air と Pro のどちらがよいか知りたい",
+            "日常的な業務向けに Air と Pro のおすすめを Apple 公式を見て教えて",
+            "MacBook Air と Pro のどちらが普段の仕事に適しているか見てほしい",
+            "Apple の公式サイトを参考に、事務作業向けのおすすめを教えて",
+            "仕事用として Air と Pro のどちらを選ぶべきか Apple 公式基準で教えて",
+            "オフィス用途なら Air と Pro のどちらが向いているか知りたい",
+            "Apple 公式を参考に MacBook Air と Pro を比較してアドバイスして",
+        ]
+
+    if "Apple 官网里 13 英寸 MacBook Air 的起售价是多少" in q:
+        return [
+            "Apple 公式サイトで 13 インチ MacBook Air の開始価格はいくら？",
+            "13 インチ MacBook Air のApple公式価格の最安構成を教えて",
+            "Apple 公式で 13 インチ MacBook Air はいくらから？",
+            "13 インチ MacBook Air の公式な開始価格を確認して",
+            "Apple サイトの 13 インチ MacBook Air の最低価格を知りたい",
+            "13 インチ MacBook Air のベース価格を Apple 公式で調べて",
+            "Apple 公式ページで 13 インチ MacBook Air の価格を見て",
+            "13 インチ MacBook Air のスタート価格はいくらか教えて",
+            "Apple の 13 インチ MacBook Air の初期価格を確認して",
+            "Apple 公式サイトで 13 インチ MacBook Air の価格帯の入口を教えて",
+        ]
+
+    if "Apple 官网里 MacBook Pro 14 英寸的起售价是多少" in q:
+        return [
+            "Apple 公式サイトで 14 インチ MacBook Pro の開始価格はいくら？",
+            "14 インチ MacBook Pro のApple公式価格の最安構成を教えて",
+            "Apple 公式で 14 インチ MacBook Pro はいくらから？",
+            "14 インチ MacBook Pro の公式な開始価格を確認して",
+            "Apple サイトの 14 インチ MacBook Pro の最低価格を知りたい",
+            "14 インチ MacBook Pro のベース価格を Apple 公式で調べて",
+            "Apple 公式ページで 14 インチ MacBook Pro の価格を見て",
+            "14 インチ MacBook Pro のスタート価格はいくらか教えて",
+            "Apple の 14 インチ MacBook Pro の初期価格を確認して",
+            "Apple 公式サイトで 14 インチ MacBook Pro の価格帯の入口を教えて",
+        ]
+
+    if q.startswith("请联网搜索 ") or q.startswith("根据本地知识库，") or q == "Time Machine 主要是做什么的":
+        topic = q.replace("请联网搜索 ", "").replace("根据本地知识库，", "")
+        return [
+            f"{topic} とは何か教えて",
+            f"{topic} について説明して",
+            f"{topic} の意味を知りたい",
+            f"{topic} が何なのか教えて",
+            f"{topic} を簡単に説明して",
+            f"{topic} の役割を教えて",
+            f"{topic} って何？",
+            f"{topic} についてわかりやすく教えて",
+            f"{topic} の主な用途を知りたい",
+            f"{topic} がどんなものか説明して",
+        ]
+
+    if q == "今天日本有什么热点新闻，请给我两条摘要":
+        return [
+            "今日の日本の注目ニュースを2件、要約付きで教えて",
+            "日本で今日話題のニュースを2つ要約して",
+            "今日の日本のホットニュースを2件まとめて",
+            "日本の今日の主要ニュースを2つ短く要約して",
+            "今日の日本の話題を2件だけ概要で教えて",
+            "日本の最新ニュースから注目記事を2つ要約して",
+            "今日の日本で大きなニュースを2件まとめてほしい",
+            "日本の本日のトレンドニュースを2件教えて",
+            "今日の日本ニュースの要点を2つだけ知りたい",
+            "日本の今日の見出しニュースを2件要約して",
+        ]
+
+    if "股价是多少" in q:
+        company = "NVIDIA" if "英伟达" in q else "Apple"
+        items = [
+            f"{company} の今日の株価はいくら？",
+            f"{company} の本日の株価を教えて",
+            f"{company} 株は今日いくらで取引されている？",
+            f"{company} の今日の株価を確認して",
+            f"{company} の現在の株価を知りたい",
+        ]
+        if "涨跌情况如何" in q:
+            items.extend(
+                [
+                    f"{company} の今日の株価と値動きを教えて",
+                    f"{company} の本日の株価と上げ下げを確認して",
+                    f"{company} 株は今日はどう動いている？価格も教えて",
+                    f"{company} の今日の株価と騰落状況を見たい",
+                    f"{company} の株価と本日の変動幅を教えて",
+                ]
+            )
+        else:
+            items.extend(
+                [
+                    f"{company} の株価を今日時点で見せて",
+                    f"{company} の本日の市場価格を確認して",
+                    f"{company} 株の今日の価格を教えて",
+                    f"{company} の現在値を見たい",
+                    f"{company} の今日の売買価格をチェックして",
+                ]
+            )
+        return items
+
+    if "菜谱" in q:
+        return [
+            q,
+            "この料理のレシピと主な材料、作り方を教えて",
+            "作り方と必要な材料を含めたレシピを知りたい",
+            "この料理に合うレシピを探して、手順も教えて",
+            "材料と手順つきでレシピを教えて",
+            "このメニューの作り方を簡単にまとめて",
+            "主な食材と調理手順を教えてほしい",
+            "レシピを探して、材料と流れを説明して",
+            "この料理を作るための材料と手順を知りたい",
+            "家庭で作りやすいレシピを教えて",
+        ]
+
+    if "给孩子讲讲" in q or "用孩子能听懂的话解释" in q or "用容易理解的话" in q:
+        return [
+            q,
+            "子どもにもわかる言い方で説明して",
+            "小学生向けにやさしく教えて",
+            "子どもが理解しやすい言葉で話して",
+            "できるだけ簡単に説明して",
+            "子ども向けのやさしい説明にして",
+            "身近な例でわかりやすく教えて",
+            "難しい言葉を使わずに説明して",
+            "子どもに話すようにやさしく説明して",
+            "かみ砕いてわかりやすく教えて",
+        ]
+
+    return [
+        q,
+        f"この依頼をお願いします: {q}",
+        f"次の内容で対応してください: {q}",
+        f"言い換えるとこういう依頼です: {q}",
+        f"この件を進めてください: {q}",
+        f"以下の内容を対応してほしいです: {q}",
+        f"この指示として扱ってください: {q}",
+        f"私の意図は次のとおりです: {q}",
+        f"次のリクエストに答えてください: {q}",
+        f"この内容でお願いします: {q}",
+    ]
+
+
+def generate_variants_for_locale(query: str, locale: str) -> list[str]:
+    mapping: dict[str, Callable[[str], list[str]]] = {
+        "zh-CN": chinese_variants,
+        "en-US": english_variants,
+        "ja-JP": japanese_variants,
+    }
+    variants = mapping[locale](query)
+    if locale == "zh-CN":
+        return fill_variants(variants, query)
+    if locale == "en-US":
+        return fill_variants(variants, strip_trailing_punctuation(query))
+    return fill_variants(variants, strip_trailing_punctuation(query))
+
+
 def build_case_variants(case: Case) -> list[VariantCase]:
     variants: list[VariantCase] = []
-    for locale, templates in VARIANT_TEMPLATES.items():
+    for locale in ["zh-CN", "en-US", "ja-JP"]:
         suffix = VARIANT_LOCALE_SUFFIX[locale]
-        for index, template in enumerate(templates, start=1):
+        for index, query in enumerate(generate_variants_for_locale(case.query, locale), start=1):
             variants.append(
                 VariantCase(
                     variant_id=f"{case.case_id}-{suffix}-{index:02d}",
@@ -392,7 +1937,7 @@ def build_case_variants(case: Case) -> list[VariantCase]:
                     stage=case.stage,
                     name=f"{case.name} {suffix} {index}",
                     locale=locale,
-                    query=template.format(query=case.query),
+                    query=query,
                 )
             )
     return variants
