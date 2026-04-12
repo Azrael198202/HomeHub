@@ -1,13 +1,1 @@
-{
-  "settings": {
-    "testingMode": true
-  },
-  "items": [],
-  "recentActions": [
-    {
-      "id": "custom-agents-ready",
-      "summary": "Custom agent studio is ready for test drafts.",
-      "createdAt": "2026-04-12T15:53"
-    }
-  ]
-}
+{}

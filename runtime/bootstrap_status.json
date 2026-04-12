@@ -1,21 +1,4 @@
 {
-  "stage": "completed",
-  "message": "Bootstrap finished.",
-  "completed": true,
-  "ok": true,
-  "installedCommands": [],
-  "installedPythonModules": [
-    "python-docx",
-    "openpyxl",
-    "python-pptx",
-    "rapidocr-onnxruntime"
-  ],
-  "failedPythonModules": [],
-  "installedOllamaModels": [],
-  "restartRequired": false,
-  "platform": "Windows",
-  "missingCommands": [],
-  "missingPythonModules": [],
-  "missingOllamaModels": [],
-  "requirementsFile": "E:\\pw\\HomeHub\\runtime\\requirements.bootstrap.txt"
+  "lastUpdated": "2026-04-12T18:35",
+  "status": "ready"
 }

@@ -1,14 +1,9 @@
 {
-  "location": "",
-  "locationLabel": "",
-  "condition": "",
-  "temperatureC": 0,
-  "highC": 0,
-  "lowC": 0,
-  "latitude": 0,
-  "longitude": 0,
-  "source": "",
-  "updatedAt": "",
-  "gpsEnabled": false,
-  "gpsPermission": "prompt"
+  "lastUpdated": "2026-04-12T18:35",
+  "current": {
+    "temperature": 22,
+    "condition": "clear",
+    "humidity": 65,
+    "windSpeed": 5
+  }
 }
