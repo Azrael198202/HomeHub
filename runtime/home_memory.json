@@ -3,9 +3,10 @@
   "reminders": [],
   "recentActions": [
     {
-      "id": "home-memory-ready",
-      "summary": "HomeHub memory is ready.",
-      "createdAt": "2026-04-12T18:35"
+      "id": "act-local-memory-ready",
+      "kind": "init",
+      "summary": "HomeHub local memory is ready for schedule and reminder requests.",
+      "createdAt": "2026-04-12T21:31"
     }
   ]
 }

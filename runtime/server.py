@@ -3138,7 +3138,7 @@ def build_dashboard():
     )
 
 
-def build_cortex_unpacked(request: dict | None = None):
+def build_cortex_unpacked(request=None):
     request = request if isinstance(request, dict) else {}
     locale = normalize_locale(request.get("locale", PERSISTED_SETTINGS.get("language", "zh-CN")), PERSISTED_SETTINGS.get("language", "zh-CN"))
     input_modes = normalize_string_list(request.get("inputModes", ["text"])) or ["text"]
