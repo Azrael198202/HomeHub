@@ -213,16 +213,16 @@
   - `I'd like today's weather and the high temperature in Fukuoka.`
 
 - Japanese Variants: 10
-  - `ののをえて`
-  - `はどんなかりたい`
-  - `ののをて`
-  - `のをして`
-  - `ははどんな？`
-  - `ののは？`
-  - `のとをえて`
-  - `はまでがる？`
-  - `ののいをりたい`
-  - `ののとをして`
+  - `福岡の天気と最高気温を教えてください。`
+  - `福岡の今日の天気を教えて。`
+  - `福岡の天気予報を見せて。`
+  - `福岡の最高気温は何度ですか？`
+  - `福岡の今日の天気と最高気温を教えてほしい。`
+  - `福岡の天気情報を教えてください。`
+  - `福岡の今日の最高気温を教えて。`
+  - `福岡の天気予報と最高気温をチェックして。`
+  - `福岡の今日の天気はどうですか？`
+  - `福岡の最高気温と天気を教えてください。`
 
 ### S1-06 天气查询 2
 
@@ -256,16 +256,16 @@
   - `I'd like to know the current temperature in Tokyo today.`
 
 - Japanese Variants: 10
-  - `ののをえて`
-  - `はどんなかりたい`
-  - `ののをて`
-  - `のをして`
-  - `ははどんな？`
-  - `ののは？`
-  - `ののをえて`
-  - `ははくらい？`
-  - `ののをして`
-  - `ののがりたい`
+  - `東京の今日の気温を教えてください。`
+  - `東京の天気を教えて。`
+  - `東京の今日の温度は何度ですか？`
+  - `東京の気温情報を教えてほしい。`
+  - `東京の今日の天気予報を教えて。`
+  - `東京の気温はどうですか？`
+  - `東京の今日の温度をチェックして。`
+  - `東京の天気と気温を教えてください。`
+  - `東京の今日の気温を教えてほしい。`
+  - `東京の温度情報を教えて。`
 
 ### S1-07 天气查询 3
 
@@ -299,16 +299,16 @@
   - `Please check today's rain chances in Osaka.`
 
 - Japanese Variants: 10
-  - `ののをえて`
-  - `はどんなかりたい`
-  - `ののをて`
-  - `のをして`
-  - `ははどんな？`
-  - `はがる？`
-  - `ののをえて`
-  - `ではのがある？`
-  - `ののをして`
-  - `ははになるかて`
+  - `大阪は今日雨が降りますか？`
+  - `大阪の今日の天気を教えてください。`
+  - `大阪の雨予報を教えて。`
+  - `大阪は今日雨が降るでしょうか？`
+  - `大阪の今日の降水確率を教えてほしい。`
+  - `大阪の天気予報を見せて。`
+  - `大阪は今日雨が降る可能性がありますか？`
+  - `大阪の今日の雨情報を教えて。`
+  - `大阪の天気はどうですか？`
+  - `大阪の今日の降雨予報をチェックして。`
 
 ### S1-08 天气查询 4
 
@@ -342,16 +342,16 @@
   - `I'd like today's weather and the high temperature.`
 
 - Japanese Variants: 10
-  - `のをえて`
-  - `はどんなかりたい`
-  - `のをて`
-  - `をして`
-  - `はどんな？`
-  - `のは？`
-  - `のとをえて`
-  - `はまでがる？`
-  - `のいをりたい`
-  - `のとをして`
+  - `今日の天気と最高気温を教えてください。`
+  - `今日の天気を教えて。`
+  - `今日の最高気温は何度ですか？`
+  - `今日の天気予報を教えてほしい。`
+  - `今日の天気と最高気温をチェックして。`
+  - `今日の気温はどうですか？`
+  - `今日の天気情報を教えて。`
+  - `今日の最高気温を教えてください。`
+  - `今日の天気予報を見せて。`
+  - `今日の気温と天気を教えてほしい。`
 
 ### S1-09 列出家庭收件箱
 
@@ -717,28 +717,28 @@
   - `请根据这句话处理：将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
 
 - English Variants: 10
-  - `将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Please help me with this: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Can you handle this request: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `I want to ask this another way: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Please work on the following: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Could you take care of this for me: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Please treat this as the request: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `What I need is: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `Please respond to this request: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
-  - `I'd like help with this request: 将 /tmp/homehub-family-suite/classify-alpha 下的文件，进行分类。类型创建新的文件夹`
+  - `Please categorize the files under /tmp/homehub-family-suite/classify-alpha and create new folders by type.`
+  - `Sort the files in /tmp/homehub-family-suite/classify-alpha into categories and make separate folders for each type.`
+  - `Organize the files in /tmp/homehub-family-suite/classify-alpha and create new directories based on their type.`
+  - `Can you classify the files under /tmp/homehub-family-suite/classify-alpha and put them into new type-based folders?`
+  - `I need you to sort the files in /tmp/homehub-family-suite/classify-alpha by type and create the corresponding folders.`
+  - `Please group the files in /tmp/homehub-family-suite/classify-alpha and make new folders for each category.`
+  - `Check the files in /tmp/homehub-family-suite/classify-alpha and organize them into folders by type.`
+  - `Please handle the files under /tmp/homehub-family-suite/classify-alpha by categorizing them and creating new folders.`
+  - `I want the files in /tmp/homehub-family-suite/classify-alpha classified and placed into new folders by type.`
+  - `Could you sort the /tmp/homehub-family-suite/classify-alpha files into categories and create new folders?`
 
 - Japanese Variants: 10
-  - ` /tmp/homehub-family-suite/classify-alpha ，。`
-  - `このをおいします:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `のでしてください:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `いえるとこういうです:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `このをめてください:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `のをしてほしいです:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `このとしてってください:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `のはのとおりです:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `のリクエストにえてください:  /tmp/homehub-family-suite/classify-alpha ，。`
-  - `このでおいします:  /tmp/homehub-family-suite/classify-alpha ，。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルを種類別に分類し、新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-alpha にあるファイルをタイプごとに分類して、フォルダを作ってください。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルを整理し、種類別のフォルダに振り分けてください。`
+  - `/tmp/homehub-family-suite/classify-alpha にあるファイルを分類し、各種類ごとに新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-alpha の中のファイルをタイプ別に分けてください。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルをカテゴリーごとに整理して、新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルを区分し、それぞれの種類のフォルダを作ってください。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルを分類して、種類別にフォルダ分けしてください。`
+  - `/tmp/homehub-family-suite/classify-alpha にあるファイルをタイプ別フォルダに分類してください。`
+  - `/tmp/homehub-family-suite/classify-alpha のファイルを整理して、各タイプごとの新しいディレクトリを作ってください。`
 
 ### S1-18 分类 Beta 目录
 
@@ -760,28 +760,28 @@
   - `请根据这句话处理：将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
 
 - English Variants: 10
-  - `将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Please help me with this: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Can you handle this request: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `I want to ask this another way: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Please work on the following: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Could you take care of this for me: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Please treat this as the request: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `What I need is: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `Please respond to this request: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
-  - `I'd like help with this request: 将 /tmp/homehub-family-suite/classify-beta 下的文件，进行分类。类型创建新的文件夹`
+  - `Please categorize the files under /tmp/homehub-family-suite/classify-beta and create new folders by type.`
+  - `Sort the files in /tmp/homehub-family-suite/classify-beta into categories and make separate folders for each type.`
+  - `Organize the files in /tmp/homehub-family-suite/classify-beta and create new directories based on their type.`
+  - `Can you classify the files under /tmp/homehub-family-suite/classify-beta and put them into new type-based folders?`
+  - `I need you to sort the files in /tmp/homehub-family-suite/classify-beta by type and create the corresponding folders.`
+  - `Please group the files in /tmp/homehub-family-suite/classify-beta and make new folders for each category.`
+  - `Check the files in /tmp/homehub-family-suite/classify-beta and organize them into folders by type.`
+  - `Please handle the files under /tmp/homehub-family-suite/classify-beta by categorizing them and creating new folders.`
+  - `I want the files in /tmp/homehub-family-suite/classify-beta classified and placed into new folders by type.`
+  - `Could you sort the /tmp/homehub-family-suite/classify-beta files into categories and create new folders?`
 
 - Japanese Variants: 10
-  - ` /tmp/homehub-family-suite/classify-beta ，。`
-  - `このをおいします:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `のでしてください:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `いえるとこういうです:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `このをめてください:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `のをしてほしいです:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `このとしてってください:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `のはのとおりです:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `のリクエストにえてください:  /tmp/homehub-family-suite/classify-beta ，。`
-  - `このでおいします:  /tmp/homehub-family-suite/classify-beta ，。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルを種類別に分類し、新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-beta にあるファイルをタイプごとに分類して、フォルダを作ってください。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルを整理し、種類別のフォルダに振り分けてください。`
+  - `/tmp/homehub-family-suite/classify-beta にあるファイルを分類し、各種類ごとに新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-beta の中のファイルをタイプ別に分けてください。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルをカテゴリーごとに整理して、新しいフォルダを作成してください。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルを区分し、それぞれの種類のフォルダを作ってください。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルを分類して、種類別にフォルダ分けしてください。`
+  - `/tmp/homehub-family-suite/classify-beta にあるファイルをタイプ別フォルダに分類してください。`
+  - `/tmp/homehub-family-suite/classify-beta のファイルを整理して、各タイプごとの新しいディレクトリを作ってください。`
 
 ### S1-19 家庭文档目录权限降级
 
@@ -803,28 +803,28 @@
   - `请根据这句话处理：将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
 
 - English Variants: 10
-  - `将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Please help me with this: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Can you handle this request: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `I want to ask this another way: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Please work on the following: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Could you take care of this for me: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Please treat this as the request: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `What I need is: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `Please respond to this request: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
-  - `I'd like help with this request: 将 /Users/home/Documents 下的文件，进行分类。类型创建新的文件夹`
+  - `Please categorize the files under /Users/home/Documents and create new folders by type.`
+  - `Sort the files in /Users/home/Documents into categories and make separate folders for each type.`
+  - `Organize the files in /Users/home/Documents and create new directories based on their type.`
+  - `Can you classify the files under /Users/home/Documents and put them into new type-based folders?`
+  - `I need you to sort the files in /Users/home/Documents by type and create the corresponding folders.`
+  - `Please group the files in /Users/home/Documents and make new folders for each category.`
+  - `Check the files in /Users/home/Documents and organize them into folders by type.`
+  - `Please handle the files under /Users/home/Documents by categorizing them and creating new folders.`
+  - `I want the files in /Users/home/Documents classified and placed into new folders by type.`
+  - `Could you sort the /Users/home/Documents files into categories and create new folders?`
 
 - Japanese Variants: 10
-  - ` /Users/home/Documents ，。`
-  - `このをおいします:  /Users/home/Documents ，。`
-  - `のでしてください:  /Users/home/Documents ，。`
-  - `いえるとこういうです:  /Users/home/Documents ，。`
-  - `このをめてください:  /Users/home/Documents ，。`
-  - `のをしてほしいです:  /Users/home/Documents ，。`
-  - `このとしてってください:  /Users/home/Documents ，。`
-  - `のはのとおりです:  /Users/home/Documents ，。`
-  - `のリクエストにえてください:  /Users/home/Documents ，。`
-  - `このでおいします:  /Users/home/Documents ，。`
+  - `/Users/home/Documents のファイルを種類別に分類し、新しいフォルダを作成してください。`
+  - `/Users/home/Documents にあるファイルをタイプごとに分類して、フォルダを作ってください。`
+  - `/Users/home/Documents のファイルを整理し、種類別のフォルダに振り分けてください。`
+  - `/Users/home/Documents にあるファイルを分類し、各種類ごとに新しいフォルダを作成してください。`
+  - `/Users/home/Documents の中のファイルをタイプ別に分けてください。`
+  - `/Users/home/Documents のファイルをカテゴリーごとに整理して、新しいフォルダを作成してください。`
+  - `/Users/home/Documents のファイルを区分し、それぞれの種類のフォルダを作ってください。`
+  - `/Users/home/Documents のファイルを分類して、種類別にフォルダ分けしてください。`
+  - `/Users/home/Documents にあるファイルをタイプ別フォルダに分類してください。`
+  - `/Users/home/Documents のファイルを整理して、各タイプごとの新しいディレクトリを作ってください。`
 
 ### S1-20 发送 PDF 收据
 
@@ -858,16 +858,16 @@
   - `Please inspect /tmp/homehub-family-suite/family-inbox and share the file receipt.pdf.`
 
 - Japanese Variants: 10
-  - `/tmp/homehub-family-suite/family-inbox にあるファイルをせて、そのあと receipt.pdf をって`
-  - `/tmp/homehub-family-suite/family-inbox のファイルをして、receipt.pdf をってください`
-  - `/tmp/homehub-family-suite/family-inbox にがあるかして、receipt.pdf をして`
-  - `/tmp/homehub-family-suite/family-inbox のをせてから receipt.pdf をって`
-  - `/tmp/homehub-family-suite/family-inbox をして、receipt.pdf をにして`
-  - `/tmp/homehub-family-suite/family-inbox のファイルをして、receipt.pdf をして`
-  - `/tmp/homehub-family-suite/family-inbox にあるものをえて、receipt.pdf もって`
-  - `/tmp/homehub-family-suite/family-inbox をいてファイルをし、receipt.pdf をってください`
-  - `/tmp/homehub-family-suite/family-inbox のをて、receipt.pdf をしてください`
-  - `/tmp/homehub-family-suite/family-inbox にあるファイルをしたうえで receipt.pdf をって`
+  - `/tmp/homehub-family-suite/family-inbox にあるファイルを表示して、そのあと receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox のファイルをリストアップして、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox にあるファイルを確認して、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox の内容を表示してから receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox を確認して、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox のファイルを表示して、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox にあるものを確認して、receipt.pdf も送ってください`
+  - `/tmp/homehub-family-suite/family-inbox を開いてファイルを表示し、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox の内容を確認して、receipt.pdf を送ってください`
+  - `/tmp/homehub-family-suite/family-inbox にあるファイルを表示したうえで receipt.pdf を送ってください`
 
 ### S1-21 孩子水壶提醒
 
@@ -889,28 +889,28 @@
   - `到明天早上7点通知我我给孩子带水壶`
 
 - English Variants: 10
-  - `Remind me 明天早上7点 to 我给孩子带水壶.`
-  - `Set a reminder 明天早上7点 for me to 我给孩子带水壶.`
-  - `Please remind me 明天早上7点 that I need to 我给孩子带水壶.`
-  - `Can you create a reminder 明天早上7点 for 我给孩子带水壶?`
-  - `I need a reminder 明天早上7点 to 我给孩子带水壶.`
-  - `Put in a reminder for 明天早上7点: 我给孩子带水壶.`
-  - `Schedule a reminder 明天早上7点 so I remember to 我给孩子带水壶.`
-  - `Please alert me 明天早上7点 to 我给孩子带水壶.`
-  - `Set me a 明天早上7点 reminder to 我给孩子带水壶.`
-  - `Create a reminder telling me 明天早上7点 to 我给孩子带水壶.`
+  - `Remind me at 7 AM tomorrow to bring the child's water bottle.`
+  - `Set a reminder for 7 AM tomorrow to bring the child's water bottle.`
+  - `Please remind me at 7 AM tomorrow that I need to bring the child's water bottle.`
+  - `Can you create a reminder for 7 AM tomorrow to bring the child's water bottle?`
+  - `I need a reminder at 7 AM tomorrow to bring the child's water bottle.`
+  - `Put in a reminder for 7 AM tomorrow: bring the child's water bottle.`
+  - `Schedule a reminder for 7 AM tomorrow so I remember to bring the child's water bottle.`
+  - `Please alert me at 7 AM tomorrow to bring the child's water bottle.`
+  - `Set me a 7 AM tomorrow reminder to bring the child's water bottle.`
+  - `Create a reminder telling me at 7 AM tomorrow to bring the child's water bottle.`
 
 - Japanese Variants: 10
-  - `7にとリマインドして`
-  - `7にことをらせて`
-  - `7に「」のリマインダーをして`
-  - `7になったらとして`
-  - `7のリマインダーとしてをして`
-  - `7にのをれて`
-  - `7にことをれないようらせて`
-  - `7のでをリマインドして`
-  - `7にへとえて`
-  - `7にのをって`
+  - `明日の午前7時に子供の水筒を持っていくことをリマインドしてください`
+  - `明日の午前7時に子供の水筒を忘れないように思い出させてください`
+  - `明日の午前7時に「子供の水筒を持っていく」のリマインダーを設定してください`
+  - `明日の午前7時になったら子供の水筒を持っていくように知らせてください`
+  - `明日の午前7時に子供の水筒を持っていくことをリマインダーとして設定してください`
+  - `明日の午前7時に子供の水筒を持っていくことを忘れないようにしてください`
+  - `明日の午前7時に子供の水筒を持っていくことを思い出させてください`
+  - `明日の午前7時に子供の水筒を持っていくことをリマインドしてください`
+  - `明日の午前7時に子供の水筒を持っていくことを知らせてください`
+  - `明日の午前7時に子供の水筒を持っていくことを忘れないように注意してください`
 
 ### S1-22 阳台灯提醒
 
@@ -932,28 +932,28 @@
   - `到后天晚上8点通知我我关阳台灯`
 
 - English Variants: 10
-  - `Remind me 后天晚上8点 to 我关阳台灯.`
-  - `Set a reminder 后天晚上8点 for me to 我关阳台灯.`
-  - `Please remind me 后天晚上8点 that I need to 我关阳台灯.`
-  - `Can you create a reminder 后天晚上8点 for 我关阳台灯?`
-  - `I need a reminder 后天晚上8点 to 我关阳台灯.`
-  - `Put in a reminder for 后天晚上8点: 我关阳台灯.`
-  - `Schedule a reminder 后天晚上8点 so I remember to 我关阳台灯.`
-  - `Please alert me 后天晚上8点 to 我关阳台灯.`
-  - `Set me a 后天晚上8点 reminder to 我关阳台灯.`
-  - `Create a reminder telling me 后天晚上8点 to 我关阳台灯.`
+  - `Remind me at 8 PM the day after tomorrow to turn off the balcony light.`
+  - `Set a reminder for 8 PM the day after tomorrow to turn off the balcony light.`
+  - `Please remind me at 8 PM the day after tomorrow that I need to turn off the balcony light.`
+  - `Can you create a reminder for 8 PM the day after tomorrow to turn off the balcony light?`
+  - `I need a reminder at 8 PM the day after tomorrow to turn off the balcony light.`
+  - `Put in a reminder for 8 PM the day after tomorrow: turn off the balcony light.`
+  - `Schedule a reminder for 8 PM the day after tomorrow so I remember to turn off the balcony light.`
+  - `Please alert me at 8 PM the day after tomorrow to turn off the balcony light.`
+  - `Set me a 8 PM the day after tomorrow reminder to turn off the balcony light.`
+  - `Create a reminder telling me at 8 PM the day after tomorrow to turn off the balcony light.`
 
 - Japanese Variants: 10
-  - `8にとリマインドして`
-  - `8にことをらせて`
-  - `8に「」のリマインダーをして`
-  - `8になったらとして`
-  - `8のリマインダーとしてをして`
-  - `8にのをれて`
-  - `8にことをれないようらせて`
-  - `8のでをリマインドして`
-  - `8にへとえて`
-  - `8にのをって`
+  - `明後日の8時にベランダのライトを消すことをリマインドしてください`
+  - `明後日の8時にベランダのライトをオフにすることを思い出させてください`
+  - `明後日の8時に「ベランダのライトを消す」のリマインダーを設定してください`
+  - `明後日の8時になったらベランダのライトを消すように思い出させてください`
+  - `明後日の8時のリマインダーとしてベランダのライトを消すことを設定してください`
+  - `明後日の8時にベランダのライトを消すことを忘れないように思い出させてください`
+  - `明後日の8時にベランダのライトを消すことを思い出せないようにリマインドしてください`
+  - `明後日の8時にベランダのライトを消すことをリマインドしてください`
+  - `明後日の8時にベランダのライトをオフにすることを思い出させてください`
+  - `明後日の8時にベランダのライトを消すことを思い出させてください`
 
 ### S1-23 水费提醒
 
@@ -975,28 +975,28 @@
   - `到明天晚上9点通知我我交水费`
 
 - English Variants: 10
-  - `Remind me 明天晚上9点 to 我交水费.`
-  - `Set a reminder 明天晚上9点 for me to 我交水费.`
-  - `Please remind me 明天晚上9点 that I need to 我交水费.`
-  - `Can you create a reminder 明天晚上9点 for 我交水费?`
-  - `I need a reminder 明天晚上9点 to 我交水费.`
-  - `Put in a reminder for 明天晚上9点: 我交水费.`
-  - `Schedule a reminder 明天晚上9点 so I remember to 我交水费.`
-  - `Please alert me 明天晚上9点 to 我交水费.`
-  - `Set me a 明天晚上9点 reminder to 我交水费.`
-  - `Create a reminder telling me 明天晚上9点 to 我交水费.`
+  - `Remind me at 9 PM tomorrow to pay the water bill.`
+  - `Set a reminder for 9 PM tomorrow to pay the water bill.`
+  - `Please remind me at 9 PM tomorrow that I need to pay the water bill.`
+  - `Can you create a reminder for 9 PM tomorrow to pay the water bill?`
+  - `I need a reminder at 9 PM tomorrow to pay the water bill.`
+  - `Put in a reminder for 9 PM tomorrow: pay the water bill.`
+  - `Schedule a reminder for 9 PM tomorrow so I remember to pay the water bill.`
+  - `Please alert me at 9 PM tomorrow to pay the water bill.`
+  - `Set me a 9 PM tomorrow reminder to pay the water bill.`
+  - `Create a reminder telling me at 9 PM tomorrow to pay the water bill.`
 
 - Japanese Variants: 10
-  - `9にとリマインドして`
-  - `9にことをらせて`
-  - `9に「」のリマインダーをして`
-  - `9になったらとして`
-  - `9のリマインダーとしてをして`
-  - `9にのをれて`
-  - `9にことをれないようらせて`
-  - `9のでをリマインドして`
-  - `9にへとえて`
-  - `9にのをって`
+  - `明日の9時に水道料金を支払うことをリマインドしてください`
+  - `明日の9時に水道料金を支払うことを思い出させてください`
+  - `明日の9時に「水道料金を支払う」のリマインダーを設定してください`
+  - `明日の9時になったら水道料金を支払うように思い出させてください`
+  - `明日の9時のリマインダーとして水道料金を支払うことを設定してください`
+  - `明日の9時に水道料金を支払うことを忘れないように思い出させてください`
+  - `明日の9時に水道料金を支払うことを思い出せないようにリマインドしてください`
+  - `明日の9時に水道料金を支払うことをリマインドしてください`
+  - `明日の9時に水道料金を支払うことを思い出させてください`
+  - `明日の9時に水道料金を支払うことを思い出させてください`
 
 ### S1-24 提醒列表
 
@@ -1030,16 +1030,16 @@
   - `Let me see the reminders.`
 
 - Japanese Variants: 10
-  - `リマインダーをせて`
-  - `のリマインダーをして`
-  - `リマインダーのリストをしたい`
-  - `みのリマインダーをえて`
-  - `リマインダーをいて`
-  - `いまっているリマインダーをたい`
-  - `リマインダーをして`
-  - `のをせて`
-  - `リマインダーをして`
-  - `のリマインダーをして`
+  - `リマインダーリストを表示してください`
+  - `私のリマインダーを表示してください`
+  - `リマインダーのリストを見せてください`
+  - `現在のリマインダーを表示してください`
+  - `リマインダーを確認したいです`
+  - `すべてのリマインダーをリストアップしてください`
+  - `リマインダーリストを開いてください`
+  - `どのようなリマインダーがありますか`
+  - `現在のリマインダーを教えてください`
+  - `私のリマインダーを表示してください`
 
 ### S1-25 双提醒列表
 
@@ -1073,16 +1073,16 @@
   - `Let me see the reminders.`
 
 - Japanese Variants: 10
-  - `リマインダーをせて`
-  - `のリマインダーをして`
-  - `リマインダーのリストをしたい`
-  - `みのリマインダーをえて`
-  - `リマインダーをいて`
-  - `いまっているリマインダーをたい`
-  - `リマインダーをして`
-  - `のをせて`
-  - `リマインダーをして`
-  - `のリマインダーをして`
+  - `リマインダーリストを表示してください`
+  - `私のリマインダーを表示してください`
+  - `リマインダーのリストを見せてください`
+  - `現在のリマインダーを表示してください`
+  - `リマインダーを確認したいです`
+  - `すべてのリマインダーをリストアップしてください`
+  - `リマインダーリストを開いてください`
+  - `どのようなリマインダーがありますか`
+  - `現在のリマインダーを教えてください`
+  - `私のリマインダーを表示してください`
 
 ### S1-26 家庭会议日程
 
@@ -1104,28 +1104,28 @@
   - `帮我新增家庭会议这个安排，时间是明天下午3点，提醒提前30分钟`
 
 - English Variants: 10
-  - `Schedule 家庭会议 明天下午3点 and remind me 30 minutes early.`
-  - `Please add 家庭会议 for 明天下午3点, with a reminder 30 minutes before.`
-  - `Set up 家庭会议 明天下午3点 and alert me 30 minutes in advance.`
-  - `Can you schedule 家庭会议 明天下午3点 and remind me 30 minutes ahead of time?`
-  - `Put 家庭会议 on the schedule for 明天下午3点 and send a 30-minute early reminder.`
-  - `Arrange 家庭会议 明天下午3点, and make sure I get a reminder 30 minutes before.`
-  - `Create a schedule entry for 家庭会议 明天下午3点 with a 30-minute advance reminder.`
-  - `Please add 家庭会议 at 明天下午3点 and notify me 30 minutes beforehand.`
-  - `Book 家庭会议 for 明天下午3点 and remind me 30 minutes before it starts.`
-  - `Set 家庭会议 for 明天下午3点 and give me an alert 30 minutes early.`
+  - `Schedule a family meeting for 3 PM tomorrow and remind me 30 minutes early.`
+  - `Please add a family meeting for 3 PM tomorrow, with a reminder 30 minutes before.`
+  - `Set up a family meeting for 3 PM tomorrow and alert me 30 minutes in advance.`
+  - `Can you schedule a family meeting for 3 PM tomorrow and remind me 30 minutes ahead of time?`
+  - `Put a family meeting on the schedule for 3 PM tomorrow and send a 30-minute early reminder.`
+  - `Arrange a family meeting for 3 PM tomorrow, and make sure I get a reminder 30 minutes before.`
+  - `Create a schedule entry for a family meeting at 3 PM tomorrow with a 30-minute advance reminder.`
+  - `Please add a family meeting at 3 PM tomorrow and notify me 30 minutes beforehand.`
+  - `Book a family meeting for 3 PM tomorrow and remind me 30 minutes before it starts.`
+  - `Set a family meeting for 3 PM tomorrow and give me an alert 30 minutes early.`
 
 - Japanese Variants: 10
-  - `3にをにれて、30にらせて`
-  - `3のをして、30にリマインドして`
-  - `3にをし、30にして`
-  - `3のとしてをして、30にえて`
-  - `を3にれて、30にらせてください`
-  - `3のをスケジュールして、30にして`
-  - `3にをして、に30でらせて`
-  - `3のをにれ、30にリマインドして`
-  - `を3にして、30のをして`
-  - `3にをし、30にえて`
+  - `明日の午後3時に家族会議を予定して、30分前にリマインドしてください`
+  - `明日の午後3時に家族会議の予定を入れて、30分前に通知してください`
+  - `明日の午後3時に家族会議をスケジュールし、30分前に知らせてください`
+  - `明日の午後3時の家族会議を設定して、30分前にリマインドしてください`
+  - `明日の午後3時に家族会議を入れて、30分前に思い出させてください`
+  - `明日の午後3時に家族会議を予定し、開始30分前にリマインドしてください`
+  - `明日の午後3時に家族会議をスケジュールして、30分前に通知してほしいです`
+  - `明日の午後3時に家族会議を入れ、30分前にリマインドしてください`
+  - `明日の午後3時に家族会議を設定して、30分前にお知らせください`
+  - `明日の午後3時に家族会議を予定し、開始30分前に知らせてください`
 
 ### S1-27 家长会日程
 
@@ -1147,28 +1147,28 @@
   - `帮我新增家长会这个安排，时间是后天下午4点，提醒提前30分钟`
 
 - English Variants: 10
-  - `Schedule 家长会 后天下午4点 and remind me 30 minutes early.`
-  - `Please add 家长会 for 后天下午4点, with a reminder 30 minutes before.`
-  - `Set up 家长会 后天下午4点 and alert me 30 minutes in advance.`
-  - `Can you schedule 家长会 后天下午4点 and remind me 30 minutes ahead of time?`
-  - `Put 家长会 on the schedule for 后天下午4点 and send a 30-minute early reminder.`
-  - `Arrange 家长会 后天下午4点, and make sure I get a reminder 30 minutes before.`
-  - `Create a schedule entry for 家长会 后天下午4点 with a 30-minute advance reminder.`
-  - `Please add 家长会 at 后天下午4点 and notify me 30 minutes beforehand.`
-  - `Book 家长会 for 后天下午4点 and remind me 30 minutes before it starts.`
-  - `Set 家长会 for 后天下午4点 and give me an alert 30 minutes early.`
+  - `Schedule a parent-teacher meeting for 4 PM the day after tomorrow and remind me 30 minutes early.`
+  - `Please add a parent-teacher meeting for 4 PM the day after tomorrow, with a reminder 30 minutes before.`
+  - `Set up a parent-teacher meeting for 4 PM the day after tomorrow and alert me 30 minutes in advance.`
+  - `Can you schedule a parent-teacher meeting for 4 PM the day after tomorrow and remind me 30 minutes ahead of time?`
+  - `Put a parent-teacher meeting on the schedule for 4 PM the day after tomorrow and send a 30-minute early reminder.`
+  - `Arrange a parent-teacher meeting for 4 PM the day after tomorrow, and make sure I get a reminder 30 minutes before.`
+  - `Create a schedule entry for a parent-teacher meeting at 4 PM the day after tomorrow with a 30-minute advance reminder.`
+  - `Please add a parent-teacher meeting at 4 PM the day after tomorrow and notify me 30 minutes beforehand.`
+  - `Book a parent-teacher meeting for 4 PM the day after tomorrow and remind me 30 minutes before it starts.`
+  - `Set a parent-teacher meeting for 4 PM the day after tomorrow and give me an alert 30 minutes early.`
 
 - Japanese Variants: 10
-  - `4にをにれて、30にらせて`
-  - `4のをして、30にリマインドして`
-  - `4にをし、30にして`
-  - `4のとしてをして、30にえて`
-  - `を4にれて、30にらせてください`
-  - `4のをスケジュールして、30にして`
-  - `4にをして、に30でらせて`
-  - `4のをにれ、30にリマインドして`
-  - `を4にして、30のをして`
-  - `4にをし、30にえて`
+  - `明後日の午後4時に保護者会を予定して、30分前にリマインドしてください`
+  - `明後日の午後4時に保護者会の予定を入れて、30分前に通知してください`
+  - `明後日の午後4時に保護者会をスケジュールし、30分前に知らせてください`
+  - `明後日の午後4時の保護者会を設定して、30分前にリマインドしてください`
+  - `明後日の午後4時に保護者会を入れて、30分前に思い出させてください`
+  - `明後日の午後4時に保護者会を予定し、開始30分前にリマインドしてください`
+  - `明後日の午後4時に保護者会をスケジュールして、30分前に通知してほしいです`
+  - `明後日の午後4時に保護者会を入れ、30分前にリマインドしてください`
+  - `明後日の午後4時に保護者会を設定して、30分前にお知らせください`
+  - `明後日の午後4時に保護者会を予定し、開始30分前に知らせてください`
 
 ### S1-28 查看日程
 
@@ -1202,16 +1202,16 @@
   - `Let me look at the agenda.`
 
 - Japanese Variants: 10
-  - `をせて`
-  - `スケジュールをいて`
-  - `をしたい`
-  - `のをして`
-  - `カレンダーをせて`
-  - `をして`
-  - `これからのをして`
-  - `スケジュールをえて`
-  - `をたい`
-  - `されているをして`
+  - `スケジュールを見せてください`
+  - `予定を表示してください`
+  - `カレンダーを開いてください`
+  - `予定表を見せてください`
+  - `スケジュールを確認したいです`
+  - `今の予定を教えてください`
+  - `予定を表示してください`
+  - `スケジュールを見せてください`
+  - `これからの予定を教えてください`
+  - `日程を確認してください`
 
 ### S1-29 奶奶吃药提醒
 
@@ -1233,28 +1233,28 @@
   - `到明天早上8点通知我奶奶吃药`
 
 - English Variants: 10
-  - `Remind me 明天早上8点 to 奶奶吃药.`
-  - `Set a reminder 明天早上8点 for me to 奶奶吃药.`
-  - `Please remind me 明天早上8点 that I need to 奶奶吃药.`
-  - `Can you create a reminder 明天早上8点 for 奶奶吃药?`
-  - `I need a reminder 明天早上8点 to 奶奶吃药.`
-  - `Put in a reminder for 明天早上8点: 奶奶吃药.`
-  - `Schedule a reminder 明天早上8点 so I remember to 奶奶吃药.`
-  - `Please alert me 明天早上8点 to 奶奶吃药.`
-  - `Set me a 明天早上8点 reminder to 奶奶吃药.`
-  - `Create a reminder telling me 明天早上8点 to 奶奶吃药.`
+  - `Remind me at 8 AM tomorrow to give grandma her medicine.`
+  - `Set a reminder for 8 AM tomorrow to give grandma her medicine.`
+  - `Please remind me at 8 AM tomorrow that I need to give grandma her medicine.`
+  - `Can you create a reminder for 8 AM tomorrow to give grandma her medicine?`
+  - `I need a reminder at 8 AM tomorrow to give grandma her medicine.`
+  - `Put in a reminder for 8 AM tomorrow: give grandma her medicine.`
+  - `Schedule a reminder for 8 AM tomorrow so I remember to give grandma her medicine.`
+  - `Please alert me at 8 AM tomorrow to give grandma her medicine.`
+  - `Set me a 8 AM tomorrow reminder to give grandma her medicine.`
+  - `Create a reminder telling me at 8 AM tomorrow to give grandma her medicine.`
 
 - Japanese Variants: 10
-  - `8にとリマインドして`
-  - `8にことをらせて`
-  - `8に「」のリマインダーをして`
-  - `8になったらとして`
-  - `8のリマインダーとしてをして`
-  - `8にのをれて`
-  - `8にことをれないようらせて`
-  - `8のでをリマインドして`
-  - `8にへとえて`
-  - `8にのをって`
+  - `明日の午前8時におばあちゃんに薬を飲ませることをリマインドしてください`
+  - `明日の午前8時におばあちゃんの薬を与えることを思い出させてください`
+  - `明日の午前8時に「おばあちゃんの薬を飲ませる」のリマインダーを設定してください`
+  - `明日の午前8時になったらおばあちゃんに薬を飲ませるように知らせてください`
+  - `明日の午前8時のリマインダーとしておばあちゃんに薬を飲ませることを設定してください`
+  - `明日の午前8時におばあちゃんの薬を飲ませることを忘れないようにしてください`
+  - `明日の午前8時におばあちゃんの薬を飲ませることを思い出させてください`
+  - `明日の午前8時におばあちゃんの薬を飲ませることをリマインドしてください`
+  - `明日の午前8時におばあちゃんの薬を飲ませることを知らせてください`
+  - `明日の午前8時におばあちゃんの薬を飲ませることを忘れないように注意してください`
 
 ### S1-30 倒垃圾提醒
 
@@ -1276,28 +1276,28 @@
   - `到明天晚上9点通知我我倒垃圾`
 
 - English Variants: 10
-  - `Remind me 明天晚上9点 to 我倒垃圾.`
-  - `Set a reminder 明天晚上9点 for me to 我倒垃圾.`
-  - `Please remind me 明天晚上9点 that I need to 我倒垃圾.`
-  - `Can you create a reminder 明天晚上9点 for 我倒垃圾?`
-  - `I need a reminder 明天晚上9点 to 我倒垃圾.`
-  - `Put in a reminder for 明天晚上9点: 我倒垃圾.`
-  - `Schedule a reminder 明天晚上9点 so I remember to 我倒垃圾.`
-  - `Please alert me 明天晚上9点 to 我倒垃圾.`
-  - `Set me a 明天晚上9点 reminder to 我倒垃圾.`
-  - `Create a reminder telling me 明天晚上9点 to 我倒垃圾.`
+  - `Remind me at 9 PM tomorrow to take out the trash.`
+  - `Set a reminder for 9 PM tomorrow to take out the trash.`
+  - `Please remind me at 9 PM tomorrow that I need to take out the trash.`
+  - `Can you create a reminder for 9 PM tomorrow to take out the trash?`
+  - `I need a reminder at 9 PM tomorrow to take out the trash.`
+  - `Put in a reminder for 9 PM tomorrow: take out the trash.`
+  - `Schedule a reminder for 9 PM tomorrow so I remember to take out the trash.`
+  - `Please alert me at 9 PM tomorrow to take out the trash.`
+  - `Set me a 9 PM tomorrow reminder to take out the trash.`
+  - `Create a reminder telling me at 9 PM tomorrow to take out the trash.`
 
 - Japanese Variants: 10
-  - `9にとリマインドして`
-  - `9にことをらせて`
-  - `9に「」のリマインダーをして`
-  - `9になったらとして`
-  - `9のリマインダーとしてをして`
-  - `9にのをれて`
-  - `9にことをれないようらせて`
-  - `9のでをリマインドして`
-  - `9にへとえて`
-  - `9にのをって`
+  - `明日の午後9時にゴミ出しをすることをリマインドしてください`
+  - `明日の午後9時にゴミ出しを忘れないように思い出させてください`
+  - `明日の午後9時に「ゴミ出しをする」のリマインダーを設定してください`
+  - `明日の午後9時になったらゴミ出しをするように知らせてください`
+  - `明日の午後9時のリマインダーとしてゴミ出しを設定してください`
+  - `明日の午後9時にゴミ出しを忘れないようにしてください`
+  - `明日の午後9時にゴミ出しを思い出させてください`
+  - `明日の午後9時にゴミ出しをリマインドしてください`
+  - `明日の午後9時にゴミ出しを知らせてください`
+  - `明日の午後9時にゴミ出しを忘れないように注意してください`
 
 ### S1-31 学校接送日程
 
@@ -1319,28 +1319,28 @@
   - `帮我新增接孩子放学这个安排，时间是明天下午5点，提醒提前30分钟`
 
 - English Variants: 10
-  - `Schedule 接孩子放学 明天下午5点 and remind me 30 minutes early.`
-  - `Please add 接孩子放学 for 明天下午5点, with a reminder 30 minutes before.`
-  - `Set up 接孩子放学 明天下午5点 and alert me 30 minutes in advance.`
-  - `Can you schedule 接孩子放学 明天下午5点 and remind me 30 minutes ahead of time?`
-  - `Put 接孩子放学 on the schedule for 明天下午5点 and send a 30-minute early reminder.`
-  - `Arrange 接孩子放学 明天下午5点, and make sure I get a reminder 30 minutes before.`
-  - `Create a schedule entry for 接孩子放学 明天下午5点 with a 30-minute advance reminder.`
-  - `Please add 接孩子放学 at 明天下午5点 and notify me 30 minutes beforehand.`
-  - `Book 接孩子放学 for 明天下午5点 and remind me 30 minutes before it starts.`
-  - `Set 接孩子放学 for 明天下午5点 and give me an alert 30 minutes early.`
+  - `Schedule picking up the child from school at 5 PM tomorrow and remind me 30 minutes early.`
+  - `Please add picking up the child from school for 5 PM tomorrow, with a reminder 30 minutes before.`
+  - `Set up picking up the child from school at 5 PM tomorrow and alert me 30 minutes in advance.`
+  - `Can you schedule picking up the child from school at 5 PM tomorrow and remind me 30 minutes ahead of time?`
+  - `Put picking up the child from school on the schedule for 5 PM tomorrow and send a 30-minute early reminder.`
+  - `Arrange picking up the child from school at 5 PM tomorrow, and make sure I get a reminder 30 minutes before.`
+  - `Create a schedule entry for picking up the child from school at 5 PM tomorrow with a 30-minute advance reminder.`
+  - `Please add picking up the child from school at 5 PM tomorrow and notify me 30 minutes beforehand.`
+  - `Book picking up the child from school for 5 PM tomorrow and remind me 30 minutes before it starts.`
+  - `Set picking up the child from school for 5 PM tomorrow and give me an alert 30 minutes early.`
 
 - Japanese Variants: 10
-  - `5にをにれて、30にらせて`
-  - `5のをして、30にリマインドして`
-  - `5にをし、30にして`
-  - `5のとしてをして、30にえて`
-  - `を5にれて、30にらせてください`
-  - `5のをスケジュールして、30にして`
-  - `5にをして、に30でらせて`
-  - `5のをにれ、30にリマインドして`
-  - `を5にして、30のをして`
-  - `5にをし、30にえて`
+  - `明日の午後5時に学校の迎えを予定して、30分前にリマインドしてください`
+  - `明日の午後5時に学校の迎えの予定を入れて、30分前に通知してください`
+  - `明日の午後5時に学校の迎えをスケジュールし、30分前に知らせてください`
+  - `明日の午後5時の学校の迎えを設定して、30分前にリマインドしてください`
+  - `明日の午後5時に学校の迎えを入れて、30分前に思い出させてください`
+  - `明日の午後5時に学校の迎えを予定し、開始30分前にリマインドしてください`
+  - `明日の午後5時に学校の迎えをスケジュールして、30分前に通知してほしいです`
+  - `明日の午後5時に学校の迎えを入れ、30分前にリマインドしてください`
+  - `明日の午後5時に学校の迎えを設定して、30分前にお知らせください`
+  - `明日の午後5時に学校の迎えを予定し、開始30分前に知らせてください`
 
 ### S1-32 日程与提醒总览
 
@@ -1374,16 +1374,16 @@
   - `Let me look at the agenda.`
 
 - Japanese Variants: 10
-  - `をせて`
-  - `スケジュールをいて`
-  - `をしたい`
-  - `のをして`
-  - `カレンダーをせて`
-  - `をして`
-  - `これからのをして`
-  - `スケジュールをえて`
-  - `をたい`
-  - `されているをして`
+  - `スケジュールを見せてください`
+  - `予定を表示してください`
+  - `カレンダーを開いてください`
+  - `予定表を見せてください`
+  - `スケジュールを確認したいです`
+  - `今の予定を教えてください`
+  - `予定を表示してください`
+  - `スケジュールを見せてください`
+  - `これからの予定を教えてください`
+  - `日程を確認してください`
 
 ## 阶段2
 
