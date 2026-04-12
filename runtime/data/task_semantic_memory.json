@@ -3,12 +3,12 @@
     "schemaVersion": "1.0",
     "backend": "json-hybrid-indexed",
     "brainFamily": "homehub-semantic-memory",
-    "updatedAt": "2026-04-12T15:31",
+    "updatedAt": "2026-04-12T15:54",
     "version": 1
   },
   "items": [
     {
-      "id": "sem-20260412153117111982",
+      "id": "sem-20260412155400830521",
       "sourceText": "可以通过语音，文字，OCR进行账单的记录。",
       "locale": "zh-CN",
       "taskSpec": {
@@ -32,8 +32,8 @@
       "agentId": "",
       "agentName": "",
       "accepted": true,
-      "createdAt": "2026-04-12T15:31",
-      "updatedAt": "2026-04-12T15:31",
+      "createdAt": "2026-04-12T15:54",
+      "updatedAt": "2026-04-12T15:54",
       "searchText": "可以通过语音，文字，OCR进行账单的记录。 确认创建。 Read, extract, or generate office-style documents such as OCR results, PowerPoint, Excel, or Word files. document-workflow document_workflow",
       "embedding": [
         0.0,
@@ -296,7 +296,7 @@
       "embeddingSchemaVersion": 1
     },
     {
-      "id": "sem-20260412153056515784",
+      "id": "sem-20260412155345219059",
       "sourceText": "创建智能体，名称为家庭账单。",
       "locale": "zh-CN",
       "taskSpec": {
@@ -320,8 +320,8 @@
       "agentId": "homehub-core",
       "agentName": "HomeHub Core",
       "accepted": true,
-      "createdAt": "2026-04-12T15:30",
-      "updatedAt": "2026-04-12T15:30",
+      "createdAt": "2026-04-12T15:53",
+      "updatedAt": "2026-04-12T15:53",
       "searchText": "创建智能体，名称为家庭账单。 HomeHub Core Stock price, market quotes, daily movement, live equity information. network-stocks network_lookup",
       "embedding": [
         0.0,

@@ -112,11 +112,21 @@ class Feature(HomeHubFeature):
         home = Path.home()
         return [Path("/System"), Path("/Library/Keychains"), Path("/private/etc"), Path("/private/var/db"), home / ".ssh", home / ".gnupg", home / ".aws"]
 
+    def machine_access_mode(self, runtime: RuntimeBridge | None = None) -> str:
+        if runtime is not None:
+            return str(runtime.get_setting("machineAccessMode", "full-access") or "full-access").strip().lower()
+        return "full-access"
+
+    def full_access_enabled(self, runtime: RuntimeBridge | None = None) -> bool:
+        return self.machine_access_mode(runtime) == "full-access"
+
     def resolve_path(self, raw_path: str) -> Path:
         text = str(raw_path or "").strip()
         return Path.home() if not text else Path(text).expanduser().resolve()
 
-    def is_protected(self, path: Path) -> bool:
+    def is_protected(self, path: Path, runtime: RuntimeBridge | None = None) -> bool:
+        if self.full_access_enabled(runtime):
+            return False
         resolved = path.resolve()
         for prefix in self.protected_prefixes():
             try:
@@ -126,12 +136,12 @@ class Feature(HomeHubFeature):
                 continue
         return False
 
-    def validate_path(self, path: Path, *, allow_missing: bool = False) -> tuple[bool, str]:
+    def validate_path(self, path: Path, *, allow_missing: bool = False, runtime: RuntimeBridge | None = None) -> tuple[bool, str]:
         try:
             resolved = path.resolve() if path.exists() or not allow_missing else path
         except OSError as exc:
             return False, str(exc)
-        if self.is_protected(resolved):
+        if self.is_protected(resolved, runtime):
             return False, "protected_path"
         if not allow_missing and not resolved.exists():
             return False, "path_not_found"
@@ -250,7 +260,7 @@ class Feature(HomeHubFeature):
             items.append({"name": child.name, "path": str(child), "type": item_type, "sizeBytes": size})
         return {"path": str(path), "items": items}
 
-    def search_files(self, base: Path, query: str, limit: int = 30) -> dict:
+    def search_files(self, base: Path, query: str, runtime: RuntimeBridge | None = None, limit: int = 30) -> dict:
         matches = []
         needle = str(query or "").strip().lower()
         if not needle:
@@ -261,14 +271,14 @@ class Feature(HomeHubFeature):
                 if needle not in name.lower():
                     continue
                 candidate = Path(root) / name
-                if self.is_protected(candidate):
+                if self.is_protected(candidate, runtime):
                     continue
                 matches.append({"name": name, "path": str(candidate), "type": "file"})
                 if len(matches) >= limit:
                     return {"base": str(base), "query": query, "items": matches}
         return {"base": str(base), "query": query, "items": matches}
 
-    def choose_file_match(self, base: Path, file_name: str, limit: int = 20) -> Path | None:
+    def choose_file_match(self, base: Path, file_name: str, runtime: RuntimeBridge | None = None, limit: int = 20) -> Path | None:
         needle = str(file_name or "").strip().lower()
         if not needle:
             return None
@@ -278,7 +288,7 @@ class Feature(HomeHubFeature):
             dirs[:] = [name for name in dirs if not name.startswith(".")]
             for name in files:
                 candidate = Path(root) / name
-                if self.is_protected(candidate):
+                if self.is_protected(candidate, runtime):
                     continue
                 lowered = name.lower()
                 if lowered == needle:
@@ -417,11 +427,11 @@ class Feature(HomeHubFeature):
 
         path = self.resolve_path(classified.get("path", ""))
         if action in {"list", "read", "move", "delete", "classify"}:
-            ok, error = self.validate_path(path)
+            ok, error = self.validate_path(path, runtime=runtime)
             if not ok:
                 return {"reply": self.zh(locale, f"路径不可用：{error}", f"Path is not available: {error}")}
         elif action == "write":
-            ok, error = self.validate_path(path, allow_missing=True)
+            ok, error = self.validate_path(path, allow_missing=True, runtime=runtime)
             if not ok:
                 return {"reply": self.zh(locale, f"目标路径不可用：{error}", f"Target path is not available: {error}")}
 
@@ -434,7 +444,7 @@ class Feature(HomeHubFeature):
             lowered_message = str(message or "").lower()
             send_requested = (bool(requested_file) and any(token in message for token in self.SEND_TOKENS)) or any(token in lowered_message for token in self.SEND_TOKENS)
             if send_requested and requested_file:
-                matched = self.choose_file_match(path, requested_file)
+                matched = self.choose_file_match(path, requested_file, runtime=runtime)
                 if matched:
                     artifact = self.create_download_artifact(matched, runtime)
                     self.remember_action(runtime, f"Listed {path} and prepared download for {matched}.")
@@ -449,10 +459,10 @@ class Feature(HomeHubFeature):
             base = self.resolve_path(classified.get("path", "")) if classified.get("path") else Path.home()
             if base.is_file():
                 base = base.parent
-            ok, error = self.validate_path(base)
+            ok, error = self.validate_path(base, runtime=runtime)
             if not ok or not base.is_dir():
                 return {"reply": self.zh(locale, f"搜索目录不可用：{error or 'not_a_directory'}", f"Search directory is not available: {error or 'not_a_directory'}")}
-            result = self.search_files(base, classified.get("query", ""))
+            result = self.search_files(base, classified.get("query", ""), runtime=runtime)
             names = "、".join(item["path"] for item in result["items"][:8]) if locale == "zh-CN" else ", ".join(item["path"] for item in result["items"][:8])
             self.remember_action(runtime, f"Searched {base} for {classified.get('query', '')}.")
             return {"reply": self.zh(locale, f"搜索结果：{names or '没有找到匹配文件'}", f"Search results: {names or 'No matching files found'}")}
@@ -460,7 +470,7 @@ class Feature(HomeHubFeature):
         if action == "send":
             base = self.resolve_path(classified.get("path", "")) if classified.get("path") else Path.home()
             file_name = classified.get("fileName", "") or self.extract_filename_hint(message) or classified.get("query", "")
-            ok, error = self.validate_path(base)
+            ok, error = self.validate_path(base, runtime=runtime)
             if ok and base.is_file():
                 matched = base
             else:
@@ -468,7 +478,7 @@ class Feature(HomeHubFeature):
                     return {"reply": self.zh(locale, f"搜索目录不可用：{error or 'not_a_directory'}", f"Search directory is not available: {error or 'not_a_directory'}")}
                 if not file_name:
                     return {"reply": self.zh(locale, "请告诉我你想发送哪个文件。", "Tell me which file you want me to send.")}
-                matched = self.choose_file_match(base, file_name)
+                matched = self.choose_file_match(base, file_name, runtime=runtime)
             if not file_name:
                 return {"reply": self.zh(locale, "请告诉我你想发送哪个文件。", "Tell me which file you want me to send.")}
             if not matched:
@@ -527,39 +537,39 @@ class Feature(HomeHubFeature):
             return {"status": 200, "body": {"ok": True, "pendingDelete": store.get("pendingDelete"), "recentActions": store.get("recentActions", [])[:12]}}
         if method == "POST" and path == API_LIST:
             target = self.resolve_path(str(payload.get("path", "")).strip())
-            ok, error = self.validate_path(target)
+            ok, error = self.validate_path(target, runtime=runtime)
             if not ok or not target.is_dir():
                 return {"status": 400, "body": {"ok": False, "error": error or "not_a_directory"}}
             return {"status": 200, "body": {"ok": True, "result": self.list_directory(target)}}
         if method == "POST" and path == API_SEARCH:
             base = self.resolve_path(str(payload.get("path", "")).strip() or str(Path.home()))
-            ok, error = self.validate_path(base)
+            ok, error = self.validate_path(base, runtime=runtime)
             if not ok or not base.is_dir():
                 return {"status": 400, "body": {"ok": False, "error": error or "not_a_directory"}}
-            return {"status": 200, "body": {"ok": True, "result": self.search_files(base, str(payload.get("query", "")).strip())}}
+            return {"status": 200, "body": {"ok": True, "result": self.search_files(base, str(payload.get("query", "")).strip(), runtime=runtime)}}
         if method == "POST" and path == API_READ:
             target = self.resolve_path(str(payload.get("path", "")).strip())
-            ok, error = self.validate_path(target)
+            ok, error = self.validate_path(target, runtime=runtime)
             if not ok or not target.is_file():
                 return {"status": 400, "body": {"ok": False, "error": error or "not_a_file"}}
             return {"status": 200, "body": {"ok": True, "result": self.read_text_file(target, int(payload.get("lineLimit", 80) or 80))}}
         if method == "POST" and path == API_WRITE:
             target = self.resolve_path(str(payload.get("path", "")).strip())
-            ok, error = self.validate_path(target, allow_missing=True)
+            ok, error = self.validate_path(target, allow_missing=True, runtime=runtime)
             if not ok:
                 return {"status": 400, "body": {"ok": False, "error": error}}
             return {"status": 200, "body": {"ok": True, "result": self.write_text_file(target, str(payload.get("content", "")))}} 
         if method == "POST" and path == API_MOVE:
             source = self.resolve_path(str(payload.get("path", "")).strip())
             destination = self.resolve_path(str(payload.get("destinationPath", "")).strip())
-            ok_source, error_source = self.validate_path(source)
-            ok_dest, error_dest = self.validate_path(destination, allow_missing=True)
+            ok_source, error_source = self.validate_path(source, runtime=runtime)
+            ok_dest, error_dest = self.validate_path(destination, allow_missing=True, runtime=runtime)
             if not ok_source or not ok_dest:
                 return {"status": 400, "body": {"ok": False, "error": error_source or error_dest}}
             return {"status": 200, "body": {"ok": True, "result": self.move_path(source, destination)}}
         if method == "POST" and path == API_DELETE:
             target = self.resolve_path(str(payload.get("path", "")).strip())
-            ok, error = self.validate_path(target)
+            ok, error = self.validate_path(target, runtime=runtime)
             if not ok:
                 return {"status": 400, "body": {"ok": False, "error": error}}
             return {"status": 200, "body": {"ok": True, "pendingDelete": self.request_delete_confirmation(target, runtime)}}
@@ -570,7 +580,7 @@ class Feature(HomeHubFeature):
             return {"status": 200 if result.get("ok") else 400, "body": result}
         if method == "POST" and path == API_CLASSIFY:
             target = self.resolve_path(str(payload.get("path", "")).strip())
-            ok, error = self.validate_path(target)
+            ok, error = self.validate_path(target, runtime=runtime)
             if not ok or not target.is_dir():
                 return {"status": 400, "body": {"ok": False, "error": error or "not_a_directory"}}
             return {"status": 200, "body": {"ok": True, "result": self.classify_directory(target)}}

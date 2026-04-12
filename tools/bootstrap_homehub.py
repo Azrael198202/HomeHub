@@ -120,6 +120,7 @@ def ensure_settings_file() -> None:
                 "sttProvider": "google",
                 "ttsProvider": "google",
                 "runtimeProfile": "low-memory",
+                "machineAccessMode": "full-access",
             },
             ensure_ascii=False,
             indent=2,

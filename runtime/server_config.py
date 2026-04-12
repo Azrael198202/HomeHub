@@ -158,6 +158,7 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
         "sttProvider": "google",
         "ttsProvider": "google",
         "runtimeProfile": "low-memory",
+        "machineAccessMode": "full-access",
         "bootstrapConsent": True,
         "bootstrapCompleted": True,
         "assistantAvatarMode": "custom",
@@ -184,6 +185,9 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
     runtime_profile = data.get("runtimeProfile", "low-memory")
     if runtime_profile not in supported_profiles:
         runtime_profile = "low-memory"
+    machine_access_mode = str(data.get("machineAccessMode", "full-access")).strip().lower()
+    if machine_access_mode not in {"full-access", "guarded"}:
+        machine_access_mode = "full-access"
     assistant_avatar_mode = str(data.get("assistantAvatarMode", "custom")).strip().lower()
     if assistant_avatar_mode not in {"house", "custom"}:
         assistant_avatar_mode = "house"
@@ -195,6 +199,7 @@ def load_persisted_settings(settings_file: Path, language_settings: dict, provid
         "sttProvider": stt_provider,
         "ttsProvider": tts_provider,
         "runtimeProfile": runtime_profile,
+        "machineAccessMode": machine_access_mode,
         "bootstrapConsent": bool(data.get("bootstrapConsent", True)),
         "bootstrapCompleted": bool(data.get("bootstrapCompleted", True)),
         "assistantAvatarMode": assistant_avatar_mode,
